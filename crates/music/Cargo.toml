@@ -25,6 +25,7 @@ kakasi.workspace = true
 log.workspace = true
 oauth2.workspace = true
 open.workspace = true
+opensubsonic.workspace = true
 percent-encoding.workspace = true
 protobuf.workspace = true
 reqwest.workspace = true

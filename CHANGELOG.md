@@ -26,6 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Local albums and artists take a heart too: on their pages, in the library grids and in the
   context menu.
 
+- Play from any Subsonic or OpenSubsonic server: Navidrome, Airsonic, Gonic and more. Sign in under
+  Settings > Accounts with the server address, a username and a password. Your Library then lists
+  the whole server, songs included, with a Favorites only filter for what you starred.
+
 ### Changed
 
 - Local Music lists every imported song, album and artist under the same four tabs as Your Library,
@@ -132,6 +136,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Local music cover thumbnails are cached under `$XDG_CACHE_HOME` instead of `$XDG_CONFIG_HOME`.
+- Passwords typed into a server login form are hidden as you type them.
 
 ## [0.29.0] - 2026-09-03
 

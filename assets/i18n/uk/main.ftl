@@ -208,6 +208,12 @@ login-cookie-step-3 = Виберіть будь-який запит з назв�
 login-cookie-step-4 = На вкладці «Заголовки» знайдіть Cookie серед заголовків запиту, клацніть правою кнопкою та скопіюйте значення.
 login-cookie-step-note = Вставте значення повністю: панелі «Куки» недостатньо, бо значення має містити SAPISID і __Secure-3PAPISID.
 login-cookie-title = Вставте cookie YouTube Music, щоб завершити вхід
+login-server-title = Підключіться до свого сервера Subsonic
+login-server-detail = Введіть адресу будь-якого сервера Subsonic або OpenSubsonic (Navidrome, Airsonic, Gonic, …), а потім увійдіть за допомогою імені користувача та пароля сервера. Сесія залишається на цьому пристрої.
+login-server-hint = https://music.example.com
+login-username-hint = Ім'я користувача
+login-password-hint = Пароль
+login-server-submit = Підключитися
 login-account-title = Виберіть акаунт
 login-account-detail = У цій сесії виконано вхід у кілька акаунтів Google. Виберіть той, який має використовувати Sonora.
 
