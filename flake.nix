@@ -106,6 +106,7 @@
               pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.makeWrapper ]
               ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
                 pkgs.makeBinaryWrapper
+                pkgs.undmg
               ];
 
             installPhase =
