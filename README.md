@@ -157,17 +157,17 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 | Language | Translated | Coverage |
 | --- | --- | --- |
-| English (`en-US`) | 518/518 | 100% |
-| Deutsch (`de`) | 518/518 | 100% |
-| Español (`es`) | 495/518 | 96% |
-| Français (`fr`) | 477/518 | 92% |
-| Italiano (`it`) | 474/518 | 92% |
-| Bahasa Indonesia (`id`) | 512/518 | 99% |
-| 日本語 (`ja`) | 495/518 | 96% |
-| Русский (`ru`) | 485/518 | 94% |
-| Українська (`uk`) | 485/518 | 94% |
-| Polski (`pl`) | 516/518 | 100% |
-| Português (Brasil) (`pt-BR`) | 495/518 | 96% |
+| English (`en-US`) | 519/519 | 100% |
+| Deutsch (`de`) | 519/519 | 100% |
+| Español (`es`) | 496/519 | 96% |
+| Français (`fr`) | 478/519 | 92% |
+| Italiano (`it`) | 475/519 | 92% |
+| Bahasa Indonesia (`id`) | 513/519 | 99% |
+| 日本語 (`ja`) | 496/519 | 96% |
+| Русский (`ru`) | 486/519 | 94% |
+| Українська (`uk`) | 486/519 | 94% |
+| Polski (`pl`) | 517/519 | 100% |
+| Português (Brasil) (`pt-BR`) | 496/519 | 96% |
 
 <!-- i18n:end -->
 

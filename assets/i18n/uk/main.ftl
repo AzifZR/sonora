@@ -411,6 +411,7 @@ settings-typeface-search = Пошук шрифту
 settings-typeface-none = Шрифтів не знайдено
 settings-server-side-decorations = Оформлення на стороні сервера
 settings-server-side-decorations-detail = Дозволити композитору малювати заголовок, рамку й тінь вікна
+settings-typeface-loading = Завантаження…
 settings-window-controls = Кнопки вікна
 settings-window-controls-detail = Малювати згорнути, розгорнути та закрити в заголовку вікна
 settings-controls-side = Сторона кнопок

@@ -494,6 +494,7 @@ settings-typeface-search = Szukaj czcionki
 settings-typeface-none = Nie znaleziono czcionek
 settings-server-side-decorations = Dekoracje po stronie serwera
 settings-server-side-decorations-detail = Pozwól kompozytorowi rysować pasek tytułu, obramowanie i cień
+settings-typeface-loading = Ładowanie…
 settings-window-controls = Przyciski okna
 settings-window-controls-detail = Rysuj minimalizację, maksymalizację i zamknięcie na pasku tytułu
 settings-controls-side = Strona przycisków

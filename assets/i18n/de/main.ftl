@@ -468,6 +468,7 @@ settings-typeface-search = Schriftart suchen
 settings-typeface-none = Keine Schriftart gefunden
 settings-server-side-decorations = Serverseitige Fensterdekorationen
 settings-server-side-decorations-detail = Titelleiste, Rahmen und Schatten vom Compositor zeichnen lassen
+settings-typeface-loading = Wird geladen…
 settings-window-controls = Fenstersteuerung
 settings-window-controls-detail = Minimieren, Maximieren und Schließen in der Titelleiste zeichnen
 settings-controls-side = Seite der Steuerung

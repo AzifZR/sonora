@@ -395,6 +395,7 @@ settings-typeface-detail = Il carattere tipografico usato da Sonora nell'interfa
 settings-typeface-system = Predefinito
 settings-typeface-search = Cerca un carattere
 settings-typeface-none = Nessun carattere trovato
+settings-typeface-loading = Caricamento…
 settings-window-controls = Controlli finestra
 settings-window-controls-detail = Disegna riduci a icona, ingrandisci e chiudi nella barra del titolo
 settings-controls-side = Lato controlli

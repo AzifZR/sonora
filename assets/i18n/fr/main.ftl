@@ -397,6 +397,7 @@ settings-typeface-search = Rechercher une police
 settings-typeface-none = Aucune police trouvée
 settings-server-side-decorations = Décorations côté serveur
 settings-server-side-decorations-detail = Laisser le compositeur dessiner la barre de titre, la bordure et l’ombre
+settings-typeface-loading = Chargement…
 settings-window-controls = Contrôles de fenêtre
 settings-window-controls-detail = Dessiner réduire, agrandir et fermer dans la barre de titre
 settings-controls-side = Côté des contrôles

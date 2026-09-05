@@ -180,24 +180,6 @@ impl SettingsView {
     pub(crate) fn select(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.popovers.close();
-        if tab == SettingsTab::Appearance && self.installed.is_none() && !self.loading_fonts {
-            self.loading_fonts = true;
-            let text_system = cx.text_system().clone();
-            let io = Io::global(cx);
-            self.font_task = Some(cx.spawn(async move |this, cx| {
-                let names = io
-                    .spawn_blocking(move || usable_fonts(text_system))
-                    .await
-                    .unwrap_or_default();
-                this.update(cx, |this, cx| {
-                    this.installed = Some(names);
-                    this.loading_fonts = false;
-                    this.font_task = None;
-                    cx.notify();
-                })
-                .ok();
-            }));
-        }
         cx.notify();
     }
 
@@ -508,7 +490,8 @@ impl SettingsView {
             let mut budget = TYPEFACE_BATCH;
             let mut faced = self.typeface_faced.borrow_mut();
 
-            // Drop faced fonts that are no longer visible in the scroll viewport to free RAM
+            // forget the faces that scrolled out of view, so scrolling back spends
+            // the per-frame budget on them again rather than facing them all at once
             faced.retain(|name| {
                 entries
                     .iter()
@@ -568,7 +551,9 @@ impl SettingsView {
             .menu(self.typefaces.menu("typefaces-menu", Picker::WIDE))
             .items(items)
             .when(self.loading_fonts, |picker| {
-                picker.item(MenuItem::new("typeface-loading", t!("play-loading")).disabled())
+                picker.item(
+                    MenuItem::new("typeface-loading", t!("settings-typeface-loading")).disabled(),
+                )
             })
             .when(barren && !self.loading_fonts, |picker| {
                 picker
@@ -1891,6 +1876,16 @@ impl Render for SettingsView {
                     this.installed = Some(names);
                     this.loading_fonts = false;
                     this.font_task = None;
+                    // the picker may already be open on an empty list: put the
+                    // cursor on the chosen face now that it can be found
+                    if this.popovers.shows(TYPEFACES) {
+                        let chosen = this.settings.read(cx).font();
+                        let place = this
+                            .typeface_entries()
+                            .iter()
+                            .position(|name| name.as_ref() == chosen);
+                        this.typefaces.place(place, cx);
+                    }
                     cx.notify();
                 })
                 .ok();

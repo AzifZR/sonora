@@ -3,6 +3,7 @@ use std::sync::Arc;
 use gpui::{Context, Entity, Task};
 use i18n::t;
 use music::{Album, AlbumDetail, ArtistRef, Contributor, Playlist, PlaylistDetail, Track};
+use tokio::task::AbortHandle;
 
 use crate::{Io, Library, LibraryEvent, Session, SessionEvent, join, mosaic};
 
@@ -28,17 +29,15 @@ pub struct Header {
     pub cover: Option<String>,
 }
 
-use tokio::task::AbortHandle;
-
 pub struct Detail {
+    id: Option<String>,
+    header: Option<Header>,
+    kind: Option<Collection>,
     album: Option<Album>,
     playlist: Option<Playlist>,
     tracks: Vec<Track>,
-    header: Option<Header>,
-    id: Option<String>,
-    kind: Option<Collection>,
-    loaded: bool,
     loading: bool,
+    loaded: bool,
     error: Option<String>,
     session: Entity<Session>,
     library: Entity<Library>,
