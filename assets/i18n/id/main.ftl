@@ -57,6 +57,19 @@ library-local-unconfigured = Konfigurasikan pustaka lokal Anda
 app-refresh-library = Refresh Pustaka
 app-sign-out = Keluar
 app-quit = Keluar
+app-settings = Pengaturan…
+app-hide = Sembunyikan Sonora
+app-hide-others = Sembunyikan Lainnya
+app-show-all = Tampilkan Semua
+app-edit = Edit
+app-cut = Potong
+app-copy = Salin
+app-paste = Tempel
+app-select-all = Pilih Semua
+app-window = Jendela
+app-close-window = Tutup Jendela
+app-minimize = Minimalkan
+app-zoom = Zoom
 
 # tray menu
 tray-show = Tampilkan Sonora

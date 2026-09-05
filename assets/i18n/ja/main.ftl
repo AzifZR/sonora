@@ -57,6 +57,19 @@ library-local-unconfigured = ローカルライブラリを設定する
 app-refresh-library = ライブラリを更新
 app-sign-out = サインアウト
 app-quit = 終了
+app-settings = 設定…
+app-hide = Sonoraを隠す
+app-hide-others = ほかを隠す
+app-show-all = すべてを表示
+app-edit = 編集
+app-cut = カット
+app-copy = コピー
+app-paste = ペースト
+app-select-all = すべてを選択
+app-window = ウインドウ
+app-close-window = ウインドウを閉じる
+app-minimize = しまう
+app-zoom = 拡大/縮小
 
 # table columns
 column-played-at = 再生日時

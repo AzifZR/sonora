@@ -691,7 +691,11 @@ field in the title bar. Don't build a second search box.
 **Actions and keys.** Declare actions in `crates/input/src/lib.rs` (`actions!` macro), bind them in
 `bindings()`, handle them with `cx.on_action` (global, in `sonora/src/actions.rs`) or
 `.on_action(cx.listener(…))` (scoped). Key contexts: `Workspace`, `Input`, `Table`. Both `cmd-` and
-`ctrl-` bindings are registered for every shortcut.
+`ctrl-` bindings are registered for every shortcut in `shared()`; `macos()` is appended only on
+macOS and holds the Cocoa conventions (`cmd-w`, `cmd-m`, `cmd-h`, `alt-` word motions, the Emacs
+control keys). GPUI prefers the binding registered last within one context, which is what lets
+that set override the shared one. Only macOS draws the menu bar, so `actions::menus` adds the
+Edit and Window menus there alone.
 
 **The tray outlives the window.** `sonora/src/tray.rs` owns one `Tray` entity driven by two
 backends: `tray/native.rs` (`tray-icon`, macOS and Windows) and `tray/sni.rs` (`ksni`, Linux over

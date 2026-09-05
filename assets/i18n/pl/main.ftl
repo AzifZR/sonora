@@ -57,6 +57,19 @@ library-local-unconfigured = Skonfiguruj lokalną bibliotekę
 app-refresh-library = Odśwież bibliotekę
 app-sign-out = Wyloguj się
 app-quit = Zakończ
+app-settings = Ustawienia…
+app-hide = Ukryj Sonora
+app-hide-others = Ukryj pozostałe
+app-show-all = Pokaż wszystkie
+app-edit = Edycja
+app-cut = Wytnij
+app-copy = Kopiuj
+app-paste = Wklej
+app-select-all = Zaznacz wszystko
+app-window = Okno
+app-close-window = Zamknij okno
+app-minimize = Minimalizuj
+app-zoom = Powiększ
 
 # tray menu
 tray-show = Pokaż Sonorę
