@@ -249,6 +249,10 @@ impl SettingsView {
         panel
     }
 
+    #[allow(
+        unused_variables,
+        reason = "cx is unused on macOS, no elements are contructed there"
+    )]
     fn decoration_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let rows = vec![
