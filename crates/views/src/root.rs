@@ -76,6 +76,8 @@ pub struct Root {
     navigation_transition: Option<Task<()>>,
     screens: Screens,
     _adaptive: Entity<Adaptive>,
+    #[cfg(target_os = "windows")]
+    background: Option<gpui::WindowBackgroundAppearance>,
 }
 
 impl Root {
@@ -226,6 +228,8 @@ impl Root {
                 settings,
             },
             _adaptive: adaptive,
+            #[cfg(target_os = "windows")]
+            background: None,
         };
         root.show(start, cx);
         root
@@ -569,6 +573,17 @@ impl Render for Root {
 
         let theme = *cx.theme();
         window.set_rem_size(theme.font_size);
+        #[cfg(target_os = "windows")]
+        {
+            let appearance = match theme.transparent {
+                true => gpui::WindowBackgroundAppearance::Transparent,
+                false => gpui::WindowBackgroundAppearance::Opaque,
+            };
+            if self.background != Some(appearance) {
+                self.background = Some(appearance);
+                window.set_background_appearance(appearance);
+            }
+        }
 
         let root = div()
             .relative()

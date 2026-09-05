@@ -184,11 +184,18 @@ fn open_window(cx: &mut App) {
     let saver = settings.saver();
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let decorations = settings.window_decorations();
+    let background = match cfg!(target_os = "windows") {
+        true => match settings.transparent() {
+            true => WindowBackgroundAppearance::Transparent,
+            false => WindowBackgroundAppearance::Opaque,
+        },
+        false => WindowBackgroundAppearance::Transparent,
+    };
 
     cx.open_window(
         WindowOptions {
             window_bounds: Some(placement),
-            window_background: WindowBackgroundAppearance::Transparent,
+            window_background: background,
             titlebar: Some(TitlebarOptions {
                 title: Some("Sonora".into()),
                 appears_transparent: true,
@@ -217,7 +224,7 @@ fn open_window(cx: &mut App) {
 fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DwmSetWindowAttribute,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
 
     let RawWindowHandle::Win32(handle) = HasWindowHandle::window_handle(window).ok()?.as_raw()
@@ -226,11 +233,12 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     };
     let handle = handle.hwnd.get() as *mut std::ffi::c_void;
     unsafe {
+        let preference = DWMWCP_ROUND;
         DwmSetWindowAttribute(
             handle,
-            DWMWA_NCRENDERING_POLICY as u32,
-            &DWMNCRP_DISABLED as *const _ as *const std::ffi::c_void,
-            size_of_val(&DWMNCRP_DISABLED) as u32,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &preference as *const _ as *const std::ffi::c_void,
+            size_of_val(&preference) as u32,
         );
     }
     Some(handle)
