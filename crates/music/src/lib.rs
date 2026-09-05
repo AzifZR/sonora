@@ -261,6 +261,7 @@ pub struct AccountChoice {
 pub enum SignInPrompt {
     Accounts(Vec<AccountChoice>),
     Code { code: String, url: String },
+    Url(String),
     Secret,
 }
 

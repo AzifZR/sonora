@@ -225,6 +225,17 @@ impl LoginView {
             )
     }
 
+    fn url_prompt(&self, url: String) -> impl IntoElement {
+        Button::new("copy-login-url")
+            .icon("icons/copy.svg")
+            .label(t!("menu-copy-link"))
+            .outline()
+            .small()
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(url.clone()));
+            })
+    }
+
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
         CookiePrompt::new(self.secret.clone())
             .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
@@ -322,6 +333,10 @@ impl Render for LoginView {
             Some(SignInPrompt::Code { code, url }) => Some((code, url)),
             _ => None,
         };
+        let url = match &state {
+            SessionState::Authorizing(Some(SignInPrompt::Url(url))) => Some(url.clone()),
+            _ => None,
+        };
 
         let theme = *cx.theme();
         let asking = self.usage.read(cx).asking();
@@ -362,6 +377,7 @@ impl Render for LoginView {
             .when_some(code, |this, (code, url)| {
                 this.child(self.code_prompt(code, url, cx).into_any_element())
             })
+            .when_some(url, |this, url| this.child(self.url_prompt(url)))
             .child(TabBar::new().w(COLUMN).items(tabs))
             .when_some(column, |this, column| this.child(self.column(column, cx)))
             .when_some(guest, |this, slug| {
