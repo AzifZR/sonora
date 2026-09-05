@@ -9,6 +9,7 @@ mod memory;
 mod single;
 mod tray;
 
+use std::process::exit;
 use std::sync::Arc;
 
 use gpui::{
@@ -30,8 +31,10 @@ fn main() {
 
     let opened = std::env::args().skip(1).find(|arg| !arg.starts_with('-'));
     let (sender, mut links) = tokio::sync::mpsc::unbounded_channel();
-    if let single::Instance::Running = single::claim(opened.as_deref(), sender.clone()) {
-        return;
+    match single::claim(opened.as_deref(), sender.clone()) {
+        single::Instance::First => {}
+        single::Instance::Running => return,
+        single::Instance::Failed => exit(1),
     }
     let opened_start = opened.as_deref().and_then(router::destination);
 
