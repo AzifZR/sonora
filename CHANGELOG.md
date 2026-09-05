@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
+  next launch notices nothing is listening, takes the socket over, and later launches and
+  `spotify:` links reach that window again instead of opening a second Sonora.
 - Local music now carries a date added, taken from when each file was last changed, so the Date
   added column fills in and sorting songs, albums and artists by it works.
 
