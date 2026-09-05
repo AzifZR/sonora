@@ -465,6 +465,7 @@ settings-typeface-detail = Jenis huruf yang digunakan Sonora di seluruh antarmuk
 settings-typeface-system = Default
 settings-typeface-search = Cari font
 settings-typeface-none = Tidak ada font yang ditemukan
+settings-typeface-loading = Memuat…
 settings-window-controls = Kontrol jendela
 settings-window-controls-detail = Tampilkan tombol minimalkan, maksimalkan, dan tutup pada title bar
 settings-controls-side = Sisi kontrol

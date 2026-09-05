@@ -412,6 +412,7 @@ settings-typeface-detail = インターフェース全体で Sonora が使う書
 settings-typeface-system = デフォルト
 settings-typeface-search = フォントを検索
 settings-typeface-none = フォントが見つかりません
+settings-typeface-loading = 読み込み中…
 settings-window-controls = ウィンドウコントロール
 settings-window-controls-detail = タイトルバーに最小化・最大化・閉じるを表示する
 settings-controls-side = コントロールの位置

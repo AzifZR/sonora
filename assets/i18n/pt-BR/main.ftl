@@ -456,6 +456,7 @@ settings-typeface-detail = A fonte usada pelo Sonora na interface
 settings-typeface-system = Padrão
 settings-typeface-search = Pesquisar fonte
 settings-typeface-none = Nenhuma fonte encontrada
+settings-typeface-loading = Carregando…
 settings-window-controls = Botões da janela
 settings-window-controls-detail = Desenhar minimizar, maximizar e fechar na barra de título
 settings-controls-side = Lado dos botões

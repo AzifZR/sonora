@@ -468,6 +468,7 @@ settings-typeface-search = Search a font
 settings-typeface-none = No fonts found
 settings-server-side-decorations = Server-side decorations
 settings-server-side-decorations-detail = Let the compositor draw the title bar, border and shadow
+settings-typeface-loading = Loading…
 settings-window-controls = Window controls
 settings-window-controls-detail = Draw minimise, maximise and close in the title bar
 settings-controls-side = Controls side
