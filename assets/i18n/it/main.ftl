@@ -57,6 +57,19 @@ library-local-unconfigured = Configura la tua libreria locale
 app-refresh-library = Aggiorna libreria
 app-sign-out = Disconnetti
 app-quit = Esci
+app-settings = Impostazioni…
+app-hide = Nascondi Sonora
+app-hide-others = Nascondi altre
+app-show-all = Mostra tutte
+app-edit = Modifica
+app-cut = Taglia
+app-copy = Copia
+app-paste = Incolla
+app-select-all = Seleziona tutto
+app-window = Finestra
+app-close-window = Chiudi finestra
+app-minimize = Contrai
+app-zoom = Zoom
 
 # table columns
 column-played-at = Riprodotto

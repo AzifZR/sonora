@@ -57,6 +57,19 @@ library-local-unconfigured = Richte deine lokale Bibliothek ein
 app-refresh-library = Bibliothek aktualisieren
 app-sign-out = Abmelden
 app-quit = Beenden
+app-settings = Einstellungen …
+app-hide = Sonora ausblenden
+app-hide-others = Andere ausblenden
+app-show-all = Alle einblenden
+app-edit = Bearbeiten
+app-cut = Ausschneiden
+app-copy = Kopieren
+app-paste = Einsetzen
+app-select-all = Alles auswählen
+app-window = Fenster
+app-close-window = Fenster schließen
+app-minimize = Im Dock ablegen
+app-zoom = Zoomen
 
 # tray menu
 tray-show = Sonora anzeigen

@@ -61,9 +61,10 @@ pub use glide::Glide;
 pub use info_card::{Fact, InfoCard};
 pub use inline_links::{InlineLink, InlineLinks};
 pub use input::{
-    Backspace, BackspaceWord, Copy, Cut, Delete, DeleteWord, Dismiss, End, Home, INPUT_CONTEXT,
-    Input, Left, Paste, Right, SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight,
-    SelectWordLeft, SelectWordRight, ShowCharacterPalette, Space, WordLeft, WordRight,
+    Backspace, BackspaceToStart, BackspaceWord, Copy, Cut, Delete, DeleteToEnd, DeleteWord,
+    Dismiss, End, Home, INPUT_CONTEXT, Input, Left, Paste, Right, SelectAll, SelectEnd, SelectHome,
+    SelectLeft, SelectRight, SelectWordLeft, SelectWordRight, ShowCharacterPalette, Space,
+    WordLeft, WordRight,
 };
 pub use label::{eyebrow, faint, heading, upper, vacant};
 pub use layout::{ALWAYS, MIN_CONTENT, ROOMY, Room, SNUG, VAST, WIDE};

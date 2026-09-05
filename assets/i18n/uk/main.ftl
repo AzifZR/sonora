@@ -57,6 +57,19 @@ library-local-unconfigured = Налаштуйте локальну бібліо�
 app-refresh-library = Оновити медіатеку
 app-sign-out = Вийти
 app-quit = Вихід
+app-settings = Налаштування…
+app-hide = Сховати Sonora
+app-hide-others = Сховати інші
+app-show-all = Показати все
+app-edit = Правка
+app-cut = Вирізати
+app-copy = Скопіювати
+app-paste = Вставити
+app-select-all = Вибрати все
+app-window = Вікно
+app-close-window = Закрити вікно
+app-minimize = Згорнути
+app-zoom = Змінити масштаб
 
 # table columns
 column-played-at = Прослухано

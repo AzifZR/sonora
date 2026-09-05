@@ -57,6 +57,19 @@ library-local-unconfigured = Configurez votre bibliothèque locale
 app-refresh-library = Actualiser la bibliothèque
 app-sign-out = Se déconnecter
 app-quit = Quitter
+app-settings = Réglages…
+app-hide = Masquer Sonora
+app-hide-others = Masquer les autres
+app-show-all = Tout afficher
+app-edit = Édition
+app-cut = Couper
+app-copy = Copier
+app-paste = Coller
+app-select-all = Tout sélectionner
+app-window = Fenêtre
+app-close-window = Fermer la fenêtre
+app-minimize = Placer dans le Dock
+app-zoom = Réduire/agrandir
 
 # table columns
 column-played-at = Écouté
