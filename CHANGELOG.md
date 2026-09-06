@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- On macOS, Sonora follows the platform's shortcuts: `⌘W` closes the window, `⌘M` minimises it,
+  `⌃⌘F` toggles native full screen, `⌘H` and `⌥⌘H` hide Sonora or everything else, and `⌘[` / `⌘]`
+  step through history. Text fields take the Cocoa conventions too: `⌥` arrows and `⌥⌫` work by
+  word, `⌘⌫` and `⌘⌦` clear to either end of the field, `⌘↑`/`⌘↓` jump to the ends, and the Emacs
+  control keys (`⌃A`, `⌃E`, `⌃B`, `⌃F`, `⌃D`, `⌃H`, `⌃K`) do what they do everywhere else on a
+  Mac. The menu bar gains Edit and Window menus and the usual Settings, Hide and Show All items.
+
+### Fixed
+
+- On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
+  next launch notices nothing is listening, takes the socket over, and later launches and
+  `spotify:` links reach that window again instead of opening a second Sonora.
+- Local music now carries a date added, taken from when each file was last changed, so the Date
+  added column fills in and sorting songs, albums and artists by it works.
+
 ## [0.31.0] - 2026-09-05
 
 ### Added

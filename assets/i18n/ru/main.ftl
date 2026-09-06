@@ -57,6 +57,19 @@ library-local-unconfigured = Настройте локальную библио�
 app-refresh-library = Обновить медиатеку
 app-sign-out = Выйти
 app-quit = Выход
+app-settings = Настройки…
+app-hide = Скрыть Sonora
+app-hide-others = Скрыть остальные
+app-show-all = Показать все
+app-edit = Правка
+app-cut = Вырезать
+app-copy = Копировать
+app-paste = Вставить
+app-select-all = Выбрать все
+app-window = Окно
+app-close-window = Закрыть окно
+app-minimize = Свернуть
+app-zoom = Изменить масштаб
 
 # table columns
 column-played-at = Прослушано
@@ -411,6 +424,7 @@ settings-typeface-search = Поиск шрифта
 settings-typeface-none = Шрифты не найдены
 settings-server-side-decorations = Оформление на стороне сервера
 settings-server-side-decorations-detail = Разрешить композитору отрисовывать заголовок, рамку и тень окна
+settings-typeface-loading = Загрузка…
 settings-window-controls = Кнопки окна
 settings-window-controls-detail = Рисовать свернуть, развернуть и закрыть в заголовке окна
 settings-controls-side = Сторона кнопок

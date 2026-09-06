@@ -237,6 +237,18 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
     })
 }
 
+/// When a file last changed, in whole seconds since the epoch. `None` when the
+/// filesystem does not keep the time or it sits outside what an `i64` of seconds holds.
+pub fn modified_at(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(since) => i64::try_from(since.as_secs()).ok(),
+        Err(before) => i64::try_from(before.duration().as_secs())
+            .ok()
+            .map(|seconds| -seconds),
+    }
+}
+
 pub fn track_from_file(
     path: &Path,
     artist_hint: Option<&str>,
@@ -323,7 +335,7 @@ pub fn track_from_file(
         album_id: album_dir.map(album_id),
         cover,
         duration,
-        added_at: None,
+        added_at: modified_at(path),
         added_by: None,
         playcount: None,
         popularity: 0,
@@ -370,7 +382,7 @@ pub fn album_from_tracks(
         release_date: String::new(),
         label: String::new(),
         copyrights: Vec::new(),
-        added_at: None,
+        added_at: tracks.iter().filter_map(|track| track.added_at).max(),
     }
 }
 
@@ -465,7 +477,14 @@ fn cache_image_data(data: &[u8], media_type_or_ext: &str, cache_dir: &Path) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
-
+  
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+  
     #[test]
     fn infer_stem_with_title_and_artist() {
         let (title, artist) = infer_from_stem("Chann Vi Gawah - Madhav Mahajan");
@@ -557,5 +576,42 @@ mod tests {
         let decoder = rodio::Decoder::builder().with_data(reader).build().unwrap();
         let duration = decoder.total_duration().unwrap();
         assert_eq!(duration.as_secs(), 252);
+    }
+
+    #[test]
+    fn a_track_is_dated_by_the_file_it_came_from() {
+        let dir = scratch("sonora-wire-test-dated");
+        let path = dir.join("song.mp3");
+        std::fs::write(&path, []).unwrap();
+
+        let stamped = modified_at(&path).expect("a file just written has a modified time");
+        let track = track_from_file(&path, None, None, &dir).expect("a track");
+
+        assert_eq!(track.added_at, Some(stamped));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_album_is_dated_by_its_newest_track() {
+        let dir = scratch("sonora-wire-test-album-dated");
+        let path = dir.join("song.mp3");
+        std::fs::write(&path, []).unwrap();
+
+        let mut older = track_from_file(&path, None, None, &dir).expect("a track");
+        let mut newer = older.clone();
+        older.added_at = Some(1_000);
+        newer.added_at = Some(2_000);
+
+        let album = album_from_tracks("Album", "Artist", &dir, &[older, newer], 2026);
+
+        assert_eq!(album.added_at, Some(2_000));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_file_has_no_date() {
+        let dir = scratch("sonora-wire-test-missing");
+        assert_eq!(modified_at(&dir.join("gone.mp3")), None);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

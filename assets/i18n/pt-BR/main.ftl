@@ -57,6 +57,19 @@ library-local-unconfigured = Configure sua biblioteca local
 app-refresh-library = Atualizar Biblioteca
 app-sign-out = Sair
 app-quit = Sair do aplicativo
+app-settings = Ajustes…
+app-hide = Ocultar Sonora
+app-hide-others = Ocultar outros
+app-show-all = Mostrar tudo
+app-edit = Editar
+app-cut = Recortar
+app-copy = Copiar
+app-paste = Colar
+app-select-all = Selecionar tudo
+app-window = Janela
+app-close-window = Fechar janela
+app-minimize = Minimizar
+app-zoom = Zoom
 
 # table columns
 column-played-at = Tocada em
@@ -456,6 +469,7 @@ settings-typeface-detail = A fonte usada pelo Sonora na interface
 settings-typeface-system = Padrão
 settings-typeface-search = Pesquisar fonte
 settings-typeface-none = Nenhuma fonte encontrada
+settings-typeface-loading = Carregando…
 settings-window-controls = Botões da janela
 settings-window-controls-detail = Desenhar minimizar, maximizar e fechar na barra de título
 settings-controls-side = Lado dos botões
