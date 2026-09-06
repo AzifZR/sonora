@@ -202,6 +202,13 @@
               ]
             else
               [ ];
+          # Apple's own xcrun, so `xcrun metal` can reach the Metal toolchain that
+          # Xcode 26 mounts outside DEVELOPER_DIR. The xcbuild shim the Apple SDK
+          # drags onto PATH cannot, and neither can any xcrun pointed at the Nix SDK.
+          xcodeXcrun = pkgs.runCommandLocal "xcode-xcrun" { } ''
+            mkdir -p $out/bin
+            ln -s /usr/bin/xcrun $out/bin/xcrun
+          '';
         in
         {
           default = pkgs.mkShell {
@@ -230,12 +237,23 @@
               else
                 "";
 
-            shellHook = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
-              if [ ! -d /run/opengl-driver ]; then
-                export VK_DRIVER_FILES="${pkgs.mesa}/share/vulkan/icd.d"
-                export VK_IMPLICIT_LAYER_PATH="${pkgs.mesa}/share/vulkan/implicit_layer.d"
-              fi
-            '';
+            shellHook =
+              pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+                if [ ! -d /run/opengl-driver ]; then
+                  export VK_DRIVER_FILES="${pkgs.mesa}/share/vulkan/icd.d"
+                  export VK_IMPLICIT_LAYER_PATH="${pkgs.mesa}/share/vulkan/implicit_layer.d"
+                fi
+              ''
+              # gpui_apple compiles its shaders with `xcrun -sdk macosx metal` at build
+              # time. The Nix Apple SDK has no Metal toolchain, so hand xcrun back to the
+              # installed Xcode; the Nix clang keeps building against SDKROOT regardless.
+              + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+                # xcode-select echoes DEVELOPER_DIR back when it is set, so ask with it unset.
+                if xcode="$(env -u DEVELOPER_DIR /usr/bin/xcode-select -p 2>/dev/null)"; then
+                  export DEVELOPER_DIR="$xcode"
+                  export PATH="${xcodeXcrun}/bin:$PATH"
+                fi
+              '';
           };
         }
       );
