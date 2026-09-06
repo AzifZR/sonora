@@ -6,6 +6,7 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::Accessor;
 use lofty::probe::Probe;
+use lofty::tag::ItemKey::AlbumArtist;
 use lofty::tag::Tag;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -119,6 +120,7 @@ struct FallbackProbe {
     title: Option<String>,
     artist: Option<String>,
     album: Option<String>,
+    album_artist: Option<String>,
     track_number: u32,
     disc_number: u32,
     year: Option<i32>,
@@ -166,6 +168,7 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
     let mut title = None;
     let mut artist = None;
     let mut album = None;
+    let mut album_artist = None;
     let mut track_number = 0;
     let mut disc_number = 0;
     let mut year = None;
@@ -191,6 +194,9 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
                 }
                 Some(StandardTagKey::Album) if album.is_none() => {
                     album = clean_val(&tag.value);
+                }
+                Some(StandardTagKey::AlbumArtist) if album_artist.is_none() => {
+                    album_artist = clean_val(&tag.value);
                 }
                 Some(StandardTagKey::TrackNumber) if track_number == 0 => {
                     if let Ok(n) = tag.value.to_string().parse() {
@@ -230,6 +236,7 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
         title,
         artist,
         album,
+        album_artist,
         track_number,
         disc_number,
         year,
@@ -254,7 +261,7 @@ pub fn track_from_file(
     artist_hint: Option<&str>,
     album: Option<(&str, &Path)>,
     cache_dir: &Path,
-) -> Option<Track> {
+) -> Option<(Track, String)> {
     let tagged = Probe::open(path).ok().and_then(|file| file.read().ok());
     let tag = tagged
         .as_ref()
@@ -289,6 +296,13 @@ pub fn track_from_file(
         .or_else(|| artist_hint.map(str::to_owned))
         .or(inferred_artist)
         .unwrap_or_else(|| "Unknown Artist".to_owned());
+
+    let album_artist = clean(
+        tag.and_then(|tag| tag.get_string(AlbumArtist))
+            .map(std::borrow::Cow::Borrowed),
+    )
+    .or_else(|| fallback.as_ref().and_then(|fb| fb.album_artist.clone()))
+    .unwrap_or_else(|| artist.clone());
 
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
@@ -325,27 +339,30 @@ pub fn track_from_file(
         cover = cache_image_data(data, mime, cache_dir);
     }
 
-    Some(Track {
-        id: Some(track_id(path)),
-        name,
-        playable: is_playable(path),
-        artists: artist.clone(),
-        artist_refs: vec![artist_ref(&artist)],
-        album: album_name,
-        album_id: album_dir.map(album_id),
-        cover,
-        duration,
-        added_at: modified_at(path),
-        added_by: None,
-        playcount: None,
-        popularity: 0,
-        explicit: false,
-        track_number,
-        disc_number,
-        tags: Vec::new(),
-        languages: Vec::new(),
-        credits: Vec::new(),
-    })
+    Some((
+        Track {
+            id: Some(track_id(path)),
+            name,
+            playable: is_playable(path),
+            artists: artist.clone(),
+            artist_refs: vec![artist_ref(&artist)],
+            album: album_name,
+            album_id: album_dir.map(album_id),
+            cover,
+            duration,
+            added_at: modified_at(path),
+            added_by: None,
+            playcount: None,
+            popularity: 0,
+            explicit: false,
+            track_number,
+            disc_number,
+            tags: Vec::new(),
+            languages: Vec::new(),
+            credits: Vec::new(),
+        },
+        album_artist,
+    ))
 }
 
 pub fn tag_year(path: &Path) -> Option<i32> {
@@ -477,14 +494,14 @@ fn cache_image_data(data: &[u8], media_type_or_ext: &str, cache_dir: &Path) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
-  
+
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(name);
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
-  
+
     #[test]
     fn infer_stem_with_title_and_artist() {
         let (title, artist) = infer_from_stem("Chann Vi Gawah - Madhav Mahajan");
@@ -556,7 +573,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let track = track_from_file(path, None, None, &temp).expect("track parsed");
+        let (track, _) = track_from_file(path, None, None, &temp).expect("track parsed");
         assert!(track.playable);
         assert_eq!(track.name, "Chann Vi Gawah");
         assert_eq!(track.artists, "Madhav Mahajan");
@@ -585,7 +602,7 @@ mod tests {
         std::fs::write(&path, []).unwrap();
 
         let stamped = modified_at(&path).expect("a file just written has a modified time");
-        let track = track_from_file(&path, None, None, &dir).expect("a track");
+        let (track, _) = track_from_file(&path, None, None, &dir).expect("a track");
 
         assert_eq!(track.added_at, Some(stamped));
         std::fs::remove_dir_all(&dir).ok();
@@ -597,7 +614,7 @@ mod tests {
         let path = dir.join("song.mp3");
         std::fs::write(&path, []).unwrap();
 
-        let mut older = track_from_file(&path, None, None, &dir).expect("a track");
+        let (mut older, _) = track_from_file(&path, None, None, &dir).expect("a track");
         let mut newer = older.clone();
         older.added_at = Some(1_000);
         newer.added_at = Some(2_000);

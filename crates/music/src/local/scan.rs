@@ -20,15 +20,16 @@ pub struct Scanned {
 
 pub fn scan(root: &Path, cache_dir: &Path) -> Scanned {
     let mut scanned = Scanned::default();
+
     if !root.is_dir() {
         return scanned;
     }
 
     for entry in entries(root) {
         if entry.is_file() {
-            scanned
-                .tracks
-                .extend(wire::track_from_file(&entry, None, None, cache_dir));
+            scanned.tracks.extend(
+                wire::track_from_file(&entry, None, None, cache_dir).map(|(track, _)| track),
+            );
             continue;
         }
         if !entry.is_dir() {
@@ -55,7 +56,9 @@ fn scan_stragglers(root: &Path, cache_dir: &Path, scanned: &mut Scanned) {
             continue;
         }
         let artist_hint = path.parent().map(folder_name);
-        if let Some(track) = wire::track_from_file(&path, artist_hint.as_deref(), None, cache_dir) {
+        if let Some((track, _)) =
+            wire::track_from_file(&path, artist_hint.as_deref(), None, cache_dir)
+        {
             scanned.tracks.push(track);
         }
     }
@@ -83,12 +86,10 @@ fn scan_artist(dir: &Path, cache_dir: &Path, scanned: &mut Scanned) {
 
     for entry in entries(dir) {
         if entry.is_file() {
-            scanned.tracks.extend(wire::track_from_file(
-                &entry,
-                Some(&artist),
-                None,
-                cache_dir,
-            ));
+            scanned.tracks.extend(
+                wire::track_from_file(&entry, Some(&artist), None, cache_dir)
+                    .map(|(track, _)| track),
+            );
             continue;
         }
         if !entry.is_dir() {
@@ -101,35 +102,37 @@ fn scan_artist(dir: &Path, cache_dir: &Path, scanned: &mut Scanned) {
 fn scan_album(dir: &Path, artist: &str, cache_dir: &Path, scanned: &mut Scanned) {
     let (name, folder_year) = dated(&folder_name(dir));
 
-    let mut tracks: Vec<Track> = entries(dir)
+    let mut parsed: Vec<(Track, String)> = entries(dir)
         .into_iter()
         .filter(|entry| entry.is_file())
         .filter_map(|entry| {
             wire::track_from_file(&entry, Some(artist), Some((&name, dir)), cache_dir)
         })
         .collect();
-    if tracks.is_empty() {
+    if parsed.is_empty() {
         return;
     }
-    tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
+    parsed.sort_by_key(|(track, _)| (track.disc_number, track.track_number, track.name.clone()));
 
-    let album_artist = tracks
+    let album_artist = parsed
         .first()
-        .map(|track| track.artists.clone())
+        .map(|(_, album_artist)| album_artist.clone())
         .unwrap_or_else(|| artist.to_owned());
-    let album_name = tracks
+    let album_name = parsed
         .first()
-        .map(|track| track.album.clone())
+        .map(|(track, _)| track.album.clone())
         .filter(|album| !album.is_empty())
         .unwrap_or(name);
 
-    let year = tracks
+    let year = parsed
         .first()
-        .and_then(|track| track.id.as_deref())
+        .and_then(|(track, _)| track.id.as_deref())
         .and_then(wire::path_from_track_id)
         .and_then(wire::tag_year)
         .or(folder_year)
         .unwrap_or(0);
+
+    let tracks: Vec<Track> = parsed.into_iter().map(|(track, _)| track).collect();
 
     scanned.albums.push(wire::album_from_tracks(
         &album_name,
