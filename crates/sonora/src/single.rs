@@ -29,14 +29,19 @@ pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
     let listener = match ListenerOptions::new().name(name.clone()).create_sync() {
         Ok(listener) => listener,
 
-        Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            // There's probably a running instance.
+        Err(error) => {
+            // Windows reports an occupied pipe with an error other than
+            // AddrInUse, so any failure may mean another Sonora owns the socket.
             if hand_over(name.clone(), link) {
                 return Instance::Running;
             }
 
-            // Nothing answered. On filesystem-backed Unix sockets this may
-            // be a stale socket left behind by an unclean shutdown.
+            // Only a filesystem socket can leave a stale AddrInUse behind.
+            if error.kind() != ErrorKind::AddrInUse {
+                log::error!("single: cannot own the instance socket: {error:#}");
+                return Instance::Failed;
+            }
+
             log::warn!("single: socket is occupied but unreachable; attempting recovery");
 
             match ListenerOptions::new()
@@ -47,15 +52,10 @@ pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
             {
                 Ok(listener) => listener,
                 Err(error) => {
-                    log::warn!("single: cannot recover instance socket: {error:#}");
-                    return Instance::First;
+                    log::error!("single: cannot recover instance socket: {error:#}");
+                    return Instance::Failed;
                 }
             }
-        }
-
-        Err(error) => {
-            log::error!("single: cannot own the instance socket: {error:#}");
-            return Instance::Failed;
         }
     };
 
