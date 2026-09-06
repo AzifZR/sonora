@@ -1723,7 +1723,9 @@ impl Render for Aside {
                     cx.notify();
                 }
             }))
-            .child(self.header(sections, window, cx))
+            .when(self.titled || self.tab == SideTab::Queue, |this| {
+                this.child(self.header(sections, window, cx))
+            })
             .child(
                 div()
                     .id("queue-drop")
