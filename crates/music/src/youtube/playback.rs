@@ -380,25 +380,29 @@ async fn engine_loop(
             }
             arrival = arrivals.recv() => {
                 let Some(Fetched { epoch: at, id, kind, result }) = arrival else { break };
-                if preloading.as_ref().is_some_and(|(p_id, _)| p_id == &id) {
+                let promoted = matches!(&kind, Kind::Ahead { .. })
+                    && pending == Some(epoch)
+                    && current.is_none()
+                    && preloading
+                        .as_ref()
+                        .is_some_and(|(preloaded_id, _)| preloaded_id == &id);
+                if preloading
+                    .as_ref()
+                    .is_some_and(|(preloaded_id, _)| preloaded_id == &id)
+                {
                     preloading = None;
                 }
-                let target = match kind {
-                    Kind::Play if at == epoch && pending == Some(epoch) => true,
-                    _ if pending == Some(epoch) && current.is_none() && ahead.as_ref().is_some_and(|(p_id, _)| p_id == &id) => true,
-                    _ => false,
+                let target = match &kind {
+                    Kind::Play => at == epoch && pending == Some(epoch),
+                    Kind::Ahead { .. } => promoted,
                 };
                 if target {
                     pending = None;
                     inflight = None;
                     let at = hold.take();
-                    let loaded = match kind {
-                        Kind::Play => result,
-                        Kind::Ahead { .. } => ahead.take().map(|(_, l)| l).context("missing preloaded audio"),
-                    };
-                    match loaded
-                        .and_then(|loaded| begin(&sink, &id, &loaded, &config, autostart, at))
-                    {
+                    match result.and_then(|loaded| {
+                        begin(&sink, &id, &loaded, &config, autostart, at)
+                    }) {
                         Ok(slot) => {
                             announce(&events, &slot, autostart, at.unwrap_or_default());
                             prev_len = sink.len();
