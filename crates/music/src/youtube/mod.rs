@@ -36,6 +36,9 @@ enum Saved {
 
 pub struct YouTubeProvider {
     credentials: PathBuf,
+    /// The cookie store ytmusic writes back to as Google rotates the session. The pasted
+    /// header in the credential file seeds it when it is missing.
+    cookies: PathBuf,
     resolved: PathBuf,
     player: PathBuf,
 }
@@ -45,6 +48,7 @@ impl YouTubeProvider {
         let cache = credentials::dir("youtube");
         Self {
             credentials: cache.join(credentials::FILE),
+            cookies: cache.join("cookies.json"),
             resolved: cache.join("resolved.json"),
             player: cache.join("player.json"),
         }
@@ -69,6 +73,7 @@ impl YouTubeProvider {
         Arc::new(
             YtMusic::with_cookies(cookies)
                 .as_user(authuser)
+                .persist_cookies(self.cookies.clone())
                 .cache_resolutions(self.resolved.clone())
                 .cache_player(self.player.clone()),
         )
@@ -118,6 +123,7 @@ impl YouTubeProvider {
         };
 
         let profile = wire::profile(account.profile.clone());
+        credentials::remove(&self.cookies);
         let api = self.cookie_client(&cookies, account.index);
         self.store_cookies(&cookies, account.index)?;
         log::debug!(
@@ -269,5 +275,6 @@ impl MusicProvider for YouTubeProvider {
 
     fn sign_out(&self) {
         credentials::remove(&self.credentials);
+        credentials::remove(&self.cookies);
     }
 }
