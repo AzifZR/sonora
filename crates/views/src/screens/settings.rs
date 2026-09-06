@@ -23,7 +23,7 @@ use ui::{
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LICENSE_URL: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
-const SOURCE_URL: &str = "https://github.com/nolight132/sonora";
+const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
