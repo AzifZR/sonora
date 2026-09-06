@@ -89,6 +89,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Changing the audio output restarts playback on the selected device.
 - Artwork uses less memory while images load and remain cached.
 
+### Fixed
+
+- Local music cover thumbnails are cached under `$XDG_CACHE_HOME` instead of `$XDG_CONFIG_HOME`.
+
 ## [0.29.0] - 2026-09-03
 
 ### Added
