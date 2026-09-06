@@ -101,7 +101,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Sonora ships as a Flatpak. Every release attaches a bundle for x86_64 and aarch64, and adding
-  the Sonora repository once (`flatpak install --user https://nolight132.github.io/sonora/sonora.flatpakref`)
+  the Sonora repository once (`flatpak install --user https://sonorahq.github.io/sonora/sonora.flatpakref`)
   keeps it current through `flatpak update`.
 - Italian and Brazilian Portuguese translations.
 
@@ -1339,45 +1339,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/nolight132/sonora/compare/v0.31.0...HEAD
-[0.31.0]: https://github.com/nolight132/sonora/compare/v0.30.0...v0.31.0
-[0.30.0]: https://github.com/nolight132/sonora/compare/v0.29.0...v0.30.0
-[0.29.0]: https://github.com/nolight132/sonora/compare/v0.28.1...v0.29.0
-[0.28.1]: https://github.com/nolight132/sonora/compare/v0.28.0...v0.28.1
-[0.28.0]: https://github.com/nolight132/sonora/compare/v0.27.0...v0.28.0
-[0.27.0]: https://github.com/nolight132/sonora/compare/v0.26.0...v0.27.0
-[0.26.0]: https://github.com/nolight132/sonora/compare/v0.25.0...v0.26.0
-[0.25.0]: https://github.com/nolight132/sonora/compare/v0.24.1...v0.25.0
-[0.24.1]: https://github.com/nolight132/sonora/compare/v0.24.0...v0.24.1
-[0.24.0]: https://github.com/nolight132/sonora/compare/v0.23.0...v0.24.0
-[0.23.0]: https://github.com/nolight132/sonora/compare/v0.22.0...v0.23.0
-[0.22.0]: https://github.com/nolight132/sonora/compare/v0.21.0...v0.22.0
-[0.21.0]: https://github.com/nolight132/sonora/compare/v0.20.0...v0.21.0
-[0.20.0]: https://github.com/nolight132/sonora/compare/v0.19.1...v0.20.0
-[0.19.1]: https://github.com/nolight132/sonora/compare/v0.19.0...v0.19.1
-[0.19.0]: https://github.com/nolight132/sonora/compare/v0.18.0...v0.19.0
-[0.18.0]: https://github.com/nolight132/sonora/compare/v0.17.1...v0.18.0
-[0.17.1]: https://github.com/nolight132/sonora/compare/v0.17.0...v0.17.1
-[0.17.0]: https://github.com/nolight132/sonora/compare/v0.16.3...v0.17.0
-[0.16.3]: https://github.com/nolight132/sonora/compare/v0.16.2...v0.16.3
-[0.16.2]: https://github.com/nolight132/sonora/compare/v0.16.1...v0.16.2
-[0.16.1]: https://github.com/nolight132/sonora/compare/v0.16.0...v0.16.1
-[0.16.0]: https://github.com/nolight132/sonora/compare/v0.15.0...v0.16.0
-[0.15.0]: https://github.com/nolight132/sonora/compare/v0.14.0...v0.15.0
-[0.14.0]: https://github.com/nolight132/sonora/compare/v0.13.0...v0.14.0
-[0.13.0]: https://github.com/nolight132/sonora/compare/v0.12.1...v0.13.0
-[0.12.1]: https://github.com/nolight132/sonora/compare/v0.12.0...v0.12.1
-[0.12.0]: https://github.com/nolight132/sonora/compare/v0.11.0...v0.12.0
-[0.11.0]: https://github.com/nolight132/sonora/compare/v0.10.0...v0.11.0
-[0.10.0]: https://github.com/nolight132/sonora/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/nolight132/sonora/compare/v0.8.0...v0.9.0
-[0.8.0]: https://github.com/nolight132/sonora/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/nolight132/sonora/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/nolight132/sonora/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/nolight132/sonora/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/nolight132/sonora/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/nolight132/sonora/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/nolight132/sonora/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/nolight132/sonora/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/nolight132/sonora/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/nolight132/sonora/releases/tag/v0.1.0
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/sonorahq/sonora/compare/v0.30.0...v0.31.0
+[0.30.0]: https://github.com/sonorahq/sonora/compare/v0.29.0...v0.30.0
+[0.29.0]: https://github.com/sonorahq/sonora/compare/v0.28.1...v0.29.0
+[0.28.1]: https://github.com/sonorahq/sonora/compare/v0.28.0...v0.28.1
+[0.28.0]: https://github.com/sonorahq/sonora/compare/v0.27.0...v0.28.0
+[0.27.0]: https://github.com/sonorahq/sonora/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/sonorahq/sonora/compare/v0.25.0...v0.26.0
+[0.25.0]: https://github.com/sonorahq/sonora/compare/v0.24.1...v0.25.0
+[0.24.1]: https://github.com/sonorahq/sonora/compare/v0.24.0...v0.24.1
+[0.24.0]: https://github.com/sonorahq/sonora/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/sonorahq/sonora/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/sonorahq/sonora/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/sonorahq/sonora/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/sonorahq/sonora/compare/v0.19.1...v0.20.0
+[0.19.1]: https://github.com/sonorahq/sonora/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/sonorahq/sonora/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/sonorahq/sonora/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/sonorahq/sonora/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/sonorahq/sonora/compare/v0.16.3...v0.17.0
+[0.16.3]: https://github.com/sonorahq/sonora/compare/v0.16.2...v0.16.3
+[0.16.2]: https://github.com/sonorahq/sonora/compare/v0.16.1...v0.16.2
+[0.16.1]: https://github.com/sonorahq/sonora/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/sonorahq/sonora/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/sonorahq/sonora/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/sonorahq/sonora/compare/v0.13.0...v0.14.0
+[0.13.0]: https://github.com/sonorahq/sonora/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/sonorahq/sonora/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/sonorahq/sonora/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/sonorahq/sonora/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/sonorahq/sonora/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/sonorahq/sonora/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/sonorahq/sonora/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/sonorahq/sonora/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/sonorahq/sonora/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/sonorahq/sonora/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/sonorahq/sonora/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/sonorahq/sonora/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/sonorahq/sonora/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/sonorahq/sonora/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/sonorahq/sonora/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/sonorahq/sonora/releases/tag/v0.1.0

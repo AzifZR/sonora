@@ -134,7 +134,7 @@ extension, which also supplies the mold that `.cargo/config.toml` asks for. `fla
 turns `Cargo.lock` into `cargo-sources.json` (generated, never committed) and `flatpak/build-flatpak.sh`
 runs the build locally. The release workflow builds both arches in Flathub's builder image, imports them
 into the signed OSTree repo on the `flatpak-repo` branch, which GitHub Pages serves at
-`https://nolight132.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
+`https://sonorahq.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
 `flatpak/export-bundles.sh` re-exports them from that repo so each carries the commit signature, the
 repo URL and the public key, and `flatpak update` follows the repo afterwards. `flatpak-bundles.yml`
 reruns that export for an existing release and swaps its bundles and checksum lines.
