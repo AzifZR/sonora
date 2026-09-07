@@ -22,6 +22,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `sonorahq.github.io/sonora`. A remote added before the move needs
   `flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora` once.
 
+- The Flatpak shows its tray icon on KDE Plasma and other StatusNotifier desktops, so Close to
+  tray keeps Sonora playing after the window closes. The sandbox forbids the well-known bus name
+  the tray used to claim, and Sonora now registers under its unique connection name instead.
+
 - On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
   next launch notices nothing is listening, takes the socket over, and later launches and
   `spotify:` links reach that window again instead of opening a second Sonora.
