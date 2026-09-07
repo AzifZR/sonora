@@ -13,6 +13,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTagKey};
 use symphonia::core::probe::Hint;
 
+use super::id3;
 use crate::{
     Album, ArtistRef, LOCAL_ALBUM_PREFIX, LOCAL_ARTIST_PREFIX, LOCAL_TRACK_PREFIX, ReleaseType,
     Track,
@@ -338,15 +339,24 @@ pub fn track_from_file(
         duration = fb.duration;
     }
 
+    // Last resort: `lofty` failed to open the tag at all, which also means `probe_symphonia`'s
+    // own text-frame reading gave up on it (its id3v2-skip retry above only ever recovers
+    // duration, never metadata, since that retry starts past the whole tag on purpose). This
+    // hand-rolled reader skips a frame it doesn't understand by its declared size alone, so it
+    // can still recover the other, perfectly well-formed frames around it.
+    let lenient = tag.is_none().then(|| id3::read(path)).flatten();
+
     let (inferred_title, inferred_artist) = infer_from_stem(&file_stem(path));
 
     let name = clean(tag.and_then(Accessor::title))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.title.clone()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.title.clone()))
         .or(inferred_title)
         .unwrap_or_else(|| file_stem(path));
 
     let artist = clean(tag.and_then(Accessor::artist))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.artist.clone()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.artist.clone()))
         .or_else(|| artist_hint.map(str::to_owned))
         .or(inferred_artist)
         .unwrap_or_else(|| "Unknown Artist".to_owned());
@@ -356,10 +366,12 @@ pub fn track_from_file(
             .map(std::borrow::Cow::Borrowed),
     )
     .or_else(|| fallback.as_ref().and_then(|fb| fb.album_artist.clone()))
+    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()))
     .unwrap_or_else(|| artist.clone());
 
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.album.clone()))
         .or_else(|| album_hint.map(str::to_owned))
         .unwrap_or_default();
 
@@ -371,6 +383,7 @@ pub fn track_from_file(
                 .map(|fb| fb.track_number)
                 .filter(|n| *n > 0)
         })
+        .or_else(|| lenient.as_ref().and_then(|l| l.track_number))
         .unwrap_or(0);
 
     let disc_number = tag
@@ -381,12 +394,19 @@ pub fn track_from_file(
                 .map(|fb| fb.disc_number)
                 .filter(|n| *n > 0)
         })
+        .or_else(|| lenient.as_ref().and_then(|l| l.disc_number))
         .unwrap_or(0);
 
     let mut cover = extract_cover(tag, path, cache_dir);
     if cover.is_none()
         && let Some(ref fb) = fallback
         && let Some((ref data, ref mime)) = fb.cover_data
+    {
+        cover = cache_image_data(data, mime, cache_dir);
+    }
+    if cover.is_none()
+        && let Some(ref l) = lenient
+        && let Some((ref data, ref mime)) = l.cover
     {
         cover = cache_image_data(data, mime, cache_dir);
     }
@@ -429,7 +449,10 @@ pub fn tag_year(path: &Path) -> Option<i32> {
     {
         return Some(year);
     }
-    probe_symphonia(path).and_then(|fb| fb.year)
+    if let Some(year) = probe_symphonia(path).and_then(|fb| fb.year) {
+        return Some(year);
+    }
+    id3::read(path).and_then(|lenient| lenient.year)
 }
 
 pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {

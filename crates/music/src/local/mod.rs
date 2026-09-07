@@ -1,4 +1,5 @@
 mod client;
+mod id3;
 mod playback;
 mod scan;
 mod store;
