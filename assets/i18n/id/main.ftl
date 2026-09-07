@@ -531,7 +531,6 @@ settings-local-folder = Folder musik yang diimpor
 settings-local-folder-empty = Belum dikonfigurasi
 settings-choose-folder = Pilih folder…
 settings-rescan = Pindai ulang
-settings-clear-folder = Hapus
 settings-tab-about = Tentang
 settings-version = Versi
 settings-version-detail = Build Sonora yang sedang kamu jalankan

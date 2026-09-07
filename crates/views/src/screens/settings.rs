@@ -1350,17 +1350,15 @@ impl SettingsView {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let path = self.session.read(cx).local_path();
-        let detail = match &path {
-            Some(path) => SharedString::from(path.clone()),
-            None => t!("settings-local-folder-empty"),
-        };
+        let paths = self.session.read(cx).local_paths();
 
-        let choose = local::choose_button("choose-local-folder")
+        let add = local::choose_button("add-local-folder")
+            .label(t!("settings-add-folder"))
+            .icon("icons/plus.svg")
             .small()
             .outline();
 
-        let rescan = path.is_some().then(|| {
+        let rescan = (!paths.is_empty()).then(|| {
             Button::new("rescan-local-folder")
                 .label(t!("settings-rescan"))
                 .small()
@@ -1368,46 +1366,91 @@ impl SettingsView {
                 .on_click(cx.listener(|this, _, _, cx| this.rescan_local_folder(cx)))
         });
 
-        let clear = path.is_some().then(|| {
-            Button::new("clear-local-folder")
-                .label(t!("settings-clear-folder"))
-                .small()
-                .ghost()
-                .on_click(cx.listener(|this, _, _, cx| this.clear_local_folder(cx)))
-        });
-
-        self.row(
+        let header = self.row(
             t!("settings-local-folder"),
-            detail,
+            match paths.is_empty() {
+                true => t!("settings-local-folder-empty"),
+                false => SharedString::default(),
+            },
             muted,
             small,
             div()
                 .flex()
                 .gap_2()
-                .child(choose)
+                .child(add)
                 .children(rescan)
-                .children(clear)
                 .into_any_element(),
-        )
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(header)
+            .children((!paths.is_empty()).then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .pb_2()
+                    .children(paths.into_iter().enumerate().map(|(index, path)| {
+                        Self::local_folder_item(index, path, muted, small, &mut *cx)
+                    }))
+            }))
+    }
+
+    fn local_folder_item(
+        index: usize,
+        path: String,
+        muted: gpui::Hsla,
+        small: Pixels,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id(("local-folder-item", index))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_color(muted)
+                    .text_size(small)
+                    .child(SharedString::from(path.clone())),
+            )
+            .child(
+                Button::new(("remove-local-folder", index))
+                    .ghost()
+                    .small()
+                    .icon("icons/x.svg")
+                    .tooltip("settings-remove-folder")
+                    .tint(muted)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.remove_local_folder(path.clone(), cx)
+                    })),
+            )
+            .into_any_element()
     }
 
     fn rescan_local_folder(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.session.read(cx).local_path() else {
-            return;
-        };
+        Sonora::global(cx)
+            .library
+            .clone()
+            .update(cx, |library, cx| library.rescan_local(cx));
+    }
+
+    fn remove_local_folder(&mut self, path: String, cx: &mut Context<Self>) {
         Sonora::global(cx)
             .library
             .clone()
             .update(cx, |library, cx| {
-                library.rescan_local(PathBuf::from(path), cx)
+                library.remove_local_folder(PathBuf::from(path), cx)
             });
-    }
-
-    fn clear_local_folder(&mut self, cx: &mut Context<Self>) {
-        Sonora::global(cx)
-            .library
-            .clone()
-            .update(cx, |library, cx| library.forget_local(cx));
     }
 
     fn accounts_row(&self, cx: &mut Context<Self>) -> impl IntoElement {

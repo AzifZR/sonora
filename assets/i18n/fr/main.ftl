@@ -454,7 +454,6 @@ settings-local-folder = Dossier de musique importée
 settings-local-folder-empty = Non configuré
 settings-choose-folder = Choisir un dossier…
 settings-rescan = Réanalyser
-settings-clear-folder = Effacer
 settings-tab-about = À propos
 settings-version = Version
 settings-version-detail = La version de Sonora que vous utilisez

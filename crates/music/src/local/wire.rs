@@ -64,6 +64,38 @@ pub fn path_from_track_id(id: &str) -> Option<&Path> {
     id.strip_prefix(LOCAL_TRACK_PREFIX).map(Path::new)
 }
 
+/// Byte offset where a leading ID3v2 tag ends, or 0 if `path` doesn't start with one.
+/// Playback skips straight past it: ID3v2 carries no audio data, and some taggers write a
+/// frame (`WXXX` from gamerip tools is the one seen in the wild) that both `symphonia` and
+/// `lofty` refuse to parse, which otherwise makes the whole file fail to open for decoding.
+pub fn id3v2_end(path: &Path) -> u64 {
+    use std::io::Read;
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return 0;
+    };
+    let mut header = [0u8; 10];
+    if file.read_exact(&mut header).is_err() || &header[0..3] != b"ID3" {
+        return 0;
+    }
+
+    let syncsafe = |byte: u8| u32::from(byte & 0x7f);
+    let size = (syncsafe(header[6]) << 21)
+        | (syncsafe(header[7]) << 14)
+        | (syncsafe(header[8]) << 7)
+        | syncsafe(header[9]);
+    let footer = header[5] & 0x10 != 0;
+
+    let skip = u64::from(size) + 10 + if footer { 10 } else { 0 };
+    log::warn!(
+        "[local_music] file {:?} id3v2 bytes skiped: {}",
+        path.file_name().map(|f| f.to_str().unwrap()).unwrap(),
+        skip
+    );
+
+    skip
+}
+
 pub fn album_id(artist: &str, name: &str) -> String {
     let mut hasher = DefaultHasher::new();
     normalize(artist).hash(&mut hasher);
@@ -131,7 +163,26 @@ struct FallbackProbe {
 }
 
 fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
-    let file = std::fs::File::open(path).ok()?;
+    if let Some(probe) = probe_symphonia_at(path, 0) {
+        return Some(probe);
+    }
+
+    // skips till end of id3v2 tag
+    let skip = id3v2_end(path);
+
+    if skip == 0 {
+        // tag not found, file is broken
+        return None;
+    }
+    probe_symphonia_at(path, skip)
+}
+
+fn probe_symphonia_at(path: &Path, skip: u64) -> Option<FallbackProbe> {
+    let mut file = std::fs::File::open(path).ok()?;
+    if skip > 0 {
+        use std::io::{Seek, SeekFrom};
+        file.seek(SeekFrom::Start(skip)).ok()?;
+    }
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {

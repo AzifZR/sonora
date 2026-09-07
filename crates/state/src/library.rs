@@ -467,14 +467,24 @@ impl Library {
         problems.iter().map(|problem| problem.part)
     }
 
-    pub fn rescan_local(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub fn add_local_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.session
-            .update(cx, |session, cx| session.choose_local_folder(path, cx));
+            .update(cx, |session, cx| session.add_local_folder(path, cx));
     }
 
-    pub fn forget_local(&mut self, cx: &mut Context<Self>) {
+    pub fn add_local_folders(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         self.session
-            .update(cx, |session, cx| session.clear_local_folder(cx));
+            .update(cx, |session, cx| session.add_local_folders(paths, cx));
+    }
+
+    pub fn remove_local_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.session
+            .update(cx, |session, cx| session.remove_local_folder(&path, cx));
+    }
+
+    pub fn rescan_local(&mut self, cx: &mut Context<Self>) {
+        self.session
+            .update(cx, |session, cx| session.rescan_local(cx));
     }
 
     pub fn loading(&self, part: LibraryPart) -> bool {

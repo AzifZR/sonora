@@ -18,14 +18,18 @@ pub struct Scanned {
     pub portraits: HashMap<String, String>,
 }
 
-pub fn scan(root: &Path, cache_dir: &Path) -> Scanned {
+/// Scans every root and merges the results into one library: tracks are collected from all
+/// roots before albums/artists are grouped, so the same artist or album spread across more
+/// than one folder still merges into a single entry, seamlessly.
+pub fn scan(roots: &[PathBuf], cache_dir: &Path) -> Scanned {
     let mut scanned = Scanned::default();
-    if !root.is_dir() {
-        return scanned;
-    }
 
     let mut files = Vec::new();
-    walk_audio_files(root, &mut files);
+    for root in roots {
+        if root.is_dir() {
+            walk_audio_files(root, &mut files);
+        }
+    }
 
     let parsed: Vec<(Track, String)> = files
         .into_iter()
@@ -49,7 +53,7 @@ pub fn scan(root: &Path, cache_dir: &Path) -> Scanned {
         })
         .collect();
 
-    scanned.portraits = collect_portraits(root, &parsed);
+    scanned.portraits = collect_portraits(roots, &parsed);
     scanned.albums = group_albums(&parsed);
     scanned.tracks = parsed.into_iter().map(|(track, _)| track).collect();
     scanned
@@ -108,7 +112,7 @@ fn album_year(indices: &[usize], parsed: &[(Track, String)]) -> i32 {
         .unwrap_or(0)
 }
 
-fn collect_portraits(root: &Path, parsed: &[(Track, String)]) -> HashMap<String, String> {
+fn collect_portraits(roots: &[PathBuf], parsed: &[(Track, String)]) -> HashMap<String, String> {
     let mut by_normalized: HashMap<String, String> = HashMap::new();
     for (track, _) in parsed {
         by_normalized
@@ -117,7 +121,9 @@ fn collect_portraits(root: &Path, parsed: &[(Track, String)]) -> HashMap<String,
     }
 
     let mut dirs = Vec::new();
-    walk_dirs(root, &mut dirs);
+    for root in roots {
+        walk_dirs(root, &mut dirs);
+    }
 
     let mut portraits = HashMap::new();
     for dir in dirs {
@@ -236,7 +242,7 @@ mod tests {
         let dir = std::env::temp_dir().join("sonora-scan-test-ignore");
         let _ = fs::remove_dir_all(&dir);
         touch(&dir.join("notes.txt"));
-        let scanned = scan(&dir, &dir);
+        let scanned = scan(&[dir.clone()], &dir);
         assert!(scanned.tracks.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
@@ -245,7 +251,7 @@ mod tests {
     fn empty_root_yields_nothing() {
         let dir = std::env::temp_dir().join("sonora-scan-test-missing");
         let _ = fs::remove_dir_all(&dir);
-        let scanned = scan(&dir, &dir);
+        let scanned = scan(&[dir.clone()], &dir);
         assert!(scanned.tracks.is_empty());
         assert!(scanned.albums.is_empty());
     }

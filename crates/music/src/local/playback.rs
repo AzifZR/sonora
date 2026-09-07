@@ -346,16 +346,22 @@ fn place(sink: &rodio::Player, id: &str, at: Option<Duration>) {
 fn load(sink: &rodio::Player, id: &str) -> Result<Slot> {
     let path =
         wire::path_from_track_id(id).ok_or_else(|| anyhow!("{id} is not a local track id"))?;
-    let file =
+    let mut file =
         std::fs::File::open(path).with_context(|| format!("cannot open {}", path.display()))?;
     let length = file.metadata().ok().map(|meta| meta.len());
+
+    let skip = wire::id3v2_end(path);
+    if skip > 0 {
+        use std::io::{Seek, SeekFrom};
+        let _ = file.seek(SeekFrom::Start(skip));
+    }
     let reader = std::io::BufReader::new(file);
 
     let mut builder = rodio::Decoder::builder()
         .with_data(reader)
         .with_seekable(true);
     if let Some(length) = length {
-        builder = builder.with_byte_len(length);
+        builder = builder.with_byte_len(length.saturating_sub(skip));
     }
     let source = builder.build().context("cannot decode audio")?;
     let duration = source.total_duration();
