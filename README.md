@@ -2,8 +2,8 @@
 
 # Sonora
 
-[![Build](https://img.shields.io/github/actions/workflow/status/nolight132/sonora/release.yml)](https://github.com/nolight132/sonora/actions/workflows/release.yml)
-[![License](https://img.shields.io/github/license/nolight132/sonora)](./COPYING)
+[![Build](https://img.shields.io/github/actions/workflow/status/sonorahq/sonora/release.yml)](https://github.com/sonorahq/sonora/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/sonorahq/sonora)](./COPYING)
 ![Installs](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fsonora-stats.nolight.dev%2Fcount&query=%24.count&label=Installs&color=blue)
 \
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/a8N8Tx23rV)
@@ -88,18 +88,25 @@ Either `pipewire-alsa` or `pulseaudio-alsa` is required, matching your sound ser
 Add the Sonora repository once; it pulls the runtime from Flathub and updates with `flatpak update`:
 
 ```sh
-flatpak install --user https://nolight132.github.io/sonora/sonora.flatpakref
+flatpak install --user https://sonorahq.github.io/sonora/sonora.flatpakref
+```
+
+A remote added before the move to the `sonorahq` organisation still points at the old address and
+fails to update. Point it at the new one once:
+
+```sh
+flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora
 ```
 
 Every release also attaches a standalone `.flatpak` bundle for x86_64 and aarch64 on
-[Releases](https://github.com/nolight132/sonora/releases/latest), for installing without a remote.
+[Releases](https://github.com/sonorahq/sonora/releases/latest), for installing without a remote.
 
 ### Nix
 
 The flake packages the latest tagged release and exposes `programs.sonora` for Home Manager.
 
 ```nix
-inputs.sonora.url = "github:nolight132/sonora";
+inputs.sonora.url = "github:sonorahq/sonora";
 ```
 
 Home Manager:
@@ -121,11 +128,11 @@ Home Manager:
 
 #### Installer
 
-Download and run the [installer](https://github.com/nolight132/sonora/releases/latest/download/Sonora-Setup.exe).
+Download and run the [installer](https://github.com/sonorahq/sonora/releases/latest/download/Sonora-Setup.exe).
 
 #### Portable
 
-Download the latest `windows-msvc.exe` for your architecture from [Releases](https://github.com/nolight132/sonora/releases/latest).
+Download the latest `windows-msvc.exe` for your architecture from [Releases](https://github.com/sonorahq/sonora/releases/latest).
 
 ## Community
 
@@ -173,11 +180,11 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=nolight132%2Fsonora&type=date&logscale=&legend=top-left">
+<a href="https://www.star-history.com/?repos=sonorahq%2Fsonora&type=date&logscale=&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=nolight132/sonora&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=nolight132/sonora&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=nolight132/sonora&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=sonorahq/sonora&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=sonorahq/sonora&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=sonorahq/sonora&type=date&legend=top-left" />
  </picture>
 </a>
 
@@ -187,7 +194,7 @@ Sonora is built with the help of some incredible open-source projects, including
 
 - [Zed](https://github.com/zed-industries/zed) — a wonderful editor (~~ab~~)used by all core team members. Conveniently provides `gpui` — their native Rust rendering stack.
 - [librespot](https://github.com/librespot-org/librespot) — Spotify playback and library integration.
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — certain YouTube ideas implemented in [ytmusic-rs](https://github.com/nolight132/ytmusic-rs) :)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — certain YouTube ideas implemented in [ytmusic-rs](https://github.com/sonorahq/ytmusic-rs) :)
 
 ## License
 

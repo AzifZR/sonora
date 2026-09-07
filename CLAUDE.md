@@ -134,7 +134,7 @@ extension, which also supplies the mold that `.cargo/config.toml` asks for. `fla
 turns `Cargo.lock` into `cargo-sources.json` (generated, never committed) and `flatpak/build-flatpak.sh`
 runs the build locally. The release workflow builds both arches in Flathub's builder image, imports them
 into the signed OSTree repo on the `flatpak-repo` branch, which GitHub Pages serves at
-`https://nolight132.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
+`https://sonorahq.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
 `flatpak/export-bundles.sh` re-exports them from that repo so each carries the commit signature, the
 repo URL and the public key, and `flatpak update` follows the repo afterwards. `flatpak-bundles.yml`
 reruns that export for an existing release and swaps its bundles and checksum lines.
@@ -205,6 +205,7 @@ construction, layout and scene assembly, never GPU fill.
 | Settings          | `$XDG_CONFIG_HOME/sonora/settings.json` (durable preferences and local music folder)                                              |
 | App state         | `$XDG_DATA_HOME/sonora/state.sqlite` (window/layout/playback state, pins, history, local playlists, usage flags)                  |
 | Credentials cache | `$XDG_CACHE_HOME/sonora/<provider>/credentials.json`, one per provider slug (`spotify`, `youtube`), owner-only mode                |
+| Local cover cache | `$XDG_CACHE_HOME/sonora/local-covers/`                                                                                             |
 | OAuth redirect    | `http://127.0.0.1:8989/login`, override with `SONORA_REDIRECT_URI`                                                                |
 | Instance socket   | `sonora.sock`, `sonora-dev.sock` in debug builds, so `cargo run` starts beside an installed Sonora rather than handing over to it |
 | Log file          | `$XDG_STATE_HOME/sonora/sonora.log`, rotated to `.1` past 8 MiB                                                                   |

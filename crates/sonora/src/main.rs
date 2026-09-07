@@ -68,7 +68,7 @@ fn main() {
         ];
         let local_provider: Arc<dyn music::MusicProvider> =
             Arc::new(music::local::LocalProvider::new(
-                dirs::config_dir()
+                dirs::cache_dir()
                     .unwrap_or_else(std::env::temp_dir)
                     .join("sonora"),
                 database.clone(),
