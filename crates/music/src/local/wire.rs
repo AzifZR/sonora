@@ -64,12 +64,15 @@ pub fn path_from_track_id(id: &str) -> Option<&Path> {
     id.strip_prefix(LOCAL_TRACK_PREFIX).map(Path::new)
 }
 
-pub fn album_id(dir: &Path) -> String {
-    format!("{LOCAL_ALBUM_PREFIX}{}", dir.display())
+pub fn album_id(artist: &str, name: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    normalize(artist).hash(&mut hasher);
+    normalize(name).hash(&mut hasher);
+    format!("{LOCAL_ALBUM_PREFIX}{:016x}", hasher.finish())
 }
 
-pub fn path_from_album_id(id: &str) -> Option<&Path> {
-    id.strip_prefix(LOCAL_ALBUM_PREFIX).map(Path::new)
+pub fn normalize(value: &str) -> String {
+    value.trim().to_lowercase()
 }
 
 pub fn artist_id(name: &str) -> String {
@@ -259,7 +262,7 @@ pub fn modified_at(path: &Path) -> Option<i64> {
 pub fn track_from_file(
     path: &Path,
     artist_hint: Option<&str>,
-    album: Option<(&str, &Path)>,
+    album_hint: Option<&str>,
     cache_dir: &Path,
 ) -> Option<(Track, String)> {
     let tagged = Probe::open(path).ok().and_then(|file| file.read().ok());
@@ -306,10 +309,8 @@ pub fn track_from_file(
 
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
-        .or_else(|| album.map(|(name, _)| name.to_owned()))
+        .or_else(|| album_hint.map(str::to_owned))
         .unwrap_or_default();
-
-    let album_dir = album.map(|(_, dir)| dir);
 
     let track_number = tag
         .and_then(Accessor::track)
@@ -331,13 +332,15 @@ pub fn track_from_file(
         })
         .unwrap_or(0);
 
-    let mut cover = extract_cover(tag, path, album_dir, cache_dir);
+    let mut cover = extract_cover(tag, path, cache_dir);
     if cover.is_none()
         && let Some(ref fb) = fallback
         && let Some((ref data, ref mime)) = fb.cover_data
     {
         cover = cache_image_data(data, mime, cache_dir);
     }
+
+    let album_id = (!album_name.is_empty()).then(|| album_id(&album_artist, &album_name));
 
     Some((
         Track {
@@ -347,7 +350,7 @@ pub fn track_from_file(
             artists: artist.clone(),
             artist_refs: vec![artist_ref(&artist)],
             album: album_name,
-            album_id: album_dir.map(album_id),
+            album_id,
             cover,
             duration,
             added_at: modified_at(path),
@@ -378,16 +381,10 @@ pub fn tag_year(path: &Path) -> Option<i32> {
     probe_symphonia(path).and_then(|fb| fb.year)
 }
 
-pub fn album_from_tracks(
-    name: &str,
-    artist: &str,
-    dir: &Path,
-    tracks: &[Track],
-    year: i32,
-) -> Album {
-    let cover = folder_cover(dir).or_else(|| tracks.iter().find_map(|track| track.cover.clone()));
+pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {
+    let cover = tracks.iter().find_map(|track| track.cover.clone());
     Album {
-        id: album_id(dir),
+        id: album_id(artist, name),
         name: name.to_owned(),
         artists: artist.to_owned(),
         artist_refs: vec![artist_ref(artist)],
@@ -425,12 +422,7 @@ fn beside(dir: &Path, names: &[&str]) -> Option<String> {
         .map(|candidate| format!("file://{}", candidate.display()))
 }
 
-fn extract_cover(
-    tag: Option<&Tag>,
-    path: &Path,
-    album_dir: Option<&Path>,
-    cache_dir: &Path,
-) -> Option<String> {
+fn extract_cover(tag: Option<&Tag>, path: &Path, cache_dir: &Path) -> Option<String> {
     let picture = tag.and_then(|tag| {
         tag.pictures()
             .iter()
@@ -444,9 +436,7 @@ fn extract_cover(
         return Some(cached);
     }
 
-    path.parent()
-        .and_then(folder_cover)
-        .or_else(|| album_dir.and_then(folder_cover))
+    path.parent().and_then(folder_cover)
 }
 
 fn cache_picture(picture: &Picture, cache_dir: &Path) -> Option<String> {
@@ -619,7 +609,7 @@ mod tests {
         older.added_at = Some(1_000);
         newer.added_at = Some(2_000);
 
-        let album = album_from_tracks("Album", "Artist", &dir, &[older, newer], 2026);
+        let album = album_from_tracks("Album", "Artist", &[older, newer], 2026);
 
         assert_eq!(album.added_at, Some(2_000));
         std::fs::remove_dir_all(&dir).ok();
