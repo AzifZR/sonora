@@ -19,6 +19,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   control keys (`⌃A`, `⌃E`, `⌃B`, `⌃F`, `⌃D`, `⌃H`, `⌃K`) do what they do everywhere else on a
   Mac. The menu bar gains Edit and Window menus and the usual Settings, Hide and Show All items.
 
+- A sleep timer pauses playback after 1 to 120 minutes, or at the end of the current track. Drag
+  the slider under the moon button in the player bar, and hide the button altogether under
+  Settings > Playback if you never use it.
+
 ### Fixed
 
 - A track that fails to load no longer stops playback. Sonora shows a toast, waits out the short

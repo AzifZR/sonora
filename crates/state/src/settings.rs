@@ -180,6 +180,7 @@ struct Values {
     version: u32,
     normalisation: bool,
     gapless: bool,
+    sleep_timer: bool,
     lyrics_for_local_files: bool,
     karaoke_lyrics: bool,
     blur_lyrics: bool,
@@ -230,6 +231,7 @@ impl Default for Values {
             version: SETTINGS_VERSION,
             normalisation: false,
             gapless: true,
+            sleep_timer: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
@@ -527,6 +529,10 @@ impl AppSettings {
         self.values.gapless
     }
 
+    pub fn sleep_timer(&self) -> bool {
+        self.values.sleep_timer
+    }
+
     pub fn lyrics_for_local_files(&self) -> bool {
         self.values.lyrics_for_local_files
     }
@@ -741,6 +747,11 @@ impl AppSettings {
 
     pub fn set_gapless(&mut self, gapless: bool, cx: &mut Context<Self>) {
         self.values.gapless = gapless;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_sleep_timer(&mut self, sleep_timer: bool, cx: &mut Context<Self>) {
+        self.values.sleep_timer = sleep_timer;
         self.schedule_save(cx);
     }
 
