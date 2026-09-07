@@ -26,8 +26,11 @@ const VOLUME_TIGHT: f32 = 72.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
 const SLEEP: &str = "sleep";
-const SLEEP_STEPS: [u64; 4] = [15, 30, 45, 60];
-const SLEEP_LAST: usize = SLEEP_STEPS.len() + 1;
+const SLEEP_MAX_MINUTES: u64 = 120;
+const SLEEP_MAGNETS: [u64; 4] = [15, 30, 45, 60];
+const SLEEP_MAGNET_WEIGHT: usize = 4;
+const SLEEP_LAST: usize =
+    SLEEP_MAX_MINUTES as usize + SLEEP_MAGNETS.len() * (SLEEP_MAGNET_WEIGHT - 1) + 1;
 
 pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
@@ -37,6 +40,7 @@ pub(crate) struct PlayerBar {
     context_menu: Option<(music::Track, Point<Pixels>)>,
     sleep_group: Popovers,
     sleep: ScrubberState,
+    pending_sleep: Option<Option<Sleep>>,
     seek: ScrubberState,
     volume: ScrubberState,
     pending: Option<f32>,
@@ -66,6 +70,7 @@ impl PlayerBar {
             context_menu: None,
             sleep_group: Popovers::default(),
             sleep: ScrubberState::new("sleep"),
+            pending_sleep: None,
             seek: ScrubberState::new("seek"),
             volume: ScrubberState::new("volume"),
             pending: None,
@@ -186,12 +191,17 @@ impl PlayerBar {
             )
     }
 
-    fn side_buttons(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn side_buttons(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = *cx.theme();
-        let settings = self.settings.read(cx);
-        let open = settings.sidebar_right_open();
-        let tab = settings.sidebar_right_tab();
-        let sleep = settings.sleep_timer().then(|| self.sleep_button(cx));
+        let (open, tab, show_sleep) = {
+            let settings = self.settings.read(cx);
+            (
+                settings.sidebar_right_open(),
+                settings.sidebar_right_tab(),
+                settings.sleep_timer(),
+            )
+        };
+        let sleep = show_sleep.then(|| self.sleep_button(cx));
 
         let button = move |id: &'static str, icon: &'static str, hint: &'static str, side| {
             let showing = open && tab == side;
@@ -236,7 +246,7 @@ impl PlayerBar {
             .into_any_element()
     }
 
-    fn sleep_button(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn sleep_button(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = *cx.theme();
         let armed = self.playback.read(cx).sleep().is_some();
 
@@ -254,10 +264,11 @@ impl PlayerBar {
             .into_any_element()
     }
 
-    fn sleep_items(&self, cx: &Context<Self>) -> Vec<MenuItem> {
+    fn sleep_items(&mut self, cx: &mut Context<Self>) -> Vec<MenuItem> {
         let theme = *cx.theme();
-        let current = self.playback.read(cx).sleep();
-        let playback = self.playback.clone();
+        let current = self
+            .pending_sleep
+            .unwrap_or_else(|| self.playback.read(cx).sleep());
 
         let dial = div()
             .flex()
@@ -280,19 +291,23 @@ impl PlayerBar {
                     .child(sleep_label(current)),
             )
             .child(
-                Scrubber::new(&self.sleep, sleep_step(current) as f32 / SLEEP_LAST as f32)
+                Scrubber::new(&self.sleep, sleep_slot(current) as f32 / SLEEP_LAST as f32)
                     .colors(
                         theme.progress_bar,
                         theme.muted_foreground.opacity(0.3),
                         theme.foreground,
                     )
-                    .on_move(move |fraction, _, cx| {
-                        let pick = sleep_at((fraction * SLEEP_LAST as f32).round() as usize);
-                        if pick == current {
+                    .on_move(cx.listener(|this, fraction: &f32, _, cx| {
+                        this.pending_sleep = Some(sleep_at_fraction(*fraction));
+                        cx.notify();
+                    }))
+                    .on_release(cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                        let Some(sleep) = this.pending_sleep.take() else {
                             return;
-                        }
-                        playback.update(cx, |playback, cx| playback.set_sleep(pick, cx));
-                    }),
+                        };
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(sleep, cx));
+                    })),
             );
 
         vec![MenuItem::new("sleep-dial", "").content(dial)]
@@ -573,29 +588,49 @@ impl Render for PlayerBar {
     }
 }
 
-fn sleep_step(sleep: Option<Sleep>) -> usize {
+fn sleep_slot(sleep: Option<Sleep>) -> usize {
     match sleep {
         None => 0,
         Some(Sleep::EndOfTrack) => SLEEP_LAST,
-        Some(Sleep::After(after)) => {
-            let minutes = after.as_secs() / 60;
-            SLEEP_STEPS
-                .iter()
-                .position(|step| *step == minutes)
-                .map(|at| at + 1)
-                .unwrap_or(0)
-        }
+        Some(Sleep::After(after)) => minute_slot(after.as_secs() / 60),
     }
 }
 
-fn sleep_at(step: usize) -> Option<Sleep> {
-    match step {
+fn sleep_at_fraction(fraction: f32) -> Option<Sleep> {
+    let slot = (fraction.clamp(0., 1.) * SLEEP_LAST as f32).round() as usize;
+    match slot {
         0 => None,
         SLEEP_LAST => Some(Sleep::EndOfTrack),
-        step => Some(Sleep::After(Duration::from_secs(
-            SLEEP_STEPS[step - 1] * 60,
-        ))),
+        slot => Some(Sleep::After(Duration::from_secs(slot_minute(slot) * 60))),
     }
+}
+
+fn minute_slot(minutes: u64) -> usize {
+    let minutes = minutes.clamp(1, SLEEP_MAX_MINUTES);
+    let earlier_magnets = SLEEP_MAGNETS
+        .iter()
+        .filter(|magnet| **magnet < minutes)
+        .count();
+    let width = match SLEEP_MAGNETS.contains(&minutes) {
+        true => SLEEP_MAGNET_WEIGHT,
+        false => 1,
+    };
+    minutes as usize + earlier_magnets * (SLEEP_MAGNET_WEIGHT - 1) + (width - 1) / 2
+}
+
+fn slot_minute(slot: usize) -> u64 {
+    let mut first = 1;
+    for minute in 1..=SLEEP_MAX_MINUTES {
+        let width = match SLEEP_MAGNETS.contains(&minute) {
+            true => SLEEP_MAGNET_WEIGHT,
+            false => 1,
+        };
+        if slot < first + width {
+            return minute;
+        }
+        first += width;
+    }
+    SLEEP_MAX_MINUTES
 }
 
 fn sleep_label(sleep: Option<Sleep>) -> SharedString {

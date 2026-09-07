@@ -155,6 +155,7 @@ pub enum PlaybackEvent {
     EndedPlayback,
 }
 
+/// A one-shot request to pause after wall-clock time or when the current track ends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sleep {
     After(Duration),
@@ -1209,6 +1210,7 @@ impl Playback {
         self.sleep
     }
 
+    /// Replaces the active sleep request, dropping its timer task when cancelled or superseded.
     pub fn set_sleep(&mut self, sleep: Option<Sleep>, cx: &mut Context<Self>) {
         self.sleep = sleep;
         self.sleep_task = match sleep {

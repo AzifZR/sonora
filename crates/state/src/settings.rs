@@ -230,7 +230,7 @@ impl Default for Values {
             version: SETTINGS_VERSION,
             normalisation: false,
             gapless: true,
-            sleep_timer: true,
+            sleep_timer: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
