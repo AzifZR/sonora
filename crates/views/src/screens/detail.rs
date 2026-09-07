@@ -336,6 +336,11 @@ impl DetailView {
                 &self.table,
                 self.playback.clone(),
             ))
+            .child(HeroPlayButton::shuffle_listed(
+                "shuffle-detail",
+                &self.table,
+                self.playback.clone(),
+            ))
             .children(self.library_button(cx))
             .children(overflow);
 

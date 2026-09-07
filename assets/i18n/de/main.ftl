@@ -287,6 +287,7 @@ detail-play-playlist = Playlist abspielen
 play-pause = Pause
 play-resume = Fortsetzen
 play-loading = Wird geladen…
+play-shuffle = Zufallswiedergabe
 
 # artist page
 artist-eyebrow = Künstler

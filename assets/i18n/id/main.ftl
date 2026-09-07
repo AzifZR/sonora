@@ -286,6 +286,7 @@ detail-play-playlist = Putar playlist
 play-pause = Jeda
 play-resume = Lanjutkan
 play-loading = Memuat…
+play-shuffle = Acak
 
 # artist page
 artist-eyebrow = Artis

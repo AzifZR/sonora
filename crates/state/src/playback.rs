@@ -484,6 +484,18 @@ impl Playback {
         self.start(tracks, index, origin, cx);
     }
 
+    /// Turn shuffle on and start the tracks from a random playable one.
+    pub fn shuffle_any(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
+        self.queue
+            .update(cx, |queue, cx| queue.set_shuffle(true, cx));
+        self.start_any(tracks, origin, cx);
+    }
+
     fn opener(&self, tracks: &[Track], cx: &Context<Self>) -> Option<usize> {
         let playable = tracks
             .iter()
@@ -1546,7 +1558,9 @@ impl Playback {
             BackendEvent::Unavailable { .. } => {
                 let failed = self.track.take();
                 let target = failed.as_ref().and_then(song_target);
-                let name = failed.map_or_else(|| "?".to_owned(), |track| track.name);
+                let name = failed
+                    .as_ref()
+                    .map_or_else(|| "?".to_owned(), |track| track.name.clone());
                 log::warn!(
                     "playback: {name} failed to load, backing off {}s",
                     KEY_COOLDOWN.as_secs()
@@ -1557,6 +1571,10 @@ impl Playback {
                 self.clock.reset(Duration::ZERO, false);
                 Toasts::linked(Outcome::Failed, "toast-track-unplayable", name, target, cx);
                 cx.emit(PlaybackEvent::EndedPlayback);
+                match self.repeat {
+                    Repeat::One => self.segue_queue(cx),
+                    _ => self.advance(failed, cx),
+                }
             }
             BackendEvent::Refused => {
                 self.refuse(cx);

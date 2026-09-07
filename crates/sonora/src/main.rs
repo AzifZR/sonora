@@ -180,8 +180,14 @@ fn open_window(cx: &mut App) {
         playback.clone(),
         queue.clone(),
     );
-    let placement = state::window_placement(LEAST_SIZE, cx)
-        .unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)));
+    let (placement, display_id) = state::window_placement(LEAST_SIZE, cx)
+        .map(|(placement, display_id)| (placement, Some(display_id)))
+        .unwrap_or_else(|| {
+            (
+                WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)),
+                None,
+            )
+        });
 
     let settings = Sonora::global(cx).settings.read(cx);
     let saver = settings.saver();
@@ -198,6 +204,7 @@ fn open_window(cx: &mut App) {
     cx.open_window(
         WindowOptions {
             window_bounds: Some(placement),
+            display_id,
             window_background: background,
             titlebar: Some(TitlebarOptions {
                 title: Some("Sonora".into()),

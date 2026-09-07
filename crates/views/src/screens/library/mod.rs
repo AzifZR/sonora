@@ -630,12 +630,23 @@ impl LibraryView {
             .accent()
             .eyebrow(eyebrow)
             .meta(strip)
-            .actions(HeroPlayButton::listed(
-                "play-library",
-                t!("library-play-liked-songs"),
-                self.tracks(),
-                self.playback.clone(),
-            ))
+            .actions(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(HeroPlayButton::listed(
+                        "play-library",
+                        t!("library-play-liked-songs"),
+                        self.tracks(),
+                        self.playback.clone(),
+                    ))
+                    .child(HeroPlayButton::shuffle_listed(
+                        "shuffle-library",
+                        self.tracks(),
+                        self.playback.clone(),
+                    )),
+            )
             .into_any_element()
     }
 

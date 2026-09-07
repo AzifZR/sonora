@@ -241,6 +241,7 @@ detail-play-playlist = プレイリストを再生
 play-pause = 一時停止
 play-resume = 再開
 play-loading = 読み込み中…
+play-shuffle = シャッフル
 
 # artist page
 artist-eyebrow = アーティスト

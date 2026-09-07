@@ -219,6 +219,7 @@ detail-play-playlist = Слушать плейлист
 play-pause = Пауза
 play-resume = Продолжить
 play-loading = Загрузка…
+play-shuffle = Перемешать
 
 # artist page
 artist-eyebrow = Исполнитель
