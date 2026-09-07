@@ -16,7 +16,8 @@ use anyhow::{Context as _, Result};
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::WindowDecorations;
 use gpui::{
-    App, Bounds, Context, Pixels, Size, Subscription, Task, Window, WindowBounds, point, px, size,
+    App, Bounds, Context, DisplayId, Pixels, Size, Subscription, Task, Window, WindowBounds, point,
+    px, size,
 };
 use music::WritingSystem;
 use rusqlite::{OptionalExtension, params};
@@ -1169,8 +1170,8 @@ impl AppSettings {
     }
 }
 
-/// The saved window frame as a placement, if it still lands on a connected display.
-pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<WindowBounds> {
+/// The saved window frame and its display, if its centre still lands on a connected display.
+pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<(WindowBounds, DisplayId)> {
     let frame = Sonora::global(cx).settings.read(cx).state.window?;
     if !frame.sane() {
         return None;
@@ -1180,8 +1181,8 @@ pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<WindowBounds> {
     let bounds = placement.get_bounds();
     cx.displays()
         .iter()
-        .any(|display| display.bounds().intersects(&bounds))
-        .then_some(placement)
+        .find(|display| display.bounds().contains(&bounds.center()))
+        .map(|display| (placement, display.id()))
 }
 
 /// Starts saving the window frame for the next launch.
