@@ -21,6 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A track that fails to load no longer stops playback. Sonora shows a toast, waits out the short
+  back-off and moves on to the next track in the queue, skipping the broken one even in repeat-one.
 - Local track lists keep each row's own embedded cover art when the table is sorted or recycled.
 - The Flatpak remote and the standalone bundles follow the repository to
   `sonorahq.github.io/sonora`. A remote added before the move needs
