@@ -477,14 +477,14 @@ fn cache_image_data(data: &[u8], media_type_or_ext: &str, cache_dir: &Path) -> O
 #[cfg(test)]
 mod tests {
     use super::*;
-  
+
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(name);
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
-  
+
     #[test]
     fn infer_stem_with_title_and_artist() {
         let (title, artist) = infer_from_stem("Chann Vi Gawah - Madhav Mahajan");
