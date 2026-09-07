@@ -19,6 +19,7 @@ enum Command {
     Load {
         id: String,
         at: Option<Duration>,
+        play: bool,
         seamless: bool,
     },
     Preload {
@@ -67,11 +68,12 @@ struct Engine {
 }
 
 impl Player for Engine {
-    fn load(&self, track_id: &str, seamless: bool) -> Result<()> {
+    fn load(&self, track_id: &str, at: Duration, seamless: bool) -> Result<()> {
         self.commands
             .send(Command::Load {
                 id: track_id.to_string(),
-                at: None,
+                at: (!at.is_zero()).then_some(at),
+                play: true,
                 seamless,
             })
             .context("cannot reach playback engine")
@@ -82,6 +84,7 @@ impl Player for Engine {
             .send(Command::Load {
                 id: track_id.to_string(),
                 at: Some(at),
+                play: false,
                 seamless: false,
             })
             .context("cannot reach playback engine")
@@ -223,7 +226,7 @@ async fn engine_loop(
             command = commands.recv() => {
                 let Some(command) = command else { break };
                 match command {
-                    Command::Load { id, at, seamless } => {
+                    Command::Load { id, at, play, seamless } => {
                         if seamless && at.is_none() && current.as_ref().is_some_and(|slot| slot.id == id) {
                             playing = true;
                             autostart = true;
@@ -276,7 +279,7 @@ async fn engine_loop(
                         current = None;
                         queued = None;
                         playing = false;
-                        autostart = at.is_none();
+                        autostart = play;
                         hold = at;
                         prev_len = 0;
                         let Some(loaded) = cached else { continue };
@@ -358,8 +361,8 @@ async fn engine_loop(
                         }
                     }
                     Command::Seek(position) => match &current {
-                        None if hold.is_some() => hold = Some(position),
-                        None => {}
+                        // Still loading: start there once the track arrives.
+                        None => hold = Some(position),
                         Some(slot) => {
                             slot.mute();
                             await_drain(&sink).await;
@@ -369,7 +372,7 @@ async fn engine_loop(
                             if playing {
                                 slot.unmute();
                             }
-                            events.send(PlaybackEvent::Position {
+                            events.send(PlaybackEvent::Seeked {
                                 id: Some(slot.id.clone()),
                                 at: sink.get_pos(),
                             }).ok();
