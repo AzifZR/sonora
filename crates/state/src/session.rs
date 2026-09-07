@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -92,7 +92,7 @@ pub struct Session {
     prompt_task: Option<Task<()>>,
     input: Option<UnboundedSender<String>>,
     local_provider: Arc<dyn MusicProvider>,
-    local_folder: Option<PathBuf>,
+    local_folders: Vec<PathBuf>,
     local_client: Option<Arc<dyn MusicApi>>,
     local_catalog: Option<Arc<CatalogSource>>,
     local_playback: Option<Arc<dyn PlaybackFactory>>,
@@ -114,7 +114,7 @@ impl Session {
         cx: &mut Context<Self>,
     ) -> Self {
         let remembered = settings.read(cx).provider().to_string();
-        let local_folder = settings.read(cx).local_folder().map(PathBuf::from);
+        let local_folders = settings.read(cx).local_folders().to_vec();
         let active = providers
             .iter()
             .position(|provider| provider.slug() == remembered);
@@ -136,7 +136,7 @@ impl Session {
             prompt_task: None,
             input: None,
             local_provider,
-            local_folder,
+            local_folders,
             local_client: None,
             local_catalog: None,
             local_playback: None,
@@ -177,10 +177,11 @@ impl Session {
         self.local_playback.clone()
     }
 
-    pub fn local_path(&self) -> Option<String> {
-        self.local_folder
-            .as_ref()
+    pub fn local_paths(&self) -> Vec<String> {
+        self.local_folders
+            .iter()
             .map(|path| path.display().to_string())
+            .collect()
     }
 
     pub fn providers(&self) -> impl Iterator<Item = ProviderInfo> + '_ {
@@ -578,66 +579,93 @@ impl Session {
     }
 
     fn restore_local(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.local_folder.clone() else {
+        if self.local_folders.is_empty() {
             return;
-        };
-        let provider = self.local_provider.clone();
-        let io = self.io.clone();
-        self.local_task = Some(cx.spawn(async move |this, cx| {
-            let prompt: PromptSink = Arc::new(|_| {});
-            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-            let restored = join(
-                io.spawn(async move { provider.sign_in(SignIn::Path(path), prompt, rx).await }),
-            )
-            .await;
-            this.update(cx, |this, cx| {
-                if let Ok(session) = restored {
-                    this.local_signed_in(session, cx);
-                }
-            })
-            .ok();
-        }));
+        }
+        self.rescan_local(cx);
     }
 
-    pub fn choose_local_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    /// Adds a folder to the local library, then rescans every configured folder together so
+    /// artists and albums that span more than one root merge into one, seamlessly.
+    pub fn add_local_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.add_local_folders(vec![path], cx);
+    }
+
+    /// Same as [`Session::add_local_folder`], for a batch picked in one native dialog.
+    pub fn add_local_folders(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let mut folders = self.local_folders.clone();
+        for path in paths {
+            if folders.iter().any(|existing| overlaps(existing, &path)) {
+                log::warn!(
+                    "session: {} overlaps an already-added local folder",
+                    path.display()
+                );
+                continue;
+            }
+            folders.push(path);
+        }
+        if folders.len() == self.local_folders.len() {
+            return;
+        }
+        self.set_local_folders(folders, cx);
+    }
+
+    pub fn remove_local_folder(&mut self, path: &Path, cx: &mut Context<Self>) {
+        let mut folders = self.local_folders.clone();
+        let before = folders.len();
+        folders.retain(|existing| existing != path);
+        if folders.len() == before {
+            return;
+        }
+        self.set_local_folders(folders, cx);
+    }
+
+    /// Rescans every configured local folder without changing the list, e.g. after files
+    /// changed on disk or a tag was edited.
+    pub fn rescan_local(&mut self, cx: &mut Context<Self>) {
+        self.set_local_folders(self.local_folders.clone(), cx);
+    }
+
+    fn set_local_folders(&mut self, folders: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if folders.is_empty() {
+            self.local_provider.sign_out();
+            self.local_folders = Vec::new();
+            self.settings.update(cx, |settings, cx| {
+                settings.set_local_folders(Vec::new(), cx)
+            });
+            self.local_client = None;
+            self.local_catalog = None;
+            self.local_playback = None;
+            self.local_task = None;
+            cx.notify();
+            cx.emit(SessionEvent::LocalChanged);
+            return;
+        }
+
         let provider = self.local_provider.clone();
-        let chosen = path.clone();
+        let chosen = folders.clone();
         let io = self.io.clone();
         self.local_task = Some(cx.spawn(async move |this, cx| {
             let prompt: PromptSink = Arc::new(|_| {});
             let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let signed_in = join(
-                io.spawn(async move { provider.sign_in(SignIn::Path(path), prompt, rx).await }),
+                io.spawn(async move { provider.sign_in(SignIn::Path(folders), prompt, rx).await }),
             )
             .await;
 
             this.update(cx, |this, cx| match signed_in {
                 Ok(session) => {
-                    this.local_folder = Some(chosen.clone());
-                    this.settings.update(cx, |settings, cx| {
-                        settings.set_local_folder(Some(chosen), cx)
-                    });
+                    this.local_folders = chosen.clone();
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_local_folders(chosen, cx));
                     this.local_signed_in(session, cx);
                 }
                 Err(error) => {
-                    log::warn!("session: cannot set local music folder: {error:#}");
+                    log::warn!("session: cannot update local music folders: {error:#}");
                 }
             })
             .ok();
         }));
-    }
-
-    pub fn clear_local_folder(&mut self, cx: &mut Context<Self>) {
-        self.local_provider.sign_out();
-        self.local_folder = None;
-        self.settings
-            .update(cx, |settings, cx| settings.set_local_folder(None, cx));
-        self.local_client = None;
-        self.local_catalog = None;
-        self.local_playback = None;
-        self.local_task = None;
-        cx.notify();
-        cx.emit(SessionEvent::LocalChanged);
     }
 
     fn local_signed_in(&mut self, session: ProviderSession, cx: &mut Context<Self>) {
@@ -647,4 +675,12 @@ impl Session {
         cx.notify();
         cx.emit(SessionEvent::LocalChanged);
     }
+}
+
+/// Whether `a` and `b` are the same directory, or one contains the other — either way, scanning
+/// both would double-count the tracks they share.
+fn overlaps(a: &Path, b: &Path) -> bool {
+    let a = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let b = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    a == b || a.starts_with(&b) || b.starts_with(&a)
 }

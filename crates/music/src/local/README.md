@@ -1,0 +1,42 @@
+# Local music documentation
+
+## How does local music library work
+1. Multiple folders can be added; the library is built from every folder's tracks together.
+2. `Track` identity is the file system path. `Artist` is a normalized string, `Album` a normalized
+   `(artist, name)` pair.
+3. Metadata fallback, in order: tag (`lofty`) -> `symphonia` -> `id3.rs` (hand-rolled, ID3v2 only,
+   last resort) -> filesystem hint -> raw filename.
+4. Cover art: embedded picture -> `.jpg`/`.png` etc. in the folder nearby.
+5. Artist portraits: filesystem only, no tag equivalent. A scanned folder whose name normalizes to
+   a resolved artist's name, with a cover-like image beside it, becomes that artist's portrait. No
+   match, no portrait (UI falls back to initials).
+6. `album_artist` (the real grouping key for albums, not the per-track `artist`) follows the same
+   cascade: tag `AlbumArtist` -> `symphonia` -> the track's own resolved `artist` as default.
+7. No incremental index — every scan (startup, add/remove folder, Rescan) rebuilds `Scanned` from
+   scratch. Folders are merged *before* grouping, so an artist/album split across folders still
+   merges into one entry.
+
+## Playback
+
+`wire::id3v2_end` skips a leading ID3v2 tag before handing the file to `rodio` — audio doesn't need
+it, and it sidesteps taggers that write a frame neither `symphonia` nor `lofty` can parse (see
+below). Used directly in `playback::load`, and retried inside `probe_symphonia` so duration can
+still be recovered from the audio frames even when the tag itself is unreadable.
+
+## Malformed ID3v2 tags (`id3.rs`)
+
+Some taggers (gamerip tools, at least one seen: `#gamemp3s`) write a `WXXX` frame with no encoding
+byte — a raw URL where the encoding + description should be. `lofty` and `symphonia` both abort the
+*whole* tag over that one frame. `id3.rs` is a minimal, hand-rolled reader that trusts each frame's
+declared size and skips anything it doesn't need, so one bad frame no longer costs every other,
+well-formed one.
+
+- Reads only `TIT2`/`TPE1`/`TALB`/`TPE2`/`TRCK`/`TPOS`/`TYER`/`TDRC`/`APIC`.
+- ID3v2.3/2.4 only; no extended header, no unsynchronisation — none of the real files needed them.
+- Wired in as a last resort in `track_from_file` and `tag_year`, only once `lofty` has already
+  failed to open the tag.
+
+Deliberately **not** extended to `tags.rs` (the tag editor's read/write): fixing a tag this broken
+would mean writing a fresh one from scratch, discarding the old bytes entirely — real risk to a
+user's file for a case nobody's actually hit. An external tool (Mp3tag, Picard) does that safer than
+we can.

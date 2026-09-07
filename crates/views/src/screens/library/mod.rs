@@ -541,7 +541,7 @@ impl LibraryView {
     }
 
     fn unconfigured(&self, cx: &App) -> bool {
-        self.shelf.local() && Sonora::global(cx).session.read(cx).local_path().is_none()
+        self.shelf.local() && Sonora::global(cx).session.read(cx).local_paths().is_empty()
     }
 
     fn note(&self, cx: &App) -> Option<Vacancy> {

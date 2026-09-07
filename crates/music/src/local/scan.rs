@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::{Album, Track};
@@ -18,45 +18,137 @@ pub struct Scanned {
     pub portraits: HashMap<String, String>,
 }
 
-pub fn scan(root: &Path, cache_dir: &Path) -> Scanned {
+/// Scans every root and merges the results into one library: tracks are collected from all
+/// roots before albums/artists are grouped, so the same artist or album spread across more
+/// than one folder still merges into a single entry, seamlessly.
+pub fn scan(roots: &[PathBuf], cache_dir: &Path) -> Scanned {
     let mut scanned = Scanned::default();
-    if !root.is_dir() {
-        return scanned;
+
+    let mut files = Vec::new();
+    for root in roots {
+        if root.is_dir() {
+            walk_audio_files(root, &mut files);
+        }
     }
 
-    for entry in entries(root) {
-        if entry.is_file() {
-            scanned
-                .tracks
-                .extend(wire::track_from_file(&entry, None, None, cache_dir));
-            continue;
-        }
-        if !entry.is_dir() {
-            continue;
-        }
-        scan_artist(&entry, cache_dir, &mut scanned);
-    }
+    let parsed: Vec<(Track, String)> = files
+        .into_iter()
+        .filter_map(|path| {
+            let artist_hint = path
+                .parent()
+                .and_then(Path::parent)
+                .map(|dir| folder_name(dir));
+            let (album_hint, _) = path
+                .parent()
+                .map(|dir| dated(&folder_name(dir)))
+                .unwrap_or_default();
+            let album_hint = (!album_hint.is_empty()).then_some(album_hint);
 
-    scan_stragglers(root, cache_dir, &mut scanned);
+            wire::track_from_file(
+                &path,
+                artist_hint.as_deref(),
+                album_hint.as_deref(),
+                cache_dir,
+            )
+        })
+        .collect();
+
+    scanned.portraits = collect_portraits(roots, &parsed);
+    scanned.albums = group_albums(&parsed);
+    scanned.tracks = parsed.into_iter().map(|(track, _)| track).collect();
     scanned
 }
 
-fn scan_stragglers(root: &Path, cache_dir: &Path, scanned: &mut Scanned) {
-    let known: HashSet<String> = scanned
-        .tracks
-        .iter()
-        .filter_map(|track| track.id.clone())
-        .collect();
-    let mut found = Vec::new();
-    walk_audio_files(root, &mut found);
+fn group_albums(parsed: &[(Track, String)]) -> Vec<Album> {
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
 
-    for path in found {
-        if known.contains(&wire::track_id(&path)) {
+    for (index, (track, _)) in parsed.iter().enumerate() {
+        let Some(id) = &track.album_id else {
+            continue;
+        };
+        if !groups.contains_key(id) {
+            order.push(id.clone());
+        }
+        groups.entry(id.clone()).or_default().push(index);
+    }
+
+    order
+        .into_iter()
+        .filter_map(|id| {
+            let indices = groups.get(&id)?;
+            let mut tracks: Vec<Track> = indices.iter().map(|&i| parsed[i].0.clone()).collect();
+            tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
+
+            let album_artist = parsed[indices[0]].1.clone();
+            let name = tracks[0].album.clone();
+            let year = album_year(indices, parsed);
+
+            Some(wire::album_from_tracks(&name, &album_artist, &tracks, year))
+        })
+        .collect()
+}
+
+fn album_year(indices: &[usize], parsed: &[(Track, String)]) -> i32 {
+    indices
+        .iter()
+        .find_map(|&i| {
+            parsed[i]
+                .0
+                .id
+                .as_deref()
+                .and_then(wire::path_from_track_id)
+                .and_then(wire::tag_year)
+        })
+        .or_else(|| {
+            parsed[indices[0]]
+                .0
+                .id
+                .as_deref()
+                .and_then(wire::path_from_track_id)
+                .and_then(Path::parent)
+                .and_then(|dir| dated(&folder_name(dir)).1)
+        })
+        .unwrap_or(0)
+}
+
+fn collect_portraits(roots: &[PathBuf], parsed: &[(Track, String)]) -> HashMap<String, String> {
+    let mut by_normalized: HashMap<String, String> = HashMap::new();
+    for (track, _) in parsed {
+        by_normalized
+            .entry(wire::normalize(&track.artists))
+            .or_insert_with(|| track.artists.clone());
+    }
+
+    let mut dirs = Vec::new();
+    for root in roots {
+        walk_dirs(root, &mut dirs);
+    }
+
+    let mut portraits = HashMap::new();
+    for dir in dirs {
+        let Some(artist) = by_normalized.get(&wire::normalize(&folder_name(&dir))) else {
+            continue;
+        };
+        if portraits.contains_key(artist) {
             continue;
         }
-        let artist_hint = path.parent().map(folder_name);
-        if let Some(track) = wire::track_from_file(&path, artist_hint.as_deref(), None, cache_dir) {
-            scanned.tracks.push(track);
+        if let Some(portrait) = wire::artist_cover(&dir) {
+            portraits.insert(artist.clone(), portrait);
+        }
+    }
+    portraits
+}
+
+fn walk_dirs(dir: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in read.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            found.push(path.clone());
+            walk_dirs(&path, found);
         }
     }
 }
@@ -73,72 +165,6 @@ fn walk_audio_files(dir: &Path, found: &mut Vec<PathBuf>) {
             found.push(path);
         }
     }
-}
-
-fn scan_artist(dir: &Path, cache_dir: &Path, scanned: &mut Scanned) {
-    let artist = folder_name(dir);
-    if let Some(portrait) = wire::artist_cover(dir) {
-        scanned.portraits.insert(artist.clone(), portrait);
-    }
-
-    for entry in entries(dir) {
-        if entry.is_file() {
-            scanned.tracks.extend(wire::track_from_file(
-                &entry,
-                Some(&artist),
-                None,
-                cache_dir,
-            ));
-            continue;
-        }
-        if !entry.is_dir() {
-            continue;
-        }
-        scan_album(&entry, &artist, cache_dir, scanned);
-    }
-}
-
-fn scan_album(dir: &Path, artist: &str, cache_dir: &Path, scanned: &mut Scanned) {
-    let (name, folder_year) = dated(&folder_name(dir));
-
-    let mut tracks: Vec<Track> = entries(dir)
-        .into_iter()
-        .filter(|entry| entry.is_file())
-        .filter_map(|entry| {
-            wire::track_from_file(&entry, Some(artist), Some((&name, dir)), cache_dir)
-        })
-        .collect();
-    if tracks.is_empty() {
-        return;
-    }
-    tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
-
-    let album_artist = tracks
-        .first()
-        .map(|track| track.artists.clone())
-        .unwrap_or_else(|| artist.to_owned());
-    let album_name = tracks
-        .first()
-        .map(|track| track.album.clone())
-        .filter(|album| !album.is_empty())
-        .unwrap_or(name);
-
-    let year = tracks
-        .first()
-        .and_then(|track| track.id.as_deref())
-        .and_then(wire::path_from_track_id)
-        .and_then(wire::tag_year)
-        .or(folder_year)
-        .unwrap_or(0);
-
-    scanned.albums.push(wire::album_from_tracks(
-        &album_name,
-        &album_artist,
-        dir,
-        &tracks,
-        year,
-    ));
-    scanned.tracks.extend(tracks);
 }
 
 fn dated(name: &str) -> (String, Option<i32>) {
@@ -193,19 +219,6 @@ fn folder_name(dir: &Path) -> String {
         .unwrap_or_else(|| dir.display().to_string())
 }
 
-fn entries(dir: &Path) -> Vec<PathBuf> {
-    let Ok(read) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut entries: Vec<PathBuf> = read
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() || is_audio_file(path))
-        .collect();
-    entries.sort();
-    entries
-}
-
 fn is_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -229,7 +242,7 @@ mod tests {
         let dir = std::env::temp_dir().join("sonora-scan-test-ignore");
         let _ = fs::remove_dir_all(&dir);
         touch(&dir.join("notes.txt"));
-        let scanned = scan(&dir, &dir);
+        let scanned = scan(&[dir.clone()], &dir);
         assert!(scanned.tracks.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
@@ -238,7 +251,7 @@ mod tests {
     fn empty_root_yields_nothing() {
         let dir = std::env::temp_dir().join("sonora-scan-test-missing");
         let _ = fs::remove_dir_all(&dir);
-        let scanned = scan(&dir, &dir);
+        let scanned = scan(&[dir.clone()], &dir);
         assert!(scanned.tracks.is_empty());
         assert!(scanned.albums.is_empty());
     }

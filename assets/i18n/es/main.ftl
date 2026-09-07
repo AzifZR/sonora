@@ -513,7 +513,6 @@ settings-local-folder = Carpeta de música importada
 settings-local-folder-empty = Sin configurar
 settings-choose-folder = Elegir carpeta…
 settings-rescan = Volver a escanear
-settings-clear-folder = Vaciar
 settings-tab-about = Acerca de
 settings-version = Versión
 settings-version-detail = La compilación de sonora que estás usando

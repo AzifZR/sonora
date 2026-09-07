@@ -452,7 +452,6 @@ settings-local-folder = Cartella musica importata
 settings-local-folder-empty = Non configurata
 settings-choose-folder = Scegli cartella…
 settings-rescan = Riscansiona
-settings-clear-folder = Rimuovi
 settings-tab-about = Informazioni
 settings-version = Versione
 settings-version-detail = La build di Sonora che stai eseguendo

@@ -197,6 +197,8 @@ struct Values {
     startup: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     local_folder: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    local_folders: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hidden_nav: Vec<String>,
     appearance: Appearance,
@@ -246,6 +248,7 @@ impl Default for Values {
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
             local_folder: None,
+            local_folders: Vec::new(),
             hidden_nav: Vec::new(),
             appearance: Appearance::default(),
         }
@@ -483,6 +486,13 @@ impl AppSettings {
         if values.local_folder.is_none() {
             values.local_folder = legacy_local.clone();
         }
+        // A single `local_folder` predates multiple local libraries; fold it into
+        // `local_folders` once and never write the singular field back out.
+        if let Some(folder) = values.local_folder.take()
+            && !values.local_folders.contains(&folder)
+        {
+            values.local_folders.push(folder);
+        }
 
         let inherited = || {
             bytes
@@ -621,8 +631,8 @@ impl AppSettings {
         &self.state.provider
     }
 
-    pub fn local_folder(&self) -> Option<&std::path::Path> {
-        self.values.local_folder.as_deref()
+    pub fn local_folders(&self) -> &[PathBuf] {
+        &self.values.local_folders
     }
 
     pub fn startup(&self) -> &str {
@@ -727,11 +737,11 @@ impl AppSettings {
         self.path.clone()
     }
 
-    pub fn set_local_folder(&mut self, folder: Option<PathBuf>, cx: &mut Context<Self>) {
-        if self.values.local_folder == folder {
+    pub fn set_local_folders(&mut self, folders: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if self.values.local_folders == folders {
             return;
         }
-        self.values.local_folder = folder;
+        self.values.local_folders = folders;
         self.schedule_save(cx);
     }
 
@@ -1498,8 +1508,8 @@ mod tests {
         assert_eq!(settings.provider(), "youtube");
         assert!(!settings.sidebar_open());
         assert_eq!(
-            settings.local_folder(),
-            Some(std::path::Path::new("/music"))
+            settings.local_folders(),
+            &[std::path::PathBuf::from("/music")]
         );
         assert!(!legacy_local.exists());
 
@@ -1509,9 +1519,10 @@ mod tests {
         let object = cleaned.as_object().expect("settings are an object");
         assert_eq!(object.get("version"), Some(&serde_json::json!(2)));
         assert_eq!(
-            object.get("local_folder"),
-            Some(&serde_json::json!("/music"))
+            object.get("local_folders"),
+            Some(&serde_json::json!(["/music"]))
         );
+        assert!(!object.contains_key("local_folder"));
         for key in ["volume", "provider", "sidebar_open"] {
             assert!(!object.contains_key(key), "{key} survived cleanup");
         }

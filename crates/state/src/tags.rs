@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui::{Context, Entity, SharedString, Task};
@@ -112,7 +111,7 @@ impl Tags {
         let io = self.io.clone();
         let name = tags.title.clone();
         let target = Some(Target::Song(SharedString::from(id.clone())));
-        let folder = self.session.read(cx).local_path().map(PathBuf::from);
+        let has_local_folder = !self.session.read(cx).local_paths().is_empty();
         let library = self.library.clone();
         self.task = Some(cx.spawn(async move |this, cx| {
             let written =
@@ -123,8 +122,8 @@ impl Tags {
                 match written {
                     Ok(()) => {
                         this.track = None;
-                        if let Some(folder) = folder {
-                            library.update(cx, |library, cx| library.rescan_local(folder, cx));
+                        if has_local_folder {
+                            library.update(cx, |library, cx| library.rescan_local(cx));
                         }
                         Toasts::linked(Outcome::Done, "toast-tags-saved", name, target, cx);
                     }

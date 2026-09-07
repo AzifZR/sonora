@@ -267,7 +267,7 @@ pub enum SignIn {
     Default,
     Anonymous,
     Secret,
-    Path(PathBuf),
+    Path(Vec<PathBuf>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

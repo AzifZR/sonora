@@ -94,12 +94,23 @@ fn playlist_from(id: String, name: String, modified_at: i64, tracks: &[Track]) -
 #[async_trait]
 impl MusicApi for LocalClient {
     fn share_url(&self, kind: MediaKind, id: &str) -> Option<String> {
-        let path = match kind {
-            MediaKind::Track => wire::path_from_track_id(id)?,
-            MediaKind::Album => wire::path_from_album_id(id)?,
-            MediaKind::Artist | MediaKind::Playlist => return None,
-        };
-        Some(format!("file://{}", path.display()))
+        match kind {
+            MediaKind::Track => {
+                let path = wire::path_from_track_id(id)?;
+                Some(format!("file://{}", path.display()))
+            }
+            MediaKind::Album => {
+                let scanned = self.scanned.read().unwrap();
+                let track = scanned
+                    .tracks
+                    .iter()
+                    .find(|track| track.album_id.as_deref() == Some(id))?;
+                let path = wire::path_from_track_id(track.id.as_deref()?)?;
+                let dir = path.parent()?;
+                Some(format!("file://{}", dir.display()))
+            }
+            MediaKind::Artist | MediaKind::Playlist => None,
+        }
     }
 
     async fn profile(&self) -> Result<UserProfile> {

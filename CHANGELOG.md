@@ -25,6 +25,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Flatpak remote and the standalone bundles follow the repository to
+  `sonorahq.github.io/sonora`. A remote added before the move needs
+  `flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora` once.
+- The Flatpak shows its tray icon on KDE Plasma and other StatusNotifier desktops, so Close to
+  tray keeps Sonora playing after the window closes. The sandbox forbids the well-known bus name
+  the tray used to claim, and Sonora now registers under its unique connection name instead.
 - A track that fails to load no longer stops playback. Sonora shows a toast, waits out the short
   back-off and moves on to the next track in the queue, skipping the broken one even in repeat-one.
 - Local track lists keep each row's own embedded cover art when the table is sorted or recycled.
@@ -39,6 +45,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Flatpak shows its tray icon on KDE Plasma and other StatusNotifier desktops, so Close to
   tray keeps Sonora playing after the window closes. The sandbox forbids the well-known bus name
   the tray used to claim, and Sonora now registers under its unique connection name instead.
+  
 - On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
   next launch notices nothing is listening, takes the socket over, and later launches and
   `spotify:` links reach that window again instead of opening a second Sonora.

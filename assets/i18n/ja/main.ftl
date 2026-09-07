@@ -469,7 +469,6 @@ settings-local-folder = インポートする音楽フォルダ
 settings-local-folder-empty = 未設定
 settings-choose-folder = フォルダを選択…
 settings-rescan = 再スキャン
-settings-clear-folder = クリア
 settings-tab-about = 情報
 settings-version = バージョン
 settings-version-detail = 実行中の Sonora のビルド

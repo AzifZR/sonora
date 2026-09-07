@@ -1,4 +1,5 @@
 mod client;
+mod id3;
 mod playback;
 mod scan;
 mod store;
@@ -30,9 +31,9 @@ impl LocalProvider {
         }
     }
 
-    async fn scan_path(&self, path: PathBuf) -> Result<ProviderSession> {
+    async fn scan_paths(&self, paths: Vec<PathBuf>) -> Result<ProviderSession> {
         let cache_dir = self.cache_dir.clone();
-        let scanned = tokio::task::spawn_blocking(move || scan::scan(&path, &cache_dir))
+        let scanned = tokio::task::spawn_blocking(move || scan::scan(&paths, &cache_dir))
             .await
             .context("local scan task panicked")?;
 
@@ -81,12 +82,12 @@ impl MusicProvider for LocalProvider {
         _prompt: PromptSink,
         _input: InputSource,
     ) -> Result<ProviderSession> {
-        let SignIn::Path(path) = method else {
+        let SignIn::Path(paths) = method else {
             return Err(anyhow!(
                 "local files can only be configured with a folder path"
             ));
         };
-        self.scan_path(path).await
+        self.scan_paths(paths).await
     }
 
     fn sign_out(&self) {}

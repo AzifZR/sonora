@@ -6,12 +6,14 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::Accessor;
 use lofty::probe::Probe;
+use lofty::tag::ItemKey::AlbumArtist;
 use lofty::tag::Tag;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTagKey};
 use symphonia::core::probe::Hint;
 
+use super::id3;
 use crate::{
     Album, ArtistRef, LOCAL_ALBUM_PREFIX, LOCAL_ARTIST_PREFIX, LOCAL_TRACK_PREFIX, ReleaseType,
     Track,
@@ -63,12 +65,47 @@ pub fn path_from_track_id(id: &str) -> Option<&Path> {
     id.strip_prefix(LOCAL_TRACK_PREFIX).map(Path::new)
 }
 
-pub fn album_id(dir: &Path) -> String {
-    format!("{LOCAL_ALBUM_PREFIX}{}", dir.display())
+/// Byte offset where a leading ID3v2 tag ends, or 0 if `path` doesn't start with one.
+/// Playback skips straight past it: ID3v2 carries no audio data, and some taggers write a
+/// frame (`WXXX` from gamerip tools is the one seen in the wild) that both `symphonia` and
+/// `lofty` refuse to parse, which otherwise makes the whole file fail to open for decoding.
+pub fn id3v2_end(path: &Path) -> u64 {
+    use std::io::Read;
+
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return 0;
+    };
+    let mut header = [0u8; 10];
+    if file.read_exact(&mut header).is_err() || &header[0..3] != b"ID3" {
+        return 0;
+    }
+
+    let syncsafe = |byte: u8| u32::from(byte & 0x7f);
+    let size = (syncsafe(header[6]) << 21)
+        | (syncsafe(header[7]) << 14)
+        | (syncsafe(header[8]) << 7)
+        | syncsafe(header[9]);
+    let footer = header[5] & 0x10 != 0;
+
+    let skip = u64::from(size) + 10 + if footer { 10 } else { 0 };
+    log::warn!(
+        "[local_music] file {:?} id3v2 bytes skiped: {}",
+        path.file_name().map(|f| f.to_str().unwrap()).unwrap(),
+        skip
+    );
+
+    skip
 }
 
-pub fn path_from_album_id(id: &str) -> Option<&Path> {
-    id.strip_prefix(LOCAL_ALBUM_PREFIX).map(Path::new)
+pub fn album_id(artist: &str, name: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    normalize(artist).hash(&mut hasher);
+    normalize(name).hash(&mut hasher);
+    format!("{LOCAL_ALBUM_PREFIX}{:016x}", hasher.finish())
+}
+
+pub fn normalize(value: &str) -> String {
+    value.trim().to_lowercase()
 }
 
 pub fn artist_id(name: &str) -> String {
@@ -119,6 +156,7 @@ struct FallbackProbe {
     title: Option<String>,
     artist: Option<String>,
     album: Option<String>,
+    album_artist: Option<String>,
     track_number: u32,
     disc_number: u32,
     year: Option<i32>,
@@ -126,7 +164,26 @@ struct FallbackProbe {
 }
 
 fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
-    let file = std::fs::File::open(path).ok()?;
+    if let Some(probe) = probe_symphonia_at(path, 0) {
+        return Some(probe);
+    }
+
+    // skips till end of id3v2 tag
+    let skip = id3v2_end(path);
+
+    if skip == 0 {
+        // tag not found, file is broken
+        return None;
+    }
+    probe_symphonia_at(path, skip)
+}
+
+fn probe_symphonia_at(path: &Path, skip: u64) -> Option<FallbackProbe> {
+    let mut file = std::fs::File::open(path).ok()?;
+    if skip > 0 {
+        use std::io::{Seek, SeekFrom};
+        file.seek(SeekFrom::Start(skip)).ok()?;
+    }
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
@@ -166,6 +223,7 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
     let mut title = None;
     let mut artist = None;
     let mut album = None;
+    let mut album_artist = None;
     let mut track_number = 0;
     let mut disc_number = 0;
     let mut year = None;
@@ -191,6 +249,9 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
                 }
                 Some(StandardTagKey::Album) if album.is_none() => {
                     album = clean_val(&tag.value);
+                }
+                Some(StandardTagKey::AlbumArtist) if album_artist.is_none() => {
+                    album_artist = clean_val(&tag.value);
                 }
                 Some(StandardTagKey::TrackNumber) if track_number == 0 => {
                     if let Ok(n) = tag.value.to_string().parse() {
@@ -230,6 +291,7 @@ fn probe_symphonia(path: &Path) -> Option<FallbackProbe> {
         title,
         artist,
         album,
+        album_artist,
         track_number,
         disc_number,
         year,
@@ -252,9 +314,9 @@ pub fn modified_at(path: &Path) -> Option<i64> {
 pub fn track_from_file(
     path: &Path,
     artist_hint: Option<&str>,
-    album: Option<(&str, &Path)>,
+    album_hint: Option<&str>,
     cache_dir: &Path,
-) -> Option<Track> {
+) -> Option<(Track, String)> {
     let tagged = Probe::open(path).ok().and_then(|file| file.read().ok());
     let tag = tagged
         .as_ref()
@@ -277,25 +339,41 @@ pub fn track_from_file(
         duration = fb.duration;
     }
 
+    // Last resort: `lofty` failed to open the tag at all, which also means `probe_symphonia`'s
+    // own text-frame reading gave up on it (its id3v2-skip retry above only ever recovers
+    // duration, never metadata, since that retry starts past the whole tag on purpose). This
+    // hand-rolled reader skips a frame it doesn't understand by its declared size alone, so it
+    // can still recover the other, perfectly well-formed frames around it.
+    let lenient = tag.is_none().then(|| id3::read(path)).flatten();
+
     let (inferred_title, inferred_artist) = infer_from_stem(&file_stem(path));
 
     let name = clean(tag.and_then(Accessor::title))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.title.clone()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.title.clone()))
         .or(inferred_title)
         .unwrap_or_else(|| file_stem(path));
 
     let artist = clean(tag.and_then(Accessor::artist))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.artist.clone()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.artist.clone()))
         .or_else(|| artist_hint.map(str::to_owned))
         .or(inferred_artist)
         .unwrap_or_else(|| "Unknown Artist".to_owned());
 
+    let album_artist = clean(
+        tag.and_then(|tag| tag.get_string(AlbumArtist))
+            .map(std::borrow::Cow::Borrowed),
+    )
+    .or_else(|| fallback.as_ref().and_then(|fb| fb.album_artist.clone()))
+    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()))
+    .unwrap_or_else(|| artist.clone());
+
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
-        .or_else(|| album.map(|(name, _)| name.to_owned()))
+        .or_else(|| lenient.as_ref().and_then(|l| l.album.clone()))
+        .or_else(|| album_hint.map(str::to_owned))
         .unwrap_or_default();
-
-    let album_dir = album.map(|(_, dir)| dir);
 
     let track_number = tag
         .and_then(Accessor::track)
@@ -305,6 +383,7 @@ pub fn track_from_file(
                 .map(|fb| fb.track_number)
                 .filter(|n| *n > 0)
         })
+        .or_else(|| lenient.as_ref().and_then(|l| l.track_number))
         .unwrap_or(0);
 
     let disc_number = tag
@@ -315,37 +394,49 @@ pub fn track_from_file(
                 .map(|fb| fb.disc_number)
                 .filter(|n| *n > 0)
         })
+        .or_else(|| lenient.as_ref().and_then(|l| l.disc_number))
         .unwrap_or(0);
 
-    let mut cover = extract_cover(tag, path, album_dir, cache_dir);
+    let mut cover = extract_cover(tag, path, cache_dir);
     if cover.is_none()
         && let Some(ref fb) = fallback
         && let Some((ref data, ref mime)) = fb.cover_data
     {
         cover = cache_image_data(data, mime, cache_dir);
     }
+    if cover.is_none()
+        && let Some(ref l) = lenient
+        && let Some((ref data, ref mime)) = l.cover
+    {
+        cover = cache_image_data(data, mime, cache_dir);
+    }
 
-    Some(Track {
-        id: Some(track_id(path)),
-        name,
-        playable: is_playable(path),
-        artists: artist.clone(),
-        artist_refs: vec![artist_ref(&artist)],
-        album: album_name,
-        album_id: album_dir.map(album_id),
-        cover,
-        duration,
-        added_at: modified_at(path),
-        added_by: None,
-        playcount: None,
-        popularity: 0,
-        explicit: false,
-        track_number,
-        disc_number,
-        tags: Vec::new(),
-        languages: Vec::new(),
-        credits: Vec::new(),
-    })
+    let album_id = (!album_name.is_empty()).then(|| album_id(&album_artist, &album_name));
+
+    Some((
+        Track {
+            id: Some(track_id(path)),
+            name,
+            playable: is_playable(path),
+            artists: artist.clone(),
+            artist_refs: vec![artist_ref(&artist)],
+            album: album_name,
+            album_id,
+            cover,
+            duration,
+            added_at: modified_at(path),
+            added_by: None,
+            playcount: None,
+            popularity: 0,
+            explicit: false,
+            track_number,
+            disc_number,
+            tags: Vec::new(),
+            languages: Vec::new(),
+            credits: Vec::new(),
+        },
+        album_artist,
+    ))
 }
 
 pub fn tag_year(path: &Path) -> Option<i32> {
@@ -358,19 +449,16 @@ pub fn tag_year(path: &Path) -> Option<i32> {
     {
         return Some(year);
     }
-    probe_symphonia(path).and_then(|fb| fb.year)
+    if let Some(year) = probe_symphonia(path).and_then(|fb| fb.year) {
+        return Some(year);
+    }
+    id3::read(path).and_then(|lenient| lenient.year)
 }
 
-pub fn album_from_tracks(
-    name: &str,
-    artist: &str,
-    dir: &Path,
-    tracks: &[Track],
-    year: i32,
-) -> Album {
-    let cover = folder_cover(dir).or_else(|| tracks.iter().find_map(|track| track.cover.clone()));
+pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {
+    let cover = tracks.iter().find_map(|track| track.cover.clone());
     Album {
-        id: album_id(dir),
+        id: album_id(artist, name),
         name: name.to_owned(),
         artists: artist.to_owned(),
         artist_refs: vec![artist_ref(artist)],
@@ -408,12 +496,7 @@ fn beside(dir: &Path, names: &[&str]) -> Option<String> {
         .map(|candidate| format!("file://{}", candidate.display()))
 }
 
-fn extract_cover(
-    tag: Option<&Tag>,
-    path: &Path,
-    album_dir: Option<&Path>,
-    cache_dir: &Path,
-) -> Option<String> {
+fn extract_cover(tag: Option<&Tag>, path: &Path, cache_dir: &Path) -> Option<String> {
     let picture = tag.and_then(|tag| {
         tag.pictures()
             .iter()
@@ -427,9 +510,7 @@ fn extract_cover(
         return Some(cached);
     }
 
-    path.parent()
-        .and_then(folder_cover)
-        .or_else(|| album_dir.and_then(folder_cover))
+    path.parent().and_then(folder_cover)
 }
 
 fn cache_picture(picture: &Picture, cache_dir: &Path) -> Option<String> {
@@ -556,7 +637,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let track = track_from_file(path, None, None, &temp).expect("track parsed");
+        let (track, _) = track_from_file(path, None, None, &temp).expect("track parsed");
         assert!(track.playable);
         assert_eq!(track.name, "Chann Vi Gawah");
         assert_eq!(track.artists, "Madhav Mahajan");
@@ -585,7 +666,7 @@ mod tests {
         std::fs::write(&path, []).unwrap();
 
         let stamped = modified_at(&path).expect("a file just written has a modified time");
-        let track = track_from_file(&path, None, None, &dir).expect("a track");
+        let (track, _) = track_from_file(&path, None, None, &dir).expect("a track");
 
         assert_eq!(track.added_at, Some(stamped));
         std::fs::remove_dir_all(&dir).ok();
@@ -597,12 +678,12 @@ mod tests {
         let path = dir.join("song.mp3");
         std::fs::write(&path, []).unwrap();
 
-        let mut older = track_from_file(&path, None, None, &dir).expect("a track");
+        let (mut older, _) = track_from_file(&path, None, None, &dir).expect("a track");
         let mut newer = older.clone();
         older.added_at = Some(1_000);
         newer.added_at = Some(2_000);
 
-        let album = album_from_tracks("Album", "Artist", &dir, &[older, newer], 2026);
+        let album = album_from_tracks("Album", "Artist", &[older, newer], 2026);
 
         assert_eq!(album.added_at, Some(2_000));
         std::fs::remove_dir_all(&dir).ok();

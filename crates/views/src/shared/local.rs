@@ -19,18 +19,18 @@ pub(crate) fn choose_folder(cx: &mut App) {
     let receiver = cx.prompt_for_paths(PathPromptOptions {
         files: false,
         directories: true,
-        multiple: false,
+        multiple: true,
         prompt: None,
     });
     let library = Sonora::global(cx).library.clone();
     cx.spawn(async move |cx| {
-        let Ok(Ok(Some(mut paths))) = receiver.await else {
+        let Ok(Ok(Some(paths))) = receiver.await else {
             return;
         };
-        let Some(path) = paths.pop() else {
+        if paths.is_empty() {
             return;
-        };
-        library.update(cx, |library, cx| library.rescan_local(path, cx));
+        }
+        library.update(cx, |library, cx| library.add_local_folders(paths, cx));
     })
     .detach();
 }
