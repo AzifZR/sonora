@@ -91,6 +91,13 @@ Add the Sonora repository once; it pulls the runtime from Flathub and updates wi
 flatpak install --user https://sonorahq.github.io/sonora/sonora.flatpakref
 ```
 
+A remote added before the move to the `sonorahq` organisation still points at the old address and
+fails to update. Point it at the new one once:
+
+```sh
+flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora
+```
+
 Every release also attaches a standalone `.flatpak` bundle for x86_64 and aarch64 on
 [Releases](https://github.com/sonorahq/sonora/releases/latest), for installing without a remote.
 
