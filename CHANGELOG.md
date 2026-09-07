@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A Shuffle button sits beside Play on every album, playlist, artist and library page. It turns
+  shuffle on and starts the collection from a random track.
+
 - On macOS, Sonora follows the platform's shortcuts: `⌘W` closes the window, `⌘M` minimises it,
   `⌃⌘F` toggles native full screen, `⌘H` and `⌥⌘H` hide Sonora or everything else, and `⌘[` / `⌘]`
   step through history. Text fields take the Cocoa conventions too: `⌥` arrows and `⌥⌫` work by
