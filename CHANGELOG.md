@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Flatpak remote and the standalone bundles follow the repository to
+  `sonorahq.github.io/sonora`. A remote added before the move needs
+  `flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora` once.
+
 - On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
   next launch notices nothing is listening, takes the socket over, and later launches and
   `spotify:` links reach that window again instead of opening a second Sonora.
