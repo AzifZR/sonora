@@ -561,10 +561,12 @@ Working notes:
 
 ### Audio
 
-`music::spotify::playback` owns `librespot_playback::Player` plus `BlazingSink` (`sink.rs`), a
-custom rodio sink with smooth gain ramping and flush-on-seek. `Factory` implements
+`music::spotify::playback` owns `librespot_playback::Player` plus `OutputSink` (`sink.rs`), a
+rodio sink that paces the decoder and drops what a seek or a new track made stale. librespot
+announces `Playing` and `Seeked` before it has written a byte, so `Events` holds those two until
+the sink writes the first packet of the new audio. `Factory` implements
 `music::PlaybackFactory`; `Engine` implements `music::Player`; events arrive as
-`music::PlaybackEvent` (`Loading/Playing/Paused/Position/Ended/Unavailable`).
+`music::PlaybackEvent` (`Loading/Playing/Paused/Position/Seeked/Length/Ended/Unavailable`).
 
 Never drive a player from a view. Go through `state::Playback`, which owns the engine, pumps
 events into `PlaybackState`, and handles shuffle, repeat, skip debouncing, and the cooldown after

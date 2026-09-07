@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::{App, Entity, SharedString, div};
 use i18n::t;
-use state::{Playback, PlaybackState, Queue, Repeat, Sonora};
+use state::{Playback, Queue, Repeat, Sonora};
 use ui::{ActiveTheme as _, Button};
 
 pub(crate) const NOTCH: f32 = 0.05;
@@ -69,7 +69,7 @@ pub(crate) fn transport(
 
 pub(crate) fn toggle(playback: &Entity<Playback>, big: bool, cx: &App) -> Button {
     let held = playback.read(cx);
-    let playing = matches!(held.state(), PlaybackState::Playing);
+    let playing = held.wants_playing();
     let idle = held.track().is_none();
     let playback = playback.clone();
 

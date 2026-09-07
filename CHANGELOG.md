@@ -28,6 +28,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A track that fails to load no longer stops playback. Sonora shows a toast, waits out the short
   back-off and moves on to the next track in the queue, skipping the broken one even in repeat-one.
 - Local track lists keep each row's own embedded cover art when the table is sorted or recycled.
+- Seeking, and starting a track, count as playing only once the audio actually comes out. The
+  lyrics and the progress bar wait at the target until then instead of running ahead while the
+  track buffers, and the old audio stops the moment you seek or pick another track. Seeking
+  repeatedly, as when clicking through the lyrics, no longer queues every position behind the
+  last. The play button follows what you asked for and flips the moment you press it.
 - The Flatpak remote and the standalone bundles follow the repository to
   `sonorahq.github.io/sonora`. A remote added before the move needs
   `flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora` once.

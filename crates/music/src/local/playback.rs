@@ -16,6 +16,7 @@ enum Command {
     Load {
         id: String,
         at: Option<Duration>,
+        play: bool,
         seamless: bool,
     },
     Preload {
@@ -56,11 +57,12 @@ struct Engine {
 }
 
 impl Player for Engine {
-    fn load(&self, track_id: &str, seamless: bool) -> Result<()> {
+    fn load(&self, track_id: &str, at: Duration, seamless: bool) -> Result<()> {
         self.commands
             .send(Command::Load {
                 id: track_id.to_owned(),
-                at: None,
+                at: (!at.is_zero()).then_some(at),
+                play: true,
                 seamless,
             })
             .context("cannot reach local playback engine")
@@ -71,6 +73,7 @@ impl Player for Engine {
             .send(Command::Load {
                 id: track_id.to_owned(),
                 at: Some(at),
+                play: false,
                 seamless: false,
             })
             .context("cannot reach local playback engine")
@@ -171,7 +174,7 @@ async fn engine_loop(
             command = commands.recv() => {
                 let Some(command) = command else { break };
                 match command {
-                    Command::Load { id, at, seamless } => {
+                    Command::Load { id, at, play, seamless } => {
                         let segued = seamless
                             && at.is_none()
                             && current.as_ref().is_some_and(|slot| slot.id == id);
@@ -201,9 +204,9 @@ async fn engine_loop(
                         match load(&sink, &id) {
                             Ok(slot) => {
                                 place(&sink, &id, at);
-                                match at {
-                                    Some(_) => sink.pause(),
-                                    None => sink.play(),
+                                match play {
+                                    true => sink.play(),
+                                    false => sink.pause(),
                                 }
                                 if let Some(length) = slot.length {
                                     events.send(PlaybackEvent::Length {
@@ -213,7 +216,7 @@ async fn engine_loop(
                                 }
                                 prev_len = sink.len();
                                 current = Some(slot);
-                                playing = at.is_none();
+                                playing = play;
                                 let position = at.unwrap_or_default();
                                 events
                                     .send(match playing {
@@ -280,7 +283,7 @@ async fn engine_loop(
                             if let Err(error) = sink.try_seek(position) {
                                 log::warn!("playback: cannot seek: {error}");
                             }
-                            events.send(PlaybackEvent::Position {
+                            events.send(PlaybackEvent::Seeked {
                                 id: Some(slot.id.clone()),
                                 at: sink.get_pos(),
                             }).ok();

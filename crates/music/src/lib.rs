@@ -161,6 +161,8 @@ pub struct PlaybackConfig {
     pub gain: f32,
 }
 
+/// What an engine reports back. `Playing` and `Seeked` mean audio from `at` is reaching the
+/// output, not that a decoder is ready, so whatever follows the sound can start on them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlaybackEvent {
     Loading {
@@ -175,7 +177,14 @@ pub enum PlaybackEvent {
         id: Option<String>,
         at: Duration,
     },
+    /// A progress report from the decoder. It runs ahead of what is audible by whatever the
+    /// output has queued, and none arrive while the engine is busy with a seek.
     Position {
+        id: Option<String>,
+        at: Duration,
+    },
+    /// Audio from the new position has reached the output after a seek.
+    Seeked {
         id: Option<String>,
         at: Duration,
     },
@@ -201,6 +210,7 @@ impl PlaybackEvent {
             | Self::Playing { id, .. }
             | Self::Paused { id, .. }
             | Self::Position { id, .. }
+            | Self::Seeked { id, .. }
             | Self::Length { id, .. }
             | Self::Ended { id, .. }
             | Self::Unavailable { id, .. } => id.as_deref(),
@@ -209,19 +219,24 @@ impl PlaybackEvent {
     }
 }
 
+/// Transport control of one engine. Every call is fire-and-forget: the outcome arrives as a
+/// `PlaybackEvent`, never as a return value.
 pub trait Player: Send + Sync {
-    fn load(&self, track_id: &str, seamless: bool) -> Result<()>;
+    /// Fetches a track and plays it from `at`. A `seamless` load is a queue segue: a gapless
+    /// engine keeps what it has queued so the join has no gap, any other load drops it.
+    fn load(&self, track_id: &str, at: Duration, seamless: bool) -> Result<()>;
 
-    fn load_paused_at(&self, track_id: &str, at: Duration) -> Result<()> {
-        self.load(track_id, false)?;
-        self.pause();
-        self.seek(at);
-        Ok(())
-    }
+    /// Fetches a track and leaves it paused at `at`, ready for `play`.
+    fn load_paused_at(&self, track_id: &str, at: Duration) -> Result<()>;
 
+    /// Fetches a track ahead of time so a later `load` starts at once. `segue` marks the next
+    /// queue item, which a gapless engine may already line up behind the current one.
     fn preload(&self, track_id: &str, segue: bool) -> Result<()>;
     fn play(&self);
     fn pause(&self);
+
+    /// Moves to `position`. While loading, the track starts there instead; while playing, a
+    /// `Seeked` event follows once audio from there reaches the output.
     fn seek(&self, position: Duration);
     fn set_gain(&self, gain: f32);
 
