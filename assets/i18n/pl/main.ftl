@@ -301,6 +301,7 @@ detail-play-playlist = Odtwórz playlistę
 play-pause = Wstrzymaj
 play-resume = Wznów
 play-loading = Ładowanie…
+play-shuffle = Losowo
 
 # artist page
 artist-eyebrow = Wykonawca

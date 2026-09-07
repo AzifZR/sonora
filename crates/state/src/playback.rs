@@ -484,6 +484,18 @@ impl Playback {
         self.start(tracks, index, origin, cx);
     }
 
+    /// Turn shuffle on and start the tracks from a random playable one.
+    pub fn shuffle_any(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
+        self.queue
+            .update(cx, |queue, cx| queue.set_shuffle(true, cx));
+        self.start_any(tracks, origin, cx);
+    }
+
     fn opener(&self, tracks: &[Track], cx: &Context<Self>) -> Option<usize> {
         let playable = tracks
             .iter()

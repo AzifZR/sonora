@@ -218,6 +218,7 @@ detail-play-playlist = Riproduci playlist
 play-pause = Pausa
 play-resume = Riprendi
 play-loading = Caricamento…
+play-shuffle = Casuale
 
 # artist page
 artist-eyebrow = Artista
