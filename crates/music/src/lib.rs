@@ -133,6 +133,13 @@ pub trait MusicApi: Send + Sync {
     async fn album(&self, album_id: &str) -> Result<AlbumDetail>;
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>>;
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail>;
+    async fn playlist_continuation(
+        &self,
+        _continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)> {
+        anyhow::bail!("playlist pagination is not supported")
+    }
+
     async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>>;
     async fn playlist_covers(&self, playlist_id: &str, wanted: usize) -> Result<Vec<String>>;
     async fn track_radio(&self, track_id: &str) -> Result<Vec<Track>>;

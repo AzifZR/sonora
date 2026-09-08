@@ -130,7 +130,11 @@ pub async fn playlist(session: &Session, playlist_id: &str) -> Result<PlaylistDe
     let mut tracks = tracks_from(session, &content).await?;
     credit(session, &playlist, &mut tracks).await;
 
-    Ok(PlaylistDetail { playlist, tracks })
+    Ok(PlaylistDetail {
+        playlist,
+        tracks,
+        continuation: None,
+    })
 }
 
 async fn credit(session: &Session, playlist: &Playlist, tracks: &mut [Track]) {

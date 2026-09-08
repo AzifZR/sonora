@@ -7,6 +7,8 @@ use tokio::task::AbortHandle;
 
 use crate::{Io, Library, LibraryEvent, Session, SessionEvent, join, mosaic};
 
+const MAX_PAGED_TRACKS: usize = 200;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Collection {
     Album,
@@ -36,7 +38,9 @@ pub struct Detail {
     album: Option<Album>,
     playlist: Option<Playlist>,
     tracks: Vec<Track>,
+    continuation: Option<String>,
     loading: bool,
+    loading_more: bool,
     loaded: bool,
     error: Option<String>,
     session: Entity<Session>,
@@ -132,7 +136,9 @@ impl Detail {
             album: None,
             playlist: None,
             tracks: Vec::new(),
+            continuation: None,
             loading: false,
+            loading_more: false,
             loaded: false,
             error: None,
             session,
@@ -166,6 +172,68 @@ impl Detail {
 
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    pub fn has_more(&self) -> bool {
+        self.continuation.is_some()
+    }
+
+    pub fn is_loading_more(&self) -> bool {
+        self.loading_more
+    }
+
+    /// Appends one provider page up to the detail-screen limit.
+    pub fn load_more(&mut self, cx: &mut Context<Self>) {
+        if self.loading_more {
+            return;
+        }
+        let Some(continuation) = self.continuation.clone() else {
+            return;
+        };
+        let Some(id) = self.id.as_deref() else {
+            return;
+        };
+        let Some(catalog) = self.session.read(cx).catalog(id) else {
+            return;
+        };
+
+        self.continuation = None;
+        self.loading_more = true;
+        cx.notify();
+
+        let request = self
+            .io
+            .spawn(async move { catalog.playlist_continuation(&continuation).await });
+        self.request = Some(request.abort_handle());
+        self.task = Some(cx.spawn(async move |this, cx| {
+            let loaded = join(request).await;
+            this.update(cx, |this, cx| {
+                this.loading_more = false;
+                this.request = None;
+                match loaded {
+                    Ok((tracks, _)) => {
+                        let offset = this.tracks.len() as u32;
+                        let remaining = MAX_PAGED_TRACKS.saturating_sub(this.tracks.len());
+                        this.tracks
+                            .extend(tracks.into_iter().take(remaining).enumerate().map(
+                                |(index, mut track)| {
+                                    track.track_number = offset + index as u32 + 1;
+                                    track
+                                },
+                            ));
+                        if let Some(playlist) = this.playlist.as_mut()
+                            && playlist.track_count < this.tracks.len() as u32
+                        {
+                            playlist.track_count = this.tracks.len() as u32;
+                            this.header = Some(playlist_header(playlist));
+                        }
+                    }
+                    Err(error) => log::warn!("detail: cannot load more playlist tracks: {error:#}"),
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     pub fn remove_from_playlist(&mut self, track_id: String, cx: &mut Context<Self>) {
@@ -335,6 +403,7 @@ impl Detail {
                 self.header = Some(album_header(&detail.album));
                 self.album = Some(detail.album.clone());
                 self.tracks = detail.tracks.clone();
+                self.continuation = None;
             }
             Loaded::Playlist(detail) => {
                 let mut playlist = detail.playlist.clone();
@@ -346,7 +415,15 @@ impl Detail {
                 }
                 self.header = Some(playlist_header(&playlist));
                 self.playlist = Some(playlist);
-                self.tracks = detail.tracks.clone();
+                self.tracks = detail
+                    .tracks
+                    .iter()
+                    .take(MAX_PAGED_TRACKS)
+                    .cloned()
+                    .collect();
+                self.continuation = (self.tracks.len() < MAX_PAGED_TRACKS)
+                    .then(|| detail.continuation.clone())
+                    .flatten();
             }
         }
         self.loaded = true;
@@ -364,7 +441,9 @@ impl Detail {
         self.album = None;
         self.playlist = None;
         self.tracks.clear();
+        self.continuation = None;
         self.loading = false;
+        self.loading_more = false;
         self.loaded = false;
         self.error = None;
     }

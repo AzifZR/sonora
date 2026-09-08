@@ -50,6 +50,7 @@ impl LocalClient {
         Ok(PlaylistDetail {
             playlist: playlist_from(stored.id, stored.name, stored.modified_at, &tracks),
             tracks,
+            continuation: None,
         })
     }
 
