@@ -4426,6 +4426,7 @@ dependencies = [
  "rtrb",
  "rusqlite",
  "rustfft",
+ "rustls 0.23.43",
  "serde",
  "serde_json",
  "serde_norway",

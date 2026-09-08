@@ -33,6 +33,10 @@ fn providers() -> Vec<Arc<dyn LyricsProvider>> {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     let Some(link) = std::env::args().nth(1) else {
         bail!("usage: lyrics-prober <spotify or youtube link, or a search query>");
     };
