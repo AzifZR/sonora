@@ -236,6 +236,9 @@ async fn engine_loop(
     let mut current: Option<String> = None;
     // handed to the audio thread for a gapless join, so a later seamless load knows it started
     let mut segued: Option<String> = None;
+    // whether the listener wants sound. A play or pause during a fetch has to survive it, or
+    // pressing play while a track loads would be forgotten by the time it arrives.
+    let mut wanted = false;
     let (fetched, mut arrivals) = unbounded_channel::<Fetched>();
 
     loop {
@@ -264,6 +267,7 @@ async fn engine_loop(
                         cue.clear();
                         current = Some(id.clone());
                         let position = at.unwrap_or_default();
+                        wanted = play;
                         events.send(PlaybackEvent::Loading {
                             id: Some(id.clone()),
                             at: position,
@@ -283,7 +287,7 @@ async fn engine_loop(
                                     id,
                                     stream: loaded.stream,
                                     at: position,
-                                    playing: play,
+                                    playing: wanted,
                                 }).ok();
                             }
                             None => {
@@ -304,9 +308,13 @@ async fn engine_loop(
                         spawn(&client, id, epoch, segue, &fetched);
                     }
                     Command::Play => {
+                        wanted = true;
+                        announcing = announcing.map(playing_now);
                         jobs.send(Job::Resume).ok();
                     }
                     Command::Pause => {
+                        wanted = false;
+                        announcing = announcing.map(paused_now);
                         jobs.send(Job::Pause).ok();
                     }
                     Command::Seek(position) => {
@@ -345,7 +353,6 @@ async fn engine_loop(
                 if awaited == Some(at) && current.as_deref() == Some(id.as_str()) {
                     awaited = None;
                     inflight = None;
-                    let playing = matches!(announcing, Some(PlaybackEvent::Playing { .. }));
                     let position = announcing
                         .as_ref()
                         .and_then(position_of)
@@ -355,7 +362,7 @@ async fn engine_loop(
                         id,
                         stream: loaded.stream,
                         at: position,
-                        playing,
+                        playing: wanted,
                     }).ok();
                     continue;
                 }
@@ -384,6 +391,22 @@ async fn engine_loop(
                 return;
             }
         }
+    }
+}
+
+/// The same announcement, but as a start. A play pressed while the track is still loading has
+/// to change what its first audio will be reported as.
+fn playing_now(event: PlaybackEvent) -> PlaybackEvent {
+    match event {
+        PlaybackEvent::Paused { id, at } => PlaybackEvent::Playing { id, at },
+        held => held,
+    }
+}
+
+fn paused_now(event: PlaybackEvent) -> PlaybackEvent {
+    match event {
+        PlaybackEvent::Playing { id, at } => PlaybackEvent::Paused { id, at },
+        held => held,
     }
 }
 
