@@ -58,9 +58,11 @@ oauth2 = "5.0"
 open = "5.4"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
+  "blocking",
   "json",
-  "rustls-tls-native-roots",
+  "query",
+  "rustls",
 ] }
 raw-window-handle = "0.6"
 roxmltree = "0.21"

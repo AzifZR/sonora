@@ -183,9 +183,21 @@ fn authorize(client_id: &str, redirect_uri: &str, prompt: PromptSink) -> Result<
     let response = client
         .exchange_code(AuthorizationCode::new(code.to_string()))
         .set_pkce_verifier(verifier)
-        .request(&reqwest::blocking::Client::new())
+        .request(&exchange)
         .map_err(|error| anyhow!("failed to exchange Spotify authorization code: {error}"))?;
     Ok(response.access_token().secret().to_owned())
+}
+
+/// Carries one oauth2 request over reqwest. oauth2 only knows the reqwest it was built against,
+/// so the workspace one is handed in as a plain function instead.
+fn exchange(request: oauth2::HttpRequest) -> Result<oauth2::HttpResponse, reqwest::Error> {
+    let sent = reqwest::blocking::Client::new().execute(request.try_into()?)?;
+    let status = sent.status();
+    let headers = sent.headers().clone();
+    let mut response = http::Response::new(sent.bytes()?.to_vec());
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    Ok(response)
 }
 
 async fn premium(session: &Session) -> Result<()> {

@@ -38,9 +38,9 @@ fn main() {
     }
     let opened_start = opened.as_deref().and_then(router::destination);
 
-    // reqwest 0.12 compiles rustls with ring and opensubsonic's reqwest 0.13 with aws-lc-rs,
-    // and rustls refuses to guess between two backends. A second install only means another
-    // crate got there first with the same choice.
+    // Two rustls backends are compiled in: librespot, oauth2 and ytmusic still ask for ring,
+    // while reqwest 0.13 and opensubsonic ask for aws-lc-rs. rustls refuses to guess between
+    // them, so one is picked here. A second install only means another crate got there first.
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
