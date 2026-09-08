@@ -25,12 +25,15 @@ pub use client::YouTubeClient;
 
 const GUEST_ID: &str = "youtube-guest";
 
-/// What the credential file remembers between launches: a browser sign-in with the
-/// Google account index it belongs to, or the choice to listen as a guest.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Saved {
-    Cookies { cookies: String, authuser: usize },
+    Cookies {
+        cookies: String,
+        authuser: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        page_id: Option<String>,
+    },
     Guest,
 }
 
@@ -69,11 +72,14 @@ impl YouTubeProvider {
         }
     }
 
-    fn cookie_client(&self, cookies: &str, authuser: usize) -> Arc<YtMusic> {
+    fn cookie_client(&self, cookies: &str, authuser: usize, page_id: Option<&str>) -> Arc<YtMusic> {
+        let api = YtMusic::with_cookies(cookies).as_user(authuser);
+        let api = match page_id {
+            Some(page) => api.as_page(page),
+            None => api,
+        };
         Arc::new(
-            YtMusic::with_cookies(cookies)
-                .as_user(authuser)
-                .persist_cookies(self.cookies.clone())
+            api.persist_cookies(self.cookies.clone())
                 .cache_resolutions(self.resolved.clone())
                 .cache_player(self.player.clone()),
         )
@@ -124,30 +130,39 @@ impl YouTubeProvider {
             _ => pick(&found, prompt, input).await?,
         };
 
-        let profile = wire::profile(account.profile.clone());
+        let page_id = account.identity.page_id.clone();
+        let profile = wire::profile(account.identity.profile.clone());
         credentials::remove(&self.cookies);
-        let api = self.cookie_client(&cookies, account.index);
-        self.store_cookies(&cookies, account.index)?;
+        let api = self.cookie_client(&cookies, account.index, page_id.as_deref());
+        self.store_cookies(&cookies, account.index, page_id.clone())?;
         log::debug!(
-            "youtube: cookie sign-in succeeded for authuser {}",
+            "youtube: cookie sign-in succeeded for authuser {} page {page_id:?}",
             account.index
         );
         Ok(self.authenticated_session(api, profile))
     }
 
-    fn store_cookies(&self, cookies: &str, authuser: usize) -> Result<()> {
+    fn store_cookies(&self, cookies: &str, authuser: usize, page_id: Option<String>) -> Result<()> {
         self.save(&Saved::Cookies {
             cookies: cookies.to_owned(),
             authuser,
+            page_id,
         })
         .context("cannot store youtube cookies")
     }
 
-    async fn restore_cookies(&self, cookies: &str, authuser: usize) -> Option<ProviderSession> {
-        let api = self.cookie_client(cookies, authuser);
+    async fn restore_cookies(
+        &self,
+        cookies: &str,
+        authuser: usize,
+        page_id: Option<&str>,
+    ) -> Option<ProviderSession> {
+        let api = self.cookie_client(cookies, authuser, page_id);
         match api.profile().await {
             Ok(profile) => {
-                log::debug!("youtube: restored the session for authuser {authuser}");
+                log::debug!(
+                    "youtube: restored the session for authuser {authuser} page {page_id:?}"
+                );
                 Some(self.authenticated_session(api, wire::profile(profile)))
             }
             Err(error) => {
@@ -180,6 +195,7 @@ pub(crate) fn migrate() {
                     .ok()
                     .and_then(|stored| stored.trim().parse().ok())
                     .unwrap_or(0),
+                page_id: None,
             }),
             _ if guest.exists() => Some(Saved::Guest),
             _ => None,
@@ -212,7 +228,7 @@ async fn pick<'a>(
     let picked = input.recv().await.context("sign-in was cancelled")?;
     found
         .iter()
-        .find(|account| account.index.to_string() == picked.trim())
+        .find(|account| account.id() == picked.trim())
         .context("that account is no longer signed in")
 }
 
@@ -242,9 +258,13 @@ impl MusicProvider for YouTubeProvider {
 
     async fn restore(&self) -> Result<Option<ProviderSession>> {
         match self.saved() {
-            Some(Saved::Cookies { cookies, authuser }) => {
-                Ok(self.restore_cookies(&cookies, authuser).await)
-            }
+            Some(Saved::Cookies {
+                cookies,
+                authuser,
+                page_id,
+            }) => Ok(self
+                .restore_cookies(&cookies, authuser, page_id.as_deref())
+                .await),
             Some(Saved::Guest) => {
                 log::debug!("youtube: restoring guest session");
                 Ok(Some(self.guest_session(self.guest_client())))
