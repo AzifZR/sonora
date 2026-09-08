@@ -456,9 +456,30 @@ struct Playing {
 }
 
 impl Playing {
-    /// What is audible now: where the decode started plus what the output has drawn from this
-    /// track since. The decoder itself runs ahead of this by whatever is queued.
-    fn heard(&self, cue: &Cue) -> Duration {
+    fn mark(&self) -> Mark {
+        Mark {
+            id: self.id.clone(),
+            channels: self.channels,
+            rate: self.rate,
+            base: self.base,
+            offset: self.offset,
+        }
+    }
+}
+
+/// The track being heard, which is not always the one being decoded: at the end of a track the
+/// decoder has moved on, or stopped, while the queue still holds the last seconds of it.
+struct Mark {
+    id: String,
+    channels: u16,
+    rate: u32,
+    base: Duration,
+    offset: u64,
+}
+
+impl Mark {
+    /// Where the sound is: what the output has drawn from this track, from where it started.
+    fn at(&self, cue: &Cue) -> Duration {
         let mine = cue.played().saturating_sub(self.offset);
         let frames = mine / u64::from(self.channels).max(1);
         self.base + Duration::from_secs_f64(frames as f64 / f64::from(self.rate).max(1.0))
@@ -492,6 +513,7 @@ fn audio_loop(
     let mut current: Option<Playing> = None;
     let mut written = 0u64;
     let mut joining: Option<Join> = None;
+    let mut heard: Option<Mark> = None;
     let mut queued: Option<(String, Stream, Option<Duration>)> = None;
     let mut playing = false;
     let mut reported_at = Instant::now();
@@ -516,22 +538,41 @@ fn audio_loop(
         {
             let Join { ended, next, .. } = joining.take().unwrap_or_else(|| unreachable!());
             events.send(PlaybackEvent::Ended { id: Some(ended) }).ok();
-            if let Some((id, duration)) = next {
-                if let Some(duration) = duration {
+            heard = current.as_ref().map(Playing::mark);
+            match next {
+                Some((id, duration)) => {
+                    if let Some(duration) = duration {
+                        events
+                            .send(PlaybackEvent::Length {
+                                id: Some(id.clone()),
+                                duration,
+                            })
+                            .ok();
+                    }
                     events
-                        .send(PlaybackEvent::Length {
-                            id: Some(id.clone()),
-                            duration,
+                        .send(PlaybackEvent::Playing {
+                            id: Some(id),
+                            at: Duration::ZERO,
                         })
                         .ok();
                 }
-                events
-                    .send(PlaybackEvent::Playing {
-                        id: Some(id),
-                        at: Duration::ZERO,
-                    })
-                    .ok();
+                None => playing = false,
             }
+        }
+
+        // reported from the sound, so it keeps moving while the last seconds play out
+        if playing
+            && let Some(mark) = &heard
+            && reported_at.elapsed() >= interval
+            && !cue.cleared()
+        {
+            reported_at = Instant::now();
+            events
+                .send(PlaybackEvent::Position {
+                    id: Some(mark.id.clone()),
+                    at: mark.at(&cue),
+                })
+                .ok();
         }
 
         if let Some(job) = job {
@@ -546,6 +587,7 @@ fn audio_loop(
                     joining = None;
                     written = 0;
                     current = begin(&id, &stream, at, 0);
+                    heard = current.as_ref().map(Playing::mark);
                     playing = start && current.is_some();
                     match playing {
                         true if paced.play().is_err() => return,
@@ -572,11 +614,11 @@ fn audio_loop(
                     if playing && paced.play().is_err() {
                         return;
                     }
-                    if let Some(held) = &current {
+                    if let Some(mark) = &heard {
                         events
                             .send(PlaybackEvent::Playing {
-                                id: Some(held.id.clone()),
-                                at: held.heard(&cue),
+                                id: Some(mark.id.clone()),
+                                at: mark.at(&cue),
                             })
                             .ok();
                     }
@@ -584,11 +626,11 @@ fn audio_loop(
                 Job::Pause => {
                     playing = false;
                     paced.pause();
-                    if let Some(held) = &current {
+                    if let Some(mark) = &heard {
                         events
                             .send(PlaybackEvent::Paused {
-                                id: Some(held.id.clone()),
-                                at: held.heard(&cue),
+                                id: Some(mark.id.clone()),
+                                at: mark.at(&cue),
                             })
                             .ok();
                     }
@@ -601,6 +643,7 @@ fn audio_loop(
                         held.base = position;
                         held.offset = 0;
                         written = 0;
+                        heard = Some(held.mark());
                         cue.arm();
                     }
                 }
@@ -622,7 +665,6 @@ fn audio_loop(
                 current = begin(&id, &stream, Duration::ZERO, written);
                 current.as_ref().map(|_| (id, duration))
             });
-            playing = current.is_some();
             // both events wait for the queue to reach here, so the join lands on the sample
             joining = Some(Join {
                 ended,
@@ -639,15 +681,6 @@ fn audio_loop(
             return;
         }
         written += samples.len() as u64;
-        if reported_at.elapsed() >= interval && !cue.cleared() {
-            reported_at = Instant::now();
-            events
-                .send(PlaybackEvent::Position {
-                    id: Some(held.id.clone()),
-                    at: held.heard(&cue),
-                })
-                .ok();
-        }
     }
 }
 
