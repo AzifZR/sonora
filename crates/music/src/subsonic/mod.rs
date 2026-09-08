@@ -26,7 +26,13 @@ impl SubsonicProvider {
         password: String,
     ) -> Result<ProviderSession> {
         let server = auth::normalize_server(&server)?;
-        let client = SubsonicClient::new(server.clone(), username.clone(), password.clone())?;
+        let signature = auth::sign(&username, &password);
+        let client = SubsonicClient::new(
+            server.clone(),
+            username.clone(),
+            password.clone(),
+            &signature,
+        )?;
         let profile = client
             .profile()
             .await
@@ -35,6 +41,7 @@ impl SubsonicProvider {
             server,
             username,
             password,
+            signature: Some(signature),
         })?;
         Ok(ProviderSession {
             profile,
@@ -47,13 +54,21 @@ impl SubsonicProvider {
     }
 
     async fn restore_stored() -> Result<Option<ProviderSession>> {
-        let Some(remembered) = auth::load() else {
+        let Some(mut remembered) = auth::load() else {
             return Ok(None);
         };
+        if remembered.signature.is_none() {
+            remembered.signature = Some(auth::sign(&remembered.username, &remembered.password));
+            if let Err(error) = auth::store(&remembered) {
+                log::warn!("subsonic: cannot keep the cover signature: {error:#}");
+            }
+        }
+        let signature = remembered.signature.clone().unwrap_or_default();
         let client = SubsonicClient::new(
             remembered.server.clone(),
             remembered.username.clone(),
             remembered.password.clone(),
+            &signature,
         )?;
         match client.profile().await {
             Ok(profile) => Ok(Some(ProviderSession {

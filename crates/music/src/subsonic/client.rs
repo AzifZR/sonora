@@ -6,8 +6,10 @@ use async_trait::async_trait;
 use opensubsonic::api::lists::AlbumListType;
 use opensubsonic::data::{AlbumId3, AlbumWithSongsId3, Child, Genre as SourceGenre};
 use opensubsonic::{Auth, Client};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use tokio::task::JoinSet;
 
+use crate::subsonic::auth::Signature;
 use crate::subsonic::wire;
 use crate::{
     Album, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem, GenreSection,
@@ -20,27 +22,49 @@ const RADIO_COUNT: i32 = 25;
 const HOME_SONGS: i32 = 25;
 const HOME_ALBUMS: i32 = 12;
 const LIBRARY_PAGE: i32 = 500;
+const API_VERSION: &str = "1.16.1";
+const CLIENT_NAME: &str = "sonora";
 
 #[derive(Clone)]
 pub struct SubsonicClient {
     client: Client,
     username: String,
+    /// The cover art endpoint with the fixed signature already on it. The library client signs
+    /// every url afresh, which would give one cover a new url on every conversion and defeat
+    /// every image cache between here and the screen.
+    covers: String,
 }
 
 impl SubsonicClient {
-    pub fn new(server: String, username: String, password: String) -> Result<Self> {
+    pub fn new(
+        server: String,
+        username: String,
+        password: String,
+        signature: &Signature,
+    ) -> Result<Self> {
         let server = server.trim_end_matches('/').to_owned();
         let client = Client::new(&server, Auth::token(&username, password))
             .context("cannot parse the subsonic server address")?
-            .with_client_name("sonora");
-        Ok(Self { client, username })
+            .with_client_name(CLIENT_NAME);
+        let covers = format!(
+            "{server}/rest/getCoverArt?u={}&t={}&s={}&v={API_VERSION}&c={CLIENT_NAME}&f=json",
+            utf8_percent_encode(&username, NON_ALPHANUMERIC),
+            utf8_percent_encode(&signature.token, NON_ALPHANUMERIC),
+            utf8_percent_encode(&signature.salt, NON_ALPHANUMERIC),
+        );
+        Ok(Self {
+            client,
+            username,
+            covers,
+        })
     }
 
     fn cover_url(&self, id: &str, size: i32) -> Option<String> {
-        self.client
-            .cover_art_url(id, Some(size))
-            .ok()
-            .map(|url| url.to_string())
+        Some(format!(
+            "{}&id={}&size={size}",
+            self.covers,
+            utf8_percent_encode(id, NON_ALPHANUMERIC)
+        ))
     }
 
     fn cover(&self, art: Option<&str>, fallback: &str) -> Option<String> {

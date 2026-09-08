@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
+use opensubsonic::Auth;
 use serde::{Deserialize, Serialize};
 
 use crate::credentials;
@@ -10,6 +11,32 @@ pub struct Credentials {
     pub server: String,
     pub username: String,
     pub password: String,
+    /// The token and salt every cover url is signed with. Made once at sign-in and kept, so a
+    /// cover keeps one url across launches and the image caches can hold it.
+    #[serde(default)]
+    pub signature: Option<Signature>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Signature {
+    pub token: String,
+    pub salt: String,
+}
+
+/// Signs once with a fresh salt, the way the server expects each request to be signed.
+pub fn sign(username: &str, password: &str) -> Signature {
+    let mut signature = Signature {
+        token: String::new(),
+        salt: String::new(),
+    };
+    for (key, value) in Auth::token(username, password).params() {
+        match key {
+            "t" => signature.token = value,
+            "s" => signature.salt = value,
+            _ => {}
+        }
+    }
+    signature
 }
 
 fn path() -> PathBuf {
