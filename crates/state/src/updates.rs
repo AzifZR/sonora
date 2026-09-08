@@ -9,7 +9,10 @@ use sha2::{Digest as _, Sha256};
 use crate::{AppSettings, Io, join};
 
 const LATEST: &str = "https://api.github.com/repos/sonorahq/sonora/releases/latest";
-const INSTALLER: &str = "Sonora-Setup.exe";
+const INSTALLER: &str = match cfg!(target_arch = "aarch64") {
+    true => "Sonora-Setup-arm64.exe",
+    false => "Sonora-Setup.exe",
+};
 const SUMS: &str = "SHA256SUMS";
 const UNINSTALLER: &str = "unins000.exe";
 const RUNNING: &str = env!("CARGO_PKG_VERSION");

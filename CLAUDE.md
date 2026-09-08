@@ -145,8 +145,9 @@ option: its requirements forbid AI-assisted code.
 ### macOS / Windows
 
 Released, but not developed against here. `.github/workflows/release.yml` builds both Apple targets
-and `x86_64-pc-windows-msvc`; the `x11`/`wayland` features on `gpui_platform` are inert off Linux,
-so the pin does no harm. There is no local toolchain for either — the release workflow is the only
+and both Windows ones, `x86_64-pc-windows-msvc` on `windows-latest` and `aarch64-pc-windows-msvc`
+on `windows-11-arm`; the `x11`/`wayland` features on `gpui_platform` are inert off Linux, so the pin
+does no harm. There is no local toolchain for either — the release workflow is the only
 thing that exercises them, and it only runs on a tag. The flake declares `x86_64-linux`/`aarch64-linux`
 only, and the mold linker flag targets Linux.
 
@@ -159,6 +160,10 @@ signing and the bundle has no nested code.
 Windows embeds `assets/windows/sonora.ico` through `crates/sonora/build.rs` and `winresource`. It is
 also the one target that compiles SQLite instead of linking the system one: `crates/sonora/Cargo.toml`
 turns on `state/bundled-sqlite` under `cfg(windows)`, because MSVC has no `libsqlite3` to find.
+Each Windows build gets its own Inno Setup installer from `scripts/windows/sonora.iss`, which reads
+the architecture and the output name from `SONORA_ARCH` and `SONORA_SETUP`: `Sonora-Setup.exe` for
+x64 and `Sonora-Setup-arm64.exe` for ARM. `state::updates` picks the installer for its own
+`target_arch`, so renaming either means changing both.
 
 ### Checks
 

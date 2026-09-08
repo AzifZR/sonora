@@ -4,6 +4,10 @@
 #define AppVersion GetEnv("SONORA_VERSION")
 #define SourceExe GetEnv("SONORA_EXE")
 #define OutputDir GetEnv("SONORA_DIST")
+; x64compatible for the x64 build, arm64 for the ARM one
+#define Arch GetEnv("SONORA_ARCH")
+; Sonora-Setup for the x64 build, Sonora-Setup-arm64 for the ARM one
+#define SetupName GetEnv("SONORA_SETUP")
 
 [Setup]
 AppId={{8D65C17E-79E8-46D7-9A37-42E85E73F738}
@@ -15,12 +19,12 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExeName}
 OutputDir={#OutputDir}
-OutputBaseFilename=Sonora-Setup
+OutputBaseFilename={#SetupName}
 SetupIconFile=..\..\assets\windows\sonora.ico
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#Arch}
+ArchitecturesInstallIn64BitMode={#Arch}
 PrivilegesRequired=admin
 WizardStyle=modern
 

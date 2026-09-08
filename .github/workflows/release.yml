@@ -34,6 +34,12 @@ jobs:
             os: macos-15-intel
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            arch: x64compatible
+            setup: Sonora-Setup
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            arch: arm64
+            setup: Sonora-Setup-arm64
     steps:
       - uses: actions/checkout@v5
 
@@ -113,6 +119,8 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           TARGET: ${{ matrix.target }}
+          SONORA_ARCH: ${{ matrix.arch }}
+          SONORA_SETUP: ${{ matrix.setup }}
         run: |
           $number = $env:VERSION.TrimStart("v")
           if ($number -notmatch '^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$') {

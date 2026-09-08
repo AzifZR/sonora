@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Windows on ARM gets a native build: releases carry an `aarch64-pc-windows-msvc` executable and a
+  `Sonora-Setup-arm64.exe` installer, and the in-app updater fetches that one on an ARM machine.
+
 - A Shuffle button sits beside Play on every album, playlist, artist and library page. It turns
   shuffle on and starts the collection from a random track.
 
