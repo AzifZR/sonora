@@ -73,7 +73,7 @@ impl YouTubeProvider {
         Arc::new(
             YtMusic::with_cookies(cookies)
                 .as_user(authuser)
-                .persist_to(self.cookies.clone())
+                .persist_cookies(self.cookies.clone())
                 .cache_resolutions(self.resolved.clone())
                 .cache_player(self.player.clone()),
         )
