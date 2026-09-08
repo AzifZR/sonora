@@ -286,17 +286,34 @@ impl MusicApi for YouTubeClient {
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {
-        let mut detail = self.api.playlist(playlist_id).await?;
+        let mut detail = self.api.playlist_page(playlist_id).await?;
         detail.tracks = self.api.swap_playable(detail.tracks).await;
         Ok(wire::playlist_detail(detail))
     }
 
+    async fn playlist_continuation(
+        &self,
+        continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)> {
+        let mut page = self.api.playlist_continuation(continuation).await?;
+        page.tracks = self.api.swap_playable(page.tracks).await;
+        Ok(wire::playlist_page(page))
+    }
+
     async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        Ok(self.playlist(playlist_id).await?.tracks)
+        let mut detail = self.api.playlist(playlist_id).await?;
+        detail.tracks = self.api.swap_playable(detail.tracks).await;
+        Ok(wire::playlist_detail(detail).tracks)
     }
 
     async fn playlist_covers(&self, playlist_id: &str, wanted: usize) -> Result<Vec<String>> {
-        let tracks = self.playlist_tracks(playlist_id).await?;
+        let mut tracks = self.api.playlist_page(playlist_id).await?.tracks;
+        tracks = self.api.swap_playable(tracks).await;
+        let tracks: Vec<Track> = tracks
+            .into_iter()
+            .enumerate()
+            .map(|(index, track)| wire::track(track, index as u32))
+            .collect();
         Ok(crate::distinct_covers(&tracks, wanted))
     }
 

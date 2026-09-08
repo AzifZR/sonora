@@ -56,6 +56,7 @@ pub(crate) struct DetailView {
     settings: Entity<AppSettings>,
     section: &'static str,
     sorted: Option<String>,
+    shown: Option<String>,
     context_menu: Option<Point<Pixels>>,
     toolbar: Entity<Toolbar>,
     popovers: Popovers,
@@ -121,12 +122,16 @@ impl DetailView {
             TableState::new(delegate, cx).follow(scroll)
         });
 
-        cx.observe(&detail, |this, _, cx| {
-            this.scrollbar
-                .read(cx)
-                .scroll()
-                .set_offset(gpui::Point::default());
-            this.restore_sorting(cx);
+        cx.observe(&detail, |this, detail, cx| {
+            let shown = detail.read(cx).id().map(str::to_owned);
+            if this.shown != shown {
+                this.shown = shown;
+                this.scrollbar
+                    .read(cx)
+                    .scroll()
+                    .set_offset(gpui::Point::default());
+                this.restore_sorting(cx);
+            }
             this.retune(cx);
             this.rebuild(cx);
             cx.notify();
@@ -203,6 +208,7 @@ impl DetailView {
             settings,
             section,
             sorted: None,
+            shown: None,
             context_menu: None,
             toolbar,
             popovers: Popovers::default(),
@@ -470,6 +476,17 @@ impl Render for DetailView {
             )
         });
 
+        let more = (self.section == "playlist" && self.detail.read(cx).has_more()).then(|| {
+            let detail = self.detail.clone();
+            Button::new("playlist-load-more")
+                .label(t!("common-more"))
+                .outline()
+                .disabled(self.detail.read(cx).is_loading_more())
+                .on_click(move |_, _, cx| {
+                    detail.update(cx, |detail, cx| detail.load_more(cx));
+                })
+        });
+
         div()
             .relative()
             .size_full()
@@ -478,7 +495,10 @@ impl Render for DetailView {
                     .pt(inset)
                     .pb(inset)
                     .child(div().px(inset).child(self.header(cx)))
-                    .child(table(&self.table)),
+                    .child(table(&self.table))
+                    .when_some(more, |this, more| {
+                        this.child(div().flex().justify_center().py(inset).child(more))
+                    }),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }

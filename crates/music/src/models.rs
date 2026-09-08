@@ -190,6 +190,7 @@ pub struct TrackTags {
 pub struct PlaylistDetail {
     pub playlist: Playlist,
     pub tracks: Vec<Track>,
+    pub continuation: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
