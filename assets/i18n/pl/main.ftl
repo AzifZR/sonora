@@ -25,7 +25,6 @@ nav-search = Szukaj
 nav-library = Twoja biblioteka
 nav-settings = Ustawienia
 nav-songs = Utwory
-nav-favorites = Ulubione
 nav-albums = Albumy
 nav-playlists = Playlisty
 nav-artists = Wykonawcy
@@ -42,12 +41,14 @@ library-play-liked-songs = Odtwórz
 library-no-songs = Brak ulubionych
 library-no-albums = Brak zapisanych albumów
 library-no-playlists = Brak playlist
-library-no-artists = Brak obserwowanych wykonawców
+library-no-artists = Brak ulubionych wykonawców
 library-no-local-songs = Nie znaleziono zaimportowanych utworów
-library-no-local-favorites = Brak lokalnych ulubionych
 library-no-local-albums = Nie znaleziono zaimportowanych albumów
 library-no-local-artists = Nie znaleziono zaimportowanych wykonawców
 library-no-local-playlists = Nie ma jeszcze lokalnych playlist
+library-no-catalog-songs = Nie znaleziono utworów
+library-no-catalog-albums = Nie znaleziono albumów
+library-no-catalog-artists = Nie znaleziono wykonawców
 library-no-matches = Brak wyników
 library-not-loaded = Biblioteka się nie wczytała
 library-part-not-loaded = Ta część biblioteki się nie wczytała
@@ -176,7 +177,6 @@ playlist-again-add = Dodaj ponownie
 confirm-remove-library-title = Usuń z biblioteki
 confirm-remove-playlist-title = Usuń z playlisty
 confirm-remove-history-title = Usuń z historii
-confirm-unfollow-title = Przestań obserwować
 confirm-remove-songs = { $count ->
     [one] Usunąć ten utwór z biblioteki?
     [few] Usunąć { $count } utwory z biblioteki?
@@ -197,9 +197,10 @@ confirm-remove-albums = { $count ->
     [few] Usunąć { $count } albumy z biblioteki?
    *[other] Usunąć { $count } albumów z biblioteki?
 }
-confirm-unfollow-artists = { $count ->
-    [one] Przestać obserwować tego artystę?
-   *[other] Przestać obserwować { $count } artystów?
+confirm-remove-artists = { $count ->
+    [one] Usunąć tego wykonawcę z ulubionych?
+    [few] Usunąć { $count } wykonawców z ulubionych?
+   *[other] Usunąć { $count } wykonawców z ulubionych?
 }
 confirm-remove-playlists = { $count ->
     [one] Usunąć tę playlistę z biblioteki?
@@ -248,6 +249,7 @@ filter-duration = Czas trwania
 filter-year = Rok
 filter-explicit = Tylko z wulgaryzmami
 filter-playable = Tylko dostępne
+filter-favorites = Tylko ulubione
 filter-owned = Moje
 
 # view
@@ -311,8 +313,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } słuchaczy miesięcznie
 }
 artist-play = Odtwórz
-artist-follow = Obserwuj
-artist-unfollow = Nie obserwuj
 artist-popular = Popularne
 artist-popular-eyebrow = Poznaj tego wykonawcę
 artist-popular-empty = Nie ma jeszcze czego odtworzyć u tego wykonawcy

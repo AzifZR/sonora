@@ -5,7 +5,7 @@ use gpui::{AnyElement, App, Entity, TextAlign};
 use i18n::t;
 use music::Playlist;
 use router::Destination;
-use state::{Library, LibraryPart, LibraryState, Origin, Playback};
+use state::{Library, LibraryPart, Origin, Playback, Shelf};
 use ui::rank::{ESSENTIAL, HANDY, NICE, SPARE};
 use ui::{Cell, ColumnSpec, Menu, Pin, TableSource, Width};
 
@@ -73,7 +73,7 @@ pub(super) const COLUMNS: &[ColumnSpec<PlaylistField>] =
 pub(super) struct PlaylistSource {
     library: Entity<Library>,
     playback: Entity<Playback>,
-    local: bool,
+    shelf: Shelf,
     owned: bool,
 }
 
@@ -81,12 +81,12 @@ impl PlaylistSource {
     pub(super) fn shelved(
         library: Entity<Library>,
         playback: Entity<Playback>,
-        local: bool,
+        shelf: Shelf,
     ) -> Self {
         Self {
             library,
             playback,
-            local,
+            shelf,
             owned: false,
         }
     }
@@ -107,15 +107,7 @@ impl PlaylistSource {
     }
 
     fn playlists<'a>(&self, cx: &'a App) -> &'a [Playlist] {
-        let library = self.library.read(cx);
-        let state = match self.local {
-            true => library.local_state(),
-            false => library.state(),
-        };
-        match state {
-            LibraryState::Ready { playlists, .. } => playlists.as_slice(),
-            _ => &[],
-        }
+        self.library.read(cx).state(self.shelf).playlists()
     }
 }
 
@@ -171,10 +163,9 @@ impl TableSource for PlaylistSource {
     }
 
     fn is_loading(&self, cx: &App) -> bool {
-        match self.local {
-            true => self.library.read(cx).local_loading(LibraryPart::Playlists),
-            false => self.library.read(cx).loading(LibraryPart::Playlists),
-        }
+        self.library
+            .read(cx)
+            .loading(self.shelf, LibraryPart::Playlists)
     }
 
     fn pin(&self, row: usize, cx: &App) -> Option<Pin> {

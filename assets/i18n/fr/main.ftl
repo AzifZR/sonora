@@ -25,7 +25,6 @@ nav-search = Recherche
 nav-library = Ma bibliothèque
 nav-settings = Paramètres
 nav-songs = Titres
-nav-favorites = Favoris
 nav-albums = Albums
 nav-playlists = Playlists
 nav-artists = Artistes
@@ -42,9 +41,7 @@ library-play-liked-songs = Lire
 library-no-songs = Aucun favori pour l’instant
 library-no-albums = Aucun album enregistré pour l'instant
 library-no-playlists = Aucune playlist pour l'instant
-library-no-artists = Aucun artiste suivi pour l'instant
 library-no-local-songs = Aucun titre importé trouvé
-library-no-local-favorites = Aucun favori local pour l’instant
 library-no-local-albums = Aucun album importé trouvé
 library-no-local-artists = Aucun artiste importé
 library-no-local-playlists = Aucune playlist locale
@@ -227,8 +224,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } auditeurs mensuels
 }
 artist-play = Lire maintenant
-artist-follow = Suivre
-artist-unfollow = Ne plus suivre
 artist-popular = Populaires
 artist-popular-eyebrow = Découvrir cet artiste
 artist-popular-empty = Rien à écouter de cet artiste pour l'instant

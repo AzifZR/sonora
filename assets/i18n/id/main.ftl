@@ -25,7 +25,6 @@ nav-search = Cari
 nav-library = Pustaka
 nav-settings = Pengaturan
 nav-songs = Lagu
-nav-favorites = Favorit
 nav-albums = Album
 nav-playlists = Playlist
 nav-artists = Artis
@@ -42,9 +41,7 @@ library-play-liked-songs = Putar
 library-no-songs = Belum ada favorit
 library-no-albums = Belum ada album tersimpan
 library-no-playlists = Belum ada playlist
-library-no-artists = Belum mengikuti artis
 library-no-local-songs = Tidak menemukan lagu yang diimpor
-library-no-local-favorites = Belum ada lagu favorit lokal
 library-no-local-albums = Tidak menemukan album yang diimpor
 library-no-local-artists = Tidak menemukan artis yang diimpor
 library-no-local-playlists = Belum ada playlist lokal
@@ -167,7 +164,6 @@ playlist-again-add = Tambahkan lagi
 confirm-remove-library-title = Hapus dari favorit
 confirm-remove-playlist-title = Hapus dari playlist
 confirm-remove-history-title = Hapus dari riwayat
-confirm-unfollow-title = Berhenti mengikuti
 confirm-remove-songs = { $count ->
     [one] Hapus lagu ini dari favorit?
    *[other] Hapus { $count } lagu dari favorit?
@@ -183,10 +179,6 @@ confirm-remove-history-songs = { $count ->
 confirm-remove-albums = { $count ->
     [one] Hapus album ini dari favorit?
    *[other] Hapus { $count } album dari favorit?
-}
-confirm-unfollow-artists = { $count ->
-    [one] Berhenti mengikuti artis ini?
-   *[other] Berhenti mengikuti { $count } artis?
 }
 confirm-remove-playlists = { $count ->
     [one] Hapus playlist ini dari favorit?
@@ -295,8 +287,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } pendengar bulanan
 }
 artist-play = Putar sekarang
-artist-follow = Ikuti
-artist-unfollow = Berhenti mengikuti
 artist-popular = Populer
 artist-popular-eyebrow = Jelajahi artis ini
 artist-popular-empty = Belum ada yang bisa diputar dari artis ini

@@ -2,7 +2,7 @@ use gpui::{App, ClickEvent, ClipboardItem, Entity, SharedString, Styled as _, Wi
 use i18n::t;
 use music::{Album, MediaKind, Playlist, SavedArtist, Track};
 use router::{Destination, navigate};
-use state::{Detail, History, Library, LibraryState, Origin, Playback, Sonora};
+use state::{Detail, History, Library, Origin, Playback, Shelf, Sonora};
 use ui::{Menu, MenuItem, Pin, PinKind, Scrollbar, SubmenuState};
 
 use crate::shared::confirm::Confirm;
@@ -165,17 +165,17 @@ impl ItemMenu {
         };
         let barren = ids.is_empty();
         let shelf = match imported {
-            true => library.read(cx).local_state(),
-            false => library.read(cx).state(),
+            true => Shelf::Local,
+            false => Shelf::Streaming,
         };
-        let playlists: Vec<Playlist> = match shelf {
-            LibraryState::Ready { playlists, .. } => playlists
-                .iter()
-                .filter(|playlist| playlist.owned || playlist.collaborative)
-                .cloned()
-                .collect(),
-            _ => Vec::new(),
-        };
+        let playlists: Vec<Playlist> = library
+            .read(cx)
+            .state(shelf)
+            .playlists()
+            .iter()
+            .filter(|playlist| playlist.owned || playlist.collaborative)
+            .cloned()
+            .collect();
         let created = ids.clone();
         let new_playlist = MenuItem::new("new-playlist", t!("menu-new-playlist"))
             .icon("icons/plus.svg")
@@ -183,7 +183,7 @@ impl ItemMenu {
                 PlaylistEditor::open(
                     Edit::Create {
                         tracks: created.clone(),
-                        local: imported,
+                        shelf,
                     },
                     window,
                     cx,
@@ -663,26 +663,23 @@ pub(crate) fn artist_menu(
 }
 
 fn artist_library_item(artist: SavedArtist, cx: &App) -> Option<MenuItem> {
-    if music::is_local_id(&artist.id) {
-        return None;
-    }
     let library = Sonora::global(cx).library.clone();
-    let followed = library.read(cx).saved_artist(&artist.id);
+    let saved = library.read(cx).saved_artist(&artist.id);
     let item = MenuItem::new(
         "toggle-artist-library",
-        match followed {
-            true => t!("artist-unfollow"),
-            false => t!("artist-follow"),
+        match saved {
+            true => t!("menu-remove-from-library"),
+            false => t!("menu-add-to-library"),
         },
     )
-    .icon(match followed {
+    .icon(match saved {
         true => "icons/heart-off.svg",
         false => "icons/heart.svg",
     });
 
     Some(match library.read(cx).pending_artist(&artist.id) {
         true => item.disabled(),
-        false => item.on_click(move |_, _, cx| match followed {
+        false => item.on_click(move |_, _, cx| match saved {
             true => Confirm::artists(vec![artist.clone()], cx),
             false => {
                 let library = Sonora::global(cx).library.clone();
@@ -969,12 +966,11 @@ fn media_kind(kind: PinKind) -> MediaKind {
 }
 
 fn saved_track(id: &str, cx: &App) -> Option<Track> {
-    let library = Sonora::global(cx).library.read(cx);
-    let LibraryState::Ready { tracks, .. } = library.state() else {
-        return None;
-    };
-
-    tracks
+    Sonora::global(cx)
+        .library
+        .read(cx)
+        .state(Shelf::of(id))
+        .tracks()
         .iter()
         .find(|track| track.id.as_deref() == Some(id))
         .cloned()

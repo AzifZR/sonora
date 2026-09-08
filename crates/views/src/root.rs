@@ -8,7 +8,7 @@ use input::{
 use router::{Destination, NavigationEvent, SettingsTab, back, forward, navigate};
 use state::{
     ArtistDetail, Detail, GenreDetails, Genres, Home, Io, Library, Playback, Profile, Queue,
-    SYSTEM_FONT, Search, Session, SessionState, SideTab, SongDetail, Sonora,
+    SYSTEM_FONT, Search, Session, SessionState, Shelf, SideTab, SongDetail, Sonora,
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use ui::WindowFrame;
@@ -21,7 +21,7 @@ use crate::shells::Shell;
 use crate::shells::workspace::Workspace;
 use crate::{
     Adaptive, ArtistView, DetailView, FullscreenView, GenreView, HistoryView, HomeView,
-    LibraryView, LoginView, SettingsView, Shelf, SongView, UserView,
+    LibraryView, LoginView, SettingsView, SongView, UserView,
 };
 
 struct Screens {
@@ -117,7 +117,13 @@ impl Root {
         .detach();
 
         let library_view = cx.new(|cx| {
-            LibraryView::new(Shelf::Saved, library.clone(), playback.clone(), window, cx)
+            LibraryView::new(
+                Shelf::Streaming,
+                library.clone(),
+                playback.clone(),
+                window,
+                cx,
+            )
         });
         let local_view = cx.new(|cx| {
             LibraryView::new(Shelf::Local, library.clone(), playback.clone(), window, cx)

@@ -25,7 +25,6 @@ nav-search = 検索
 nav-library = ライブラリ
 nav-settings = 設定
 nav-songs = 曲
-nav-favorites = お気に入り
 nav-albums = アルバム
 nav-playlists = プレイリスト
 nav-artists = アーティスト
@@ -42,9 +41,7 @@ library-play-liked-songs = 再生
 library-no-songs = お気に入りはまだありません
 library-no-albums = 保存したアルバムはまだありません
 library-no-playlists = プレイリストはまだありません
-library-no-artists = フォロー中のアーティストはまだいません
 library-no-local-songs = インポートされた曲が見つかりません
-library-no-local-favorites = ローカルのお気に入りはまだありません
 library-no-local-albums = インポートされたアルバムが見つかりません
 library-no-local-artists = インポートされたアーティストが見つかりません
 library-no-local-playlists = ローカルのプレイリストはまだありません
@@ -141,12 +138,10 @@ playlist-again-add = 再度追加
 confirm-remove-library-title = ライブラリから削除
 confirm-remove-playlist-title = プレイリストから削除
 confirm-remove-history-title = 履歴から削除
-confirm-unfollow-title = フォロー解除
 confirm-remove-songs = { $count }曲をライブラリから削除しますか？
 confirm-remove-playlist-songs = { $count }曲をプレイリストから削除しますか？
 confirm-remove-history-songs = { $count }曲を再生履歴から削除しますか？
 confirm-remove-albums = { $count }枚のアルバムをライブラリから削除しますか？
-confirm-unfollow-artists = { $count }人のアーティストのフォローを解除しますか？
 confirm-remove-playlists = { $count }件のプレイリストをライブラリから削除しますか？
 
 # queue panel
@@ -249,8 +244,6 @@ artist-monthly-listeners = { $count ->
    *[other] 月間リスナー { $value }人
 }
 artist-play = 今すぐ再生
-artist-follow = フォロー
-artist-unfollow = フォロー解除
 artist-popular = 人気の曲
 artist-popular-eyebrow = このアーティストを知る
 artist-popular-empty = このアーティストにはまだ再生できる曲がありません

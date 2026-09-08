@@ -188,10 +188,7 @@ impl Detail {
 
     pub fn open_album(&mut self, id: &str, cx: &mut Context<Self>) {
         let library = self.library.read(cx);
-        let known = library
-            .album(id)
-            .or_else(|| library.local_album(id))
-            .cloned();
+        let known = library.album(id).cloned();
         let header = known.as_ref().map(album_header);
         if self.open(Collection::Album, id, header, cx) && !self.loaded {
             self.album = known;

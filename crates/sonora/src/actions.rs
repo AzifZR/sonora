@@ -5,7 +5,7 @@ use input::{
     SignOut, SongNext, SongPrevious, TogglePlayback, ZoomWindow,
 };
 use router::Destination;
-use state::Sonora;
+use state::{Shelf, Sonora};
 use ui::{Copy, Cut, Paste, SelectAll};
 
 pub fn register(lingers: bool, cx: &mut App) {
@@ -39,9 +39,13 @@ pub fn register(lingers: bool, cx: &mut App) {
                 let history = Sonora::global(cx).history.clone();
                 history.update(cx, |history, cx| history.refresh(cx));
             }
-            _ => {
+            at => {
+                let shelf = match at {
+                    Destination::Local(_) => Shelf::Local,
+                    _ => Shelf::Streaming,
+                };
                 let library = Sonora::global(cx).library.clone();
-                library.update(cx, |library, cx| library.refresh(cx));
+                library.update(cx, |library, cx| library.refresh(shelf, cx));
             }
         },
     );

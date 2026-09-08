@@ -14,9 +14,9 @@ use gpui::{
     AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement as _, SharedString,
     Styled as _, WeakEntity,
 };
-use music::Track;
+use music::{Shape, Track};
 use router::Destination;
-use state::{Detail, History, Library, Origin, Playback, PlaybackState, Sonora};
+use state::{Detail, History, Library, Origin, Playback, PlaybackState, Shelf, Sonora};
 use ui::{
     Button, Cell, ColumnSpec, Menu, Pin, ROW_GROUP, Scrollbar, TableSource, TableState, clock,
 };
@@ -152,6 +152,7 @@ pub(crate) struct TrackSource {
     provider: Rc<dyn Tracks>,
     playback: Entity<Playback>,
     is_liked: Option<Entity<Library>>,
+    starrable: Option<Shelf>,
     album: Option<Entity<Detail>>,
     playlist: Option<Entity<Detail>>,
     history: Option<Entity<History>>,
@@ -179,6 +180,7 @@ impl TrackSource {
             provider: Rc::new(provider),
             playback,
             is_liked: None,
+            starrable: None,
             album: None,
             playlist: None,
             history: None,
@@ -242,6 +244,27 @@ impl TrackSource {
     pub(crate) fn with_liked(mut self, library: Entity<Library>) -> Self {
         self.is_liked = Some(library);
         self
+    }
+
+    /// Offers a favorites filter, and hearts on the rows, only when the shelf lists more than the
+    /// favorites. Needs `with_liked`, which supplies the library both ask.
+    pub(crate) fn starrable(mut self, shelf: Shelf) -> Self {
+        self.starrable = Some(shelf);
+        self
+    }
+
+    fn catalog(&self, cx: &App) -> bool {
+        match (self.starrable, &self.is_liked) {
+            (Some(shelf), Some(library)) => library.read(cx).shape(shelf) == Shape::Catalog,
+            _ => false,
+        }
+    }
+
+    fn starred(&self, track: &Track, cx: &App) -> bool {
+        match (&self.is_liked, track.id.as_deref()) {
+            (Some(library), Some(id)) => library.read(cx).saved(id),
+            _ => false,
+        }
     }
 
     pub(crate) fn with_playlist(mut self, detail: Entity<Detail>) -> Self {
@@ -334,6 +357,10 @@ impl TrackSource {
 
     fn liked_button(&self, cell: &Cell<TrackField>, track: &Track, cx: &App) -> Option<AnyElement> {
         let library = self.is_liked.as_ref()?;
+        // on a saved shelf every listed track is a favorite, so the heart would say nothing
+        if self.starrable.is_some() && !self.catalog(cx) {
+            return None;
+        }
         let id = track.id.clone()?;
         let theme = *cx.theme();
         let state = library.read(cx);
@@ -436,6 +463,9 @@ impl TableSource for TrackSource {
             if !self.sieve.keeps(&track) {
                 return false;
             }
+            if self.sieve.favorites && !self.starred(&track, cx) {
+                return false;
+            }
             hits(&track, query)
         })
     }
@@ -446,7 +476,7 @@ impl TableSource for TrackSource {
         };
         let value = self.sieve.duration.unwrap_or(bounds);
 
-        vec![
+        let mut axes = vec![
             Filter::Range(
                 RangeAxis {
                     key: "filter-duration",
@@ -468,7 +498,15 @@ impl TableSource for TrackSource {
                 label: t!("filter-playable"),
                 on: self.sieve.playable,
             }),
-        ]
+        ];
+        if self.catalog(cx) {
+            axes.push(Filter::Flag(FlagAxis {
+                key: "filter-favorites",
+                label: t!("filter-favorites"),
+                on: self.sieve.favorites,
+            }));
+        }
+        axes
     }
 
     fn filter(&mut self, change: FilterChange, _cx: &App) -> bool {
@@ -483,6 +521,10 @@ impl TableSource for TrackSource {
             }
             FilterChange::Flag("filter-playable", value) => {
                 self.sieve.playable = value;
+                true
+            }
+            FilterChange::Flag("filter-favorites", value) => {
+                self.sieve.favorites = value;
                 true
             }
             FilterChange::Reset => {
