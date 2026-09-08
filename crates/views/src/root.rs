@@ -2,13 +2,13 @@ use gpui::{AnyView, Context, Entity, MouseButton, NavigationDirection, Render, T
 use gpui::{App, Font, FontFallbacks, SharedString, font, prelude::*};
 use gpui::{Window, div};
 use input::{
-    NavigateBack, NavigateForward, OpenFilter, OpenSearch, OpenSettings, ToggleFullscreen,
-    ToggleLyrics, ToggleQueue,
+    CloseWindow, MinimizeWindow, NavigateBack, NavigateForward, OpenFilter, OpenSearch,
+    OpenSettings, ToggleFullscreen, ToggleLyrics, ToggleQueue, ToggleWindowFullscreen, ZoomWindow,
 };
 use router::{Destination, NavigationEvent, SettingsTab, back, forward, navigate};
 use state::{
     ArtistDetail, Detail, GenreDetails, Genres, Home, Io, Library, Playback, Profile, Queue,
-    SYSTEM_FONT, Search, Session, SessionState, SideTab, SongDetail, Sonora,
+    SYSTEM_FONT, Search, Session, SessionState, Shelf, SideTab, SongDetail, Sonora,
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use ui::WindowFrame;
@@ -21,7 +21,7 @@ use crate::shells::Shell;
 use crate::shells::workspace::Workspace;
 use crate::{
     Adaptive, ArtistView, DetailView, FullscreenView, GenreView, HistoryView, HomeView,
-    LibraryView, LoginView, SettingsView, Shelf, SongView, UserView,
+    LibraryView, LoginView, SettingsView, SongView, UserView,
 };
 
 struct Screens {
@@ -76,6 +76,8 @@ pub struct Root {
     navigation_transition: Option<Task<()>>,
     screens: Screens,
     _adaptive: Entity<Adaptive>,
+    #[cfg(target_os = "windows")]
+    background: Option<gpui::WindowBackgroundAppearance>,
 }
 
 impl Root {
@@ -115,7 +117,13 @@ impl Root {
         .detach();
 
         let library_view = cx.new(|cx| {
-            LibraryView::new(Shelf::Saved, library.clone(), playback.clone(), window, cx)
+            LibraryView::new(
+                Shelf::Streaming,
+                library.clone(),
+                playback.clone(),
+                window,
+                cx,
+            )
         });
         let local_view = cx.new(|cx| {
             LibraryView::new(Shelf::Local, library.clone(), playback.clone(), window, cx)
@@ -226,6 +234,8 @@ impl Root {
                 settings,
             },
             _adaptive: adaptive,
+            #[cfg(target_os = "windows")]
+            background: None,
         };
         root.show(start, cx);
         root
@@ -569,6 +579,17 @@ impl Render for Root {
 
         let theme = *cx.theme();
         window.set_rem_size(theme.font_size);
+        #[cfg(target_os = "windows")]
+        {
+            let appearance = match theme.transparent {
+                true => gpui::WindowBackgroundAppearance::Transparent,
+                false => gpui::WindowBackgroundAppearance::Opaque,
+            };
+            if self.background != Some(appearance) {
+                self.background = Some(appearance);
+                window.set_background_appearance(appearance);
+            }
+        }
 
         let root = div()
             .relative()
@@ -592,6 +613,10 @@ impl Render for Root {
             .on_action(cx.listener(|this, _: &OpenSearch, _, cx| this.open_search(cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &ToggleFullscreen, _, cx| this.toggle_fullscreen(cx)))
+            .on_action(|_: &CloseWindow, window, _| window.remove_window())
+            .on_action(|_: &MinimizeWindow, window, _| window.minimize_window())
+            .on_action(|_: &ZoomWindow, window, _| window.zoom_window())
+            .on_action(|_: &ToggleWindowFullscreen, window, _| window.toggle_fullscreen())
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleQueue, _, cx| this.show_side(SideTab::Queue, cx)),

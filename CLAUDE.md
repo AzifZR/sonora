@@ -134,7 +134,7 @@ extension, which also supplies the mold that `.cargo/config.toml` asks for. `fla
 turns `Cargo.lock` into `cargo-sources.json` (generated, never committed) and `flatpak/build-flatpak.sh`
 runs the build locally. The release workflow builds both arches in Flathub's builder image, imports them
 into the signed OSTree repo on the `flatpak-repo` branch, which GitHub Pages serves at
-`https://nolight132.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
+`https://sonorahq.github.io/sonora`, and only then attaches `.flatpak` bundles to the release:
 `flatpak/export-bundles.sh` re-exports them from that repo so each carries the commit signature, the
 repo URL and the public key, and `flatpak update` follows the repo afterwards. `flatpak-bundles.yml`
 reruns that export for an existing release and swaps its bundles and checksum lines.
@@ -145,8 +145,9 @@ option: its requirements forbid AI-assisted code.
 ### macOS / Windows
 
 Released, but not developed against here. `.github/workflows/release.yml` builds both Apple targets
-and `x86_64-pc-windows-msvc`; the `x11`/`wayland` features on `gpui_platform` are inert off Linux,
-so the pin does no harm. There is no local toolchain for either — the release workflow is the only
+and both Windows ones, `x86_64-pc-windows-msvc` on `windows-latest` and `aarch64-pc-windows-msvc`
+on `windows-11-arm`; the `x11`/`wayland` features on `gpui_platform` are inert off Linux, so the pin
+does no harm. There is no local toolchain for either — the release workflow is the only
 thing that exercises them, and it only runs on a tag. The flake declares `x86_64-linux`/`aarch64-linux`
 only, and the mold linker flag targets Linux.
 
@@ -159,6 +160,10 @@ signing and the bundle has no nested code.
 Windows embeds `assets/windows/sonora.ico` through `crates/sonora/build.rs` and `winresource`. It is
 also the one target that compiles SQLite instead of linking the system one: `crates/sonora/Cargo.toml`
 turns on `state/bundled-sqlite` under `cfg(windows)`, because MSVC has no `libsqlite3` to find.
+Each Windows build gets its own Inno Setup installer from `scripts/windows/sonora.iss`, which reads
+the architecture and the output name from `SONORA_ARCH` and `SONORA_SETUP`: `Sonora-Setup.exe` for
+x64 and `Sonora-Setup-arm64.exe` for ARM. `state::updates` picks the installer for its own
+`target_arch`, so renaming either means changing both.
 
 ### Checks
 
@@ -205,6 +210,7 @@ construction, layout and scene assembly, never GPU fill.
 | Settings          | `$XDG_CONFIG_HOME/sonora/settings.json` (durable preferences and local music folder)                                              |
 | App state         | `$XDG_DATA_HOME/sonora/state.sqlite` (window/layout/playback state, pins, history, local playlists, usage flags)                  |
 | Credentials cache | `$XDG_CACHE_HOME/sonora/<provider>/credentials.json`, one per provider slug (`spotify`, `youtube`), owner-only mode                |
+| Local cover cache | `$XDG_CACHE_HOME/sonora/local-covers/`                                                                                             |
 | OAuth redirect    | `http://127.0.0.1:8989/login`, override with `SONORA_REDIRECT_URI`                                                                |
 | Instance socket   | `sonora.sock`, `sonora-dev.sock` in debug builds, so `cargo run` starts beside an installed Sonora rather than handing over to it |
 | Log file          | `$XDG_STATE_HOME/sonora/sonora.log`, rotated to `.1` past 8 MiB                                                                   |
@@ -560,10 +566,12 @@ Working notes:
 
 ### Audio
 
-`music::spotify::playback` owns `librespot_playback::Player` plus `BlazingSink` (`sink.rs`), a
-custom rodio sink with smooth gain ramping and flush-on-seek. `Factory` implements
+`music::spotify::playback` owns `librespot_playback::Player` plus `OutputSink` (`sink.rs`), a
+rodio sink that paces the decoder and drops what a seek or a new track made stale. librespot
+announces `Playing` and `Seeked` before it has written a byte, so `Events` holds those two until
+the sink writes the first packet of the new audio. `Factory` implements
 `music::PlaybackFactory`; `Engine` implements `music::Player`; events arrive as
-`music::PlaybackEvent` (`Loading/Playing/Paused/Position/Ended/Unavailable`).
+`music::PlaybackEvent` (`Loading/Playing/Paused/Position/Seeked/Length/Ended/Unavailable`).
 
 Never drive a player from a view. Go through `state::Playback`, which owns the engine, pumps
 events into `PlaybackState`, and handles shuffle, repeat, skip debouncing, and the cooldown after
@@ -577,7 +585,7 @@ an `Unavailable` track.
 | Entity                                     | Responsibility                                                                                                                                                             |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Session`                                  | auth lifecycle; emits `SessionEvent::{SignedIn, SignedOut}`; hands out `Arc<dyn MusicApi>` and `Arc<dyn PlaybackFactory>`                                                  |
-| `Library`                                  | saved tracks / playlists / albums / followed artists; `LibraryState` is `Empty \| Loading \| Ready{..,problems} \| Failed` — partial failure is normal, surface `problems` |
+| `Library`                                  | one shelf per live provider; `LibraryState` is `Empty \| Loading \| Ready(Ready) \| Failed` — partial failure is normal, surface `Ready::problems`                        |
 | `Playback`                                 | engine ownership, transport, shuffle/repeat, volume, `Origin` tracking, `toggle_origin`                                                                                    |
 | `Queue`                                    | past / current / upcoming; `start`, `next`, `next_random`, `previous`, `rewind`                                                                                            |
 | `Home`, `Detail`, `ArtistDetail`, `Search` | per-screen loaders, each owning its `Task`                                                                                                                                 |
@@ -608,14 +616,29 @@ toggles the group and nothing else, so a route change only ever comes from a tab
 also why an overlaid `SidebarLeft` survives opening a group — it dismisses on navigation, and there
 is none.
 
-**Local Music is a top-level route that reuses `LibraryView`.** `Destination::Local(LocalTab)` owns
-the imported library, and `Root` builds a second `LibraryView` with `Shelf::Local`; the shelf picks
-the state (`Library::local_state`, `local_favorites`) and the settings keys, and every
-`TableSource` takes it through a `shelved(.., local)` constructor. Local Music adds a Songs section
-holding every scanned track, with a heart on each row, beside the Favorites section the streaming
-shelf also has. Its `local-*` settings keys and the `nav-local` i18n key keep the old names so
-stored layouts survive; `Screen::Imported` keeps the stored id `imported` for the same reason.
-Rename the value, not the key.
+**A library has a shape, and the shape decides what its pages list.** `music::Shape` sits on
+`ProviderSession` beside `authenticated` and `playcounts`. `Saved` means the library is what the
+user starred, read through the `saved_*` methods; Spotify and YouTube say so. `Catalog` means the
+library is everything the provider has, read through `all_tracks`, `all_albums` and `all_artists`,
+with the `saved_*` set loaded beside it for hearts and a Favorites only filter; Local and any
+self-hosted server say so. The `saved_*` methods mean favorites on every provider, and the `all_*`
+methods default to an empty list, so a `Saved` provider never implements them. Spotify and YouTube
+get no filter, since their lists are the favorites already.
+
+**Two shelves, one code path.** `state::Shelf::{Streaming, Local}` names the two providers that can
+be live at once, and `Shelf::of(id)` routes an id by its prefix. `Library` holds one `Held` per
+shelf with the same loading, landing and favorites code, and every accessor takes the shelf:
+`state(shelf)`, `loading(shelf, part)`, `part_failed(shelf, part)`, `shape(shelf)`. `Session`
+answers `client_of(shelf)` and `shape_of(shelf)`. Do not add a `local_*` twin of anything; branch
+on `Shelf` or on `Shape`.
+
+**Local Music is a top-level route that reuses `LibraryView`.** `Destination::Local(LibraryTab)` owns
+the imported library, and `Root` builds a second `LibraryView` with `Shelf::Local`; both routes
+share `LibraryTab`, so the two shelves have the same four tabs, Songs included, whatever the shape.
+Every `TableSource` takes the shelf
+through a `shelved(.., shelf)` constructor. The `local-*` settings keys and the `nav-local` i18n key
+keep the old names so stored layouts survive; `Screen::Imported` keeps the stored id `imported` for
+the same reason. Rename the value, not the key.
 
 **Local files carry their own metadata.** `music::local::wire` resolves artwork by convention:
 embedded picture, then `cover`/`folder` beside the track, then the same beside the album folder;
@@ -625,12 +648,12 @@ an artist folder answers to `artist` first, then `folder`, then `cover`, in jpg,
 answers. `state::Tags` owns the read and the write and rescans the folder afterwards;
 `views::shared::tag_editor` is the dialog.
 
-**Saved tracks are called Favorites.** `LibraryTab::Songs`, `Section::Favorites`, the `songs`
-settings key and `library-liked-songs` all keep their old names; only the wording changed. Local
-favorites live in the local tables of `state.sqlite` and reach the same
-`MusicApi::set_track_saved` path, so
-`Library::saved`/`toggle` route by `music::is_local_id`. `MusicApi::all_tracks` is the odd one out:
-it defaults to `saved_tracks` and only the local provider gives it a different answer.
+**Saved tracks are called Favorites.** `LibraryTab::Songs`, the `songs` settings key and
+`library-liked-songs` all keep their old names; only the wording changed. Local favorites live in
+the `favorites`, `favorite_albums` and `favorite_artists` tables of `state.sqlite` and reach the
+same `MusicApi::set_*_saved` paths, so `Library::saved`/`toggle` route by `Shelf::of`. Hearts read
+the starred set on a `Catalog` shelf and the listed items on a `Saved` one. The songs table of a
+`Saved` shelf draws no heart at all, since every row there is a favorite already.
 
 **Which entries the sidebar shows is a setting.** `NavEntry::ALL` (router) is the list; a hidden one
 is stored by id in `hidden_nav` and read through `AppSettings::nav_shown`. Your Library still needs
@@ -662,10 +685,9 @@ add a sidebar entry in `views/src/chrome/sidebar_left.rs` if it's top-level.
 
 **New library section checklist:** `LibraryView` keeps one `TableState` per `Section`, and the
 fixed-size arrays (`views`, `sliders`, `Section::ALL`, `tables()`) are all indexed by
-`Section::slot()` — a new section means bumping every one of them, plus a `LibraryTab` or
-`LocalTab` variant, a `key(shelf)` for settings persistence, a `vacancy(shelf)` i18n key, a card
-renderer, a `deck` arm and a `LIBRARY_TABS` or `LOCAL_TABS` entry. `library/artists.rs` is the
-smallest complete example.
+`Section::slot()` — a new section means bumping every one of them, plus a `LibraryTab` variant, a
+`key(shelf)` for settings persistence, a `vacancy(shelf, shape)` i18n key, a card renderer, a `deck`
+arm and a `LIBRARY_TABS` entry. `library/artists.rs` is the smallest complete example.
 
 **Tables.** Implement `TableSource` (`columns`, `rows`, `cell`, and optionally `compare`, `matches`,
 `playing`, `is_loading`), define a `&'static [ColumnSpec<Field>]`, hold a
@@ -691,7 +713,11 @@ field in the title bar. Don't build a second search box.
 **Actions and keys.** Declare actions in `crates/input/src/lib.rs` (`actions!` macro), bind them in
 `bindings()`, handle them with `cx.on_action` (global, in `sonora/src/actions.rs`) or
 `.on_action(cx.listener(…))` (scoped). Key contexts: `Workspace`, `Input`, `Table`. Both `cmd-` and
-`ctrl-` bindings are registered for every shortcut.
+`ctrl-` bindings are registered for every shortcut in `shared()`; `macos()` is appended only on
+macOS and holds the Cocoa conventions (`cmd-w`, `cmd-m`, `cmd-h`, `alt-` word motions, the Emacs
+control keys). GPUI prefers the binding registered last within one context, which is what lets
+that set override the shared one. Only macOS draws the menu bar, so `actions::menus` adds the
+Edit and Window menus there alone.
 
 **The tray outlives the window.** `sonora/src/tray.rs` owns one `Tray` entity driven by two
 backends: `tray/native.rs` (`tray-icon`, macOS and Windows) and `tray/sni.rs` (`ksni`, Linux over

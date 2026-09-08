@@ -4,9 +4,9 @@ use crate::theme::ActiveTheme as _;
 use futures::AsyncReadExt as _;
 use gpui::prelude::*;
 use gpui::{
-    App, Asset, AssetLogger, Context, Div, Entity, Global, Hsla, ImageCache, ImageCacheError,
-    ImageSource, Interactivity, ObjectFit, Pixels, RenderImage, Resource, SharedString, SharedUri,
-    StyleRefinement, Styled, Task, Window, div, img, px, svg,
+    App, Asset, AssetLogger, Context, Div, ElementId, Entity, Global, Hsla, ImageCache,
+    ImageCacheError, ImageSource, Interactivity, ObjectFit, Pixels, RenderImage, Resource,
+    SharedString, SharedUri, StyleRefinement, Styled, Task, Window, div, img, px, svg,
 };
 use image::{
     AnimationDecoder, DynamicImage, Frame, ImageDecoder, ImageFormat, RgbaImage,
@@ -605,6 +605,11 @@ impl Artwork {
 
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
+        self
+    }
+
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.interactivity.element_id = Some(id.into());
         self
     }
 

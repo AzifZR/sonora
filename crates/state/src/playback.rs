@@ -12,17 +12,26 @@ use ui::{Pin, PinKind};
 
 type Fetch = std::pin::Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send>>;
 
+/// Why the provider will play nothing more this session. Every later load fails the same way
+/// without asking the engine again.
 #[derive(Clone, Copy, PartialEq)]
 enum Refusal {
+    /// Spotify denied an audio key for the account.
     Keys,
+    /// The provider streams only to a signed-in listener.
     SignIn,
 }
 
+/// How a load came about, which decides its debounce and whether the engine may keep its queue.
 #[derive(Clone, Copy, PartialEq)]
 enum Start {
+    /// The user chose a track.
     Pick,
+    /// The user skipped once.
     Skip,
+    /// The user is skipping repeatedly; the load waits for the skipping to stop.
     Burst,
+    /// The queue moved on by itself, so a gapless engine keeps the tail of the last track.
     Segue,
 }
 
@@ -35,14 +44,25 @@ impl Start {
     }
 }
 
+/// What the user asked for last. It moves the moment they act, while `PlaybackState` waits for
+/// the engine to confirm, so a control can follow the intent without waiting on the network.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Intent {
+    Play,
+    Pause,
+}
+
+/// Where fetched tracks go in the queue.
 #[derive(Clone, Copy)]
 enum QueuePlacement {
     Next,
     End,
+    /// After this many upcoming tracks; a gap past the end appends.
     Gap(usize),
 }
 
 impl QueuePlacement {
+    /// The toast key for a placement worth announcing.
     fn toast(self, source: &str) -> Option<String> {
         match self {
             Self::Next => Some(format!("toast-next-{source}")),
@@ -59,19 +79,31 @@ use crate::{AppSettings, Io, Outcome, Session, SessionEvent, Target, Toasts, joi
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
 const CLOCK_SETTLE: Duration = Duration::from_secs(1);
+/// Position reports that can still arrive from before a seek: one already in the channel and
+/// one for a packet decoded before the engine read the command. A successful seek keeps the
+/// engine busy, so more than this while one is in flight means it never left the old position.
+const STALE_POSITIONS: u8 = 2;
+/// How far before a seek target the engine may land and still be shown at the target. A decoder
+/// settles on the packet holding the target, a few tens of milliseconds early at most; showing
+/// the target keeps a lyric clicked at its first word on that line, not the one before.
+const SEEK_SNAP: Duration = Duration::from_millis(100);
 const PRELOAD_BEFORE_END: Duration = Duration::from_secs(10);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
 const RESTART_WINDOW: Duration = Duration::from_secs(3);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
 const RESUME_STEP: Duration = Duration::from_secs(5);
 const TAPER_DB: f32 = 50.;
-const LOCAL_FAVORITES: &str = "favorites";
 const SIMILAR_LIMIT: usize = 20;
 
+/// The position shown between the engine's reports. It runs on wall time from `reset` and is
+/// nudged toward each report by `correct`, spread over a moment so the progress bar and the
+/// lyrics glide instead of stepping. Parked, it holds `base`.
 struct LiveClock {
     base: Duration,
     since: Option<Instant>,
+    /// Seconds still to fold in from the last report, negative when the clock was ahead.
     correction: f64,
+    /// Seconds over which the correction is folded in.
     settle: f64,
 }
 
@@ -85,6 +117,7 @@ impl LiveClock {
         }
     }
 
+    /// Puts the clock at `at`, running from now or parked there.
     fn reset(&mut self, at: Duration, running: bool) {
         self.base = at;
         self.since = running.then(Instant::now);
@@ -92,6 +125,7 @@ impl LiveClock {
         self.settle = CLOCK_SETTLE.as_secs_f64();
     }
 
+    /// Folds a reported position in without a jump.
     fn correct(&mut self, toward: Duration) {
         self.correct_at(toward, Instant::now());
     }
@@ -120,6 +154,7 @@ impl LiveClock {
     }
 }
 
+/// Seconds from `from` to `to`, negative when `to` is earlier.
 fn signed_gap(to: Duration, from: Duration) -> f64 {
     match to >= from {
         true => (to - from).as_secs_f64(),
@@ -127,6 +162,7 @@ fn signed_gap(to: Duration, from: Duration) -> f64 {
     }
 }
 
+/// `base` moved by `seconds`, never below zero.
 fn shifted(base: Duration, seconds: f64) -> Duration {
     match seconds >= 0. {
         true => base.saturating_add(Duration::from_secs_f64(seconds)),
@@ -134,6 +170,8 @@ fn shifted(base: Duration, seconds: f64) -> Duration {
     }
 }
 
+/// The linear gain for a volume level, on a decibel taper that spans `TAPER_DB` and is silent
+/// at zero.
 fn gain(level: f32) -> f32 {
     match level.clamp(0., 1.) {
         level if level <= 0. => 0.,
@@ -141,18 +179,31 @@ fn gain(level: f32) -> f32 {
     }
 }
 
+/// What the engine has confirmed. `Playing` means audio is reaching the output; a track being
+/// fetched, or a seek still buffering, reads `Loading`. What the user asked for lives in
+/// `Intent` and can run ahead of this.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlaybackState {
     Idle,
     Playing,
     Paused,
     Loading,
+    /// Nothing plays and this is why, in developer English.
     Failed(String),
 }
 
+/// What other entities hear from `Playback`: history records a start, the sheet closes on an
+/// end.
 pub enum PlaybackEvent {
     StartedPlayback,
     EndedPlayback,
+}
+
+/// A one-shot request to pause after wall-clock time or when the current track ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sleep {
+    After(Duration),
+    EndOfTrack,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,6 +215,7 @@ pub enum Repeat {
     One,
 }
 
+/// What kind of collection the queue was started from.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Whence {
@@ -175,7 +227,9 @@ pub enum Whence {
     Local,
 }
 
-// same thing, same origin
+/// The collection the queue was started from, so its page can show a pause button and a
+/// restart resumes it. Two origins are the same collection when kind and id match; the name is
+/// only for display.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Origin {
     pub whence: Whence,
@@ -217,10 +271,6 @@ impl Origin {
         Self::of(Whence::Local, String::new())
     }
 
-    pub fn local_favorites() -> Self {
-        Self::of(Whence::Local, LOCAL_FAVORITES)
-    }
-
     pub fn named(mut self, name: impl Into<SharedString>) -> Self {
         self.name = Some(name.into());
         self
@@ -247,9 +297,14 @@ impl From<&Pin> for Origin {
     }
 }
 
+/// Everything the UI knows about what is playing, and the only thing that drives an engine.
+/// Holds one engine for the streaming provider and one for local files, a `Queue` for what
+/// comes next, and a clock for the position between the engine's reports. Views act through
+/// its methods; the engine answers through `on_backend_event`; nothing else touches a `Player`.
 pub struct Playback {
     state: PlaybackState,
     origin: Option<Origin>,
+    /// The last position the engine reported, or the one asked of it.
     position: Duration,
     clock: LiveClock,
     track: Option<Track>,
@@ -263,22 +318,46 @@ pub struct Playback {
     gapless: bool,
     repeat: Repeat,
     radio: bool,
+    /// The track the current similar-tracks suggestions were drawn from.
     seeded: Option<String>,
+    /// The streaming engine's event pump; dropping it stops listening.
     task: Option<Task<()>>,
     local_task: Option<Task<()>>,
+    /// The pending load, held through its debounce; a newer load cancels it.
     load: Option<Task<()>>,
+    /// The collection being fetched to start or extend the queue.
     fetch: Option<Task<()>>,
     enqueue: Option<Task<()>>,
     suggest: Option<Task<()>>,
+    /// The track the engine was asked to fetch ahead, so it is asked once.
     preloaded: Option<String>,
+    /// When the user last skipped, for telling a burst of skips from one.
     skipped: Option<Instant>,
+    /// No load goes out before this after a track failed, so a bad key cannot be hammered.
     blocked_until: Option<Instant>,
     refused: Option<Refusal>,
+    /// Where the restored track resumes. Set until the engine has it ready or the user plays.
     resume_at: Option<Duration>,
-    seek_on_play: Option<Duration>,
+    /// The seek the engine is carrying out while playing. One is in flight at a time: the clock
+    /// waits at its target until the engine reports audio from there, and position reports
+    /// from before it are ignored.
+    seek_in_flight: Option<Duration>,
+    /// The latest seek asked for while one was in flight. It goes out when that one lands, so
+    /// a burst of seeks costs the engine two rather than one per click.
+    seek_next: Option<Duration>,
+    /// Position reports seen while a seek is in flight.
+    stale_positions: u8,
+    /// Where the last seek asked to go, until the engine reports where it landed.
+    seek_target: Option<Duration>,
+    intent: Intent,
+    /// Whether the engine holds the restored track paused at `resume_at`, so play is instant.
     resume_ready: bool,
+    /// Whether playback stopped on a stale session and continues once it reconnects.
     awaiting_reconnect: bool,
+    /// The position last written to settings for resuming.
     stored: Duration,
+    sleep: Option<Sleep>,
+    sleep_task: Option<Task<()>>,
 }
 
 impl EventEmitter<PlaybackEvent> for Playback {}
@@ -351,17 +430,25 @@ impl Playback {
             blocked_until: None,
             refused: None,
             resume_at: None,
-            seek_on_play: None,
+            seek_in_flight: None,
+            seek_next: None,
+            stale_positions: 0,
+            seek_target: None,
+            intent: Intent::Pause,
             resume_ready: false,
             awaiting_reconnect: false,
             stored: Duration::ZERO,
+            sleep: None,
+            sleep_task: None,
         }
     }
 
+    /// Plays a track the user picked, from its start.
     pub fn play(&mut self, track: &Track, cx: &mut Context<Self>) {
         self.load_after(track, Start::Pick, cx);
     }
 
+    /// The engine a track id belongs to: local files have their own.
     fn engine_for(&self, id: &str) -> Option<&dyn Player> {
         match music::is_local_id(id) {
             true => self.local_engine.as_deref(),
@@ -378,6 +465,7 @@ impl Playback {
         self.active_engine()?.spectrum()
     }
 
+    /// Pauses the engine the new track does not belong to, so the two never sound at once.
     fn silence_other(&self, id: &str) {
         let other = match music::is_local_id(id) {
             true => self.engine.as_deref(),
@@ -388,7 +476,13 @@ impl Playback {
         }
     }
 
+    /// Fetches a track ahead, as when the pointer rests on its row, so playing it starts at
+    /// once. Asked once per track; the current track is never preloaded.
     pub fn preload(&mut self, track: &Track) {
+        self.preload_internal(track, false);
+    }
+
+    fn preload_internal(&mut self, track: &Track, segue: bool) {
         let Some(id) = track.id.as_deref() else {
             return;
         };
@@ -406,13 +500,20 @@ impl Playback {
         let Some(engine) = self.engine_for(id) else {
             return;
         };
-        if let Err(error) = engine.preload(id) {
+        if let Err(error) = engine.preload(id, segue) {
             self.preloaded = None;
             log::warn!("playback: cannot preload {}: {error:#}", track.name);
         }
     }
 
     fn load_after(&mut self, track: &Track, start: Start, cx: &mut Context<Self>) {
+        self.load_from(track, Duration::ZERO, start, cx);
+    }
+
+    /// Loads a track to play from `at`, after the debounce `start` asks for. The state reads
+    /// Loading from here until the engine reports audio; a refusal or an unplayable track fails
+    /// without reaching the engine.
+    fn load_from(&mut self, track: &Track, at: Duration, start: Start, cx: &mut Context<Self>) {
         match self.refused {
             Some(Refusal::Keys) => return self.refuse(cx),
             Some(Refusal::SignIn) => return self.gate(cx),
@@ -431,11 +532,14 @@ impl Playback {
 
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
-        self.position = Duration::ZERO;
-        self.clock.reset(Duration::ZERO, false);
+        self.position = at;
+        self.clock.reset(at, false);
         self.preloaded = None;
         self.resume_at = None;
-        self.seek_on_play = None;
+        self.seek_in_flight = None;
+        self.seek_next = None;
+        self.seek_target = None;
+        self.intent = Intent::Play;
         self.resume_ready = false;
         cx.notify();
 
@@ -451,7 +555,7 @@ impl Playback {
                 let Some(engine) = this.engine_for(&id) else {
                     return;
                 };
-                if let Err(error) = engine.load(&id, start == Start::Segue) {
+                if let Err(error) = engine.load(&id, at, start == Start::Segue) {
                     this.failed(format!("{error:#}"), cx);
                 }
             })
@@ -459,6 +563,7 @@ impl Playback {
         }));
     }
 
+    /// Replaces the queue with `tracks` and plays the one at `index`.
     pub fn start(
         &mut self,
         tracks: Vec<Track>,
@@ -470,6 +575,8 @@ impl Playback {
         self.begin(tracks, index, origin, cx);
     }
 
+    /// Replaces the queue with `tracks` and plays the first playable one, or a random one when
+    /// shuffle is on.
     pub fn start_any(
         &mut self,
         tracks: Vec<Track>,
@@ -480,6 +587,19 @@ impl Playback {
         self.start(tracks, index, origin, cx);
     }
 
+    /// Turn shuffle on and start the tracks from a random playable one.
+    pub fn shuffle_any(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
+        self.queue
+            .update(cx, |queue, cx| queue.set_shuffle(true, cx));
+        self.start_any(tracks, origin, cx);
+    }
+
+    /// Which of `tracks` a collection opens with.
     fn opener(&self, tracks: &[Track], cx: &Context<Self>) -> Option<usize> {
         let playable = tracks
             .iter()
@@ -493,6 +613,7 @@ impl Playback {
         }
     }
 
+    /// Plays `seed` now and fills the queue behind it with its radio once that arrives.
     pub fn play_radio(&mut self, seed: &Track, cx: &mut Context<Self>) {
         let Some(id) = seed.id.clone() else {
             return self.failed(format!("{} has no track id", seed.name), cx);
@@ -543,6 +664,7 @@ impl Playback {
         });
     }
 
+    /// Appends a track, or starts playing it when nothing is queued.
     pub fn enqueue(&mut self, track: Track, cx: &mut Context<Self>) {
         if self.queue.read(cx).current().is_none() {
             self.begin(vec![track], 0, None, cx);
@@ -601,6 +723,7 @@ impl Playback {
             .update(cx, |queue, cx| queue.insert_upcoming(gap, tracks, cx));
     }
 
+    /// Fetches a pinned collection and inserts it `gap` tracks ahead, or at the end.
     pub fn enqueue_pin(&mut self, pin: &Pin, gap: Option<usize>, cx: &mut Context<Self>) {
         let placement = QueuePlacement::Gap(gap.unwrap_or(usize::MAX));
         let id = pin.id.clone();
@@ -712,6 +835,8 @@ impl Playback {
         }
     }
 
+    /// Fetches tracks for the queue on the tokio runtime and places them on arrival. One fetch
+    /// at a time; a second request while one runs is dropped.
     fn enqueue_from<F>(
         &mut self,
         source: &'static str,
@@ -759,10 +884,13 @@ impl Playback {
         self.origin.as_ref()
     }
 
+    /// The playback state when the queue was started from `origin`, so its page can show it.
     pub fn playing_from(&self, origin: &Origin) -> Option<PlaybackState> {
         (self.origin.as_ref() == Some(origin)).then(|| self.state.clone())
     }
 
+    /// Hands a fetched collection to the queue, remembers where it came from for resuming, and
+    /// plays the chosen track.
     fn begin(
         &mut self,
         tracks: Vec<Track>,
@@ -783,6 +911,8 @@ impl Playback {
         self.play(&track, cx);
     }
 
+    /// Fetches a collection and starts the queue from it. Shows Loading only when nothing
+    /// plays yet, so a failure mid-playback is logged rather than shown.
     fn gather<F>(&mut self, origin: Origin, cx: &mut Context<Self>, tracks: F)
     where
         F: FnOnce(Arc<dyn MusicApi>) -> Fetch + Send + 'static,
@@ -814,12 +944,15 @@ impl Playback {
         }));
     }
 
+    /// Skips to the next playable track.
     pub fn next(&mut self, cx: &mut Context<Self>) {
         self.fetch = None;
         let start = self.burst();
         self.follow_queue(start, cx);
     }
 
+    /// Notes a skip and says whether it is part of a burst, which loads only once the skipping
+    /// stops.
     fn burst(&mut self) -> Start {
         let now = Instant::now();
         let rapid = self
@@ -832,6 +965,8 @@ impl Playback {
         }
     }
 
+    /// Asks the engine to fetch the next track once the current one is near its end, so a
+    /// gapless engine can line it up.
     fn preload_next(&mut self, position: Duration, cx: &Context<Self>) {
         let Some(duration) = self.track.as_ref().map(|track| track.duration) else {
             return;
@@ -852,7 +987,7 @@ impl Playback {
             return;
         };
 
-        self.preload(&next);
+        self.preload_internal(&next, true);
     }
 
     pub fn radio(&self) -> bool {
@@ -870,6 +1005,7 @@ impl Playback {
         }
     }
 
+    /// Plays one of the suggested similar tracks, making the suggestions the queue.
     pub fn play_similar(&mut self, index: usize, cx: &mut Context<Self>) {
         self.fetch = None;
         let Some(track) = self
@@ -888,11 +1024,14 @@ impl Playback {
         cx.notify();
     }
 
+    /// The track suggestions are drawn from: the last queued, else the current.
     fn seed(&self, cx: &Context<Self>) -> Option<Track> {
         let queue = self.queue.read(cx);
         queue.upcoming().last().or_else(|| queue.current()).cloned()
     }
 
+    /// Fills the suggestions from the seed's radio when radio is on and they are empty,
+    /// leaving out what is already queued.
     fn suggest_similar(&mut self, cx: &mut Context<Self>) {
         if !self.radio || self.queue.read(cx).similar().len() > 0 {
             return;
@@ -951,6 +1090,8 @@ impl Playback {
         cx.notify();
     }
 
+    /// Decides what follows a track that ended: the same one on repeat-one, the queue's start
+    /// on repeat-all, more radio when it is on and the queue ran out, else the next in line.
     fn advance(&mut self, ended: Option<Track>, cx: &mut Context<Self>) {
         match self.repeat {
             Repeat::One => match ended {
@@ -978,6 +1119,7 @@ impl Playback {
         self.follow_queue(Start::Segue, cx);
     }
 
+    /// Appends the seed's radio to the queue and moves on, or just moves on if it fails.
     fn extend_radio(&mut self, seed: &Track, cx: &mut Context<Self>) {
         let Some(id) = seed.id.clone() else {
             return self.next(cx);
@@ -1014,19 +1156,30 @@ impl Playback {
     }
 
     fn follow_queue(&mut self, start: Start, cx: &mut Context<Self>) {
-        let Some(track) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
+        let Some(track) = self.playable_next(cx) else {
             return;
         };
-        self.follow_after(track, start, cx);
+        self.load_after(&track, start, cx);
     }
 
-    fn follow_after(&mut self, mut track: Track, start: Start, cx: &mut Context<Self>) {
-        while !track.playable {
-            let Some(next) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
-                return;
-            };
-            track = next;
+    /// The next playable track the queue has, dropping the ones that are not.
+    fn playable_next(&mut self, cx: &mut Context<Self>) -> Option<Track> {
+        loop {
+            let track = self.queue.update(cx, |queue, cx| queue.next(cx))?;
+            if track.playable {
+                return Some(track);
+            }
         }
+    }
+
+    fn follow_after(&mut self, track: Track, start: Start, cx: &mut Context<Self>) {
+        let track = match track.playable {
+            true => Some(track),
+            false => self.playable_next(cx),
+        };
+        let Some(track) = track else {
+            return;
+        };
         self.load_after(&track, start, cx);
     }
 
@@ -1034,6 +1187,8 @@ impl Playback {
         self.track.is_some() || self.queue.read(cx).has_previous()
     }
 
+    /// Whether the previous button restarts the track rather than going back: a few seconds
+    /// in, or nothing to go back to.
     fn restarts(&self, cx: &App) -> bool {
         self.track.is_some()
             && (self.live_position() > RESTART_WINDOW || !self.queue.read(cx).has_previous())
@@ -1073,7 +1228,9 @@ impl Playback {
         self.load_after(&track, Start::Pick, cx);
     }
 
+    /// Plays on. A restored track the engine does not hold yet is loaded at its position.
     pub fn resume(&mut self, cx: &mut Context<Self>) {
+        self.intent = Intent::Play;
         if let Some(at) = self.resume_at {
             if !self.resume_ready {
                 return self.reload_and_seek(at, cx);
@@ -1094,10 +1251,11 @@ impl Playback {
         if self.active_engine().is_none() {
             return;
         }
-        self.load_after(&track, Start::Pick, cx);
-        self.seek_on_play = Some(at);
+        self.load_from(&track, at, Start::Pick, cx);
     }
 
+    /// Has the engine fetch the restored track and hold it paused at `resume_at`, so the first
+    /// play is instant. Until it says so, play loads the track instead.
     fn prepare_resume(&mut self, cx: &mut Context<Self>) {
         self.resume_ready = false;
         let Some(at) = self.resume_at else {
@@ -1127,6 +1285,8 @@ impl Playback {
         cx.notify();
     }
 
+    /// Restores the last session's track and queue from settings, paused where it stopped.
+    /// Only when nothing is playing or queued, and only for the provider that saved it.
     fn adopt(&mut self, cx: &mut Context<Self>) {
         if self.track.is_some() || !self.queue.read(cx).is_empty() {
             return;
@@ -1159,6 +1319,7 @@ impl Playback {
         self.prepare_resume(cx);
     }
 
+    /// Writes the position to settings for resuming, every few seconds or when `force`d.
     fn remember(&mut self, force: bool, cx: &mut Context<Self>) {
         let position = self.position;
         if !force && position.abs_diff(self.stored) < RESUME_STEP {
@@ -1171,6 +1332,7 @@ impl Playback {
     }
 
     pub fn pause(&mut self, cx: &mut Context<Self>) {
+        self.intent = Intent::Pause;
         if let Some(engine) = self.active_engine() {
             engine.pause();
             cx.notify();
@@ -1178,11 +1340,51 @@ impl Playback {
     }
 
     pub fn toggle_play(&mut self, cx: &mut Context<Self>) {
-        if self.state == PlaybackState::Playing {
-            self.pause(cx);
-        } else {
-            self.resume(cx);
+        match self.wants_playing() {
+            true => self.pause(cx),
+            false => self.resume(cx),
         }
+    }
+
+    pub fn sleep(&self) -> Option<Sleep> {
+        self.sleep
+    }
+
+    /// Replaces the active sleep request, dropping its timer task when cancelled or superseded.
+    pub fn set_sleep(&mut self, sleep: Option<Sleep>, cx: &mut Context<Self>) {
+        self.sleep = sleep;
+        self.sleep_task = match sleep {
+            Some(Sleep::After(after)) => Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(after).await;
+                this.update(cx, |this, cx| {
+                    this.sleep = None;
+                    this.pause(cx);
+                    cx.notify();
+                })
+                .ok();
+            })),
+            _ => None,
+        };
+        cx.notify();
+    }
+
+    fn doze(&mut self, cx: &mut Context<Self>) {
+        self.sleep = None;
+        self.sleep_task = None;
+        self.fetch = None;
+        let Some(track) = self.playable_next(cx) else {
+            return;
+        };
+        self.track = Some(track);
+        self.resume_at = Some(Duration::ZERO);
+        self.remember(true, cx);
+        self.prepare_resume(cx);
+    }
+
+    /// Whether the user wants the current track playing, whatever the engine has managed so
+    /// far. A transport control reads this; anything that follows the sound reads `state`.
+    pub fn wants_playing(&self) -> bool {
+        self.intent == Intent::Play && self.track.is_some()
     }
 
     pub fn play_origin(&mut self, origin: Origin, cx: &mut Context<Self>) {
@@ -1196,6 +1398,8 @@ impl Playback {
         }
     }
 
+    /// The play button of a collection page: pauses or resumes when the queue came from it,
+    /// starts it otherwise.
     pub fn toggle_origin(&mut self, origin: &Origin, cx: &mut Context<Self>) {
         match self.playing_from(origin) {
             Some(PlaybackState::Playing) => self.pause(cx),
@@ -1204,10 +1408,10 @@ impl Playback {
         }
     }
 
+    /// Moves to `position`. While playing, the clock parks there until the engine reports
+    /// audio from it, and a second seek meanwhile waits for the first to land. A restored track
+    /// not yet held by the engine only moves its resume point.
     pub fn seek(&mut self, position: Duration, cx: &mut Context<Self>) {
-        if self.state != PlaybackState::Playing {
-            self.seek_on_play = Some(position);
-        }
         if self.resume_at.is_some() {
             self.resume_at = Some(position);
             if self.resume_ready
@@ -1221,15 +1425,50 @@ impl Playback {
             cx.notify();
             return;
         }
+        if self.active_engine().is_none() {
+            return;
+        }
+        // The clock parks at the target; the engine's Seeked starts it again once audio from
+        // there is playing. A loading or paused engine takes the seek at once and reports the
+        // position with its Playing, so only a playing one needs the seek tracked.
+        self.position = position;
+        self.clock.reset(position, false);
+        self.seek_target = Some(position);
+        match (self.state == PlaybackState::Playing, self.seek_in_flight) {
+            (true, Some(_)) => self.seek_next = Some(position),
+            (true, None) => {
+                self.seek_in_flight = Some(position);
+                self.stale_positions = 0;
+                self.send_seek(position);
+            }
+            (false, _) => self.send_seek(position),
+        }
+        cx.notify();
+    }
+
+    fn send_seek(&self, position: Duration) {
         if let Some(engine) = self.active_engine() {
             engine.seek(position);
-            self.position = position;
-            self.clock
-                .reset(position, self.state == PlaybackState::Playing);
-            cx.notify();
         }
     }
 
+    /// The position to show for where the engine reports it landed: the seek target itself
+    /// when the engine stopped just short of it on a packet boundary.
+    fn landed(&mut self, at: Duration) -> Duration {
+        match self.seek_target.take() {
+            Some(target) if at < target && target - at < SEEK_SNAP => target,
+            _ => at,
+        }
+    }
+
+    /// Sends the seek that queued up behind the one that just landed.
+    fn follow_up_seek(&mut self, cx: &mut Context<Self>) {
+        if let Some(next) = self.seek_next.take() {
+            self.seek(next, cx);
+        }
+    }
+
+    /// Seeks to a share of the track, as the progress bar asks.
     pub fn seek_fraction(&mut self, fraction: f32, cx: &mut Context<Self>) {
         let Some(total) = self
             .track
@@ -1248,10 +1487,12 @@ impl Playback {
         &self.state
     }
 
+    /// The position as last reported or asked for. It only moves on events.
     pub fn position(&self) -> Duration {
         self.position
     }
 
+    /// The position right now: the clock while playing, else `position`. Never past the end.
     pub fn live_position(&self) -> Duration {
         let live = match self.state == PlaybackState::Playing {
             true => self.clock.now(),
@@ -1267,6 +1508,7 @@ impl Playback {
         self.track.as_ref()
     }
 
+    /// How far through the track `position` is, from 0 to 1.
     pub fn progress(&self) -> f32 {
         let Some(total) = self.track.as_ref().map(|track| track.duration) else {
             return 0.;
@@ -1281,6 +1523,7 @@ impl Playback {
         matches!(self.state, PlaybackState::Loading)
     }
 
+    /// Whether a track is loaded, whatever it is doing.
     fn has_active_playback(&self) -> bool {
         self.track.is_some()
             && matches!(
@@ -1335,6 +1578,7 @@ impl Playback {
         self.restart_engine(cx);
     }
 
+    /// Whether the current track plays through the local engine.
     fn local_active(&self) -> bool {
         self.track
             .as_ref()
@@ -1342,6 +1586,8 @@ impl Playback {
             .is_some_and(music::is_local_id)
     }
 
+    /// Rebuilds the streaming engine after a setting it was configured with changed, resuming
+    /// where it was unless a local track is playing.
     fn restart_engine(&mut self, cx: &mut Context<Self>) {
         let playback = match self.engine.is_some() {
             true => self.session.read(cx).playback(),
@@ -1357,6 +1603,8 @@ impl Playback {
         }
     }
 
+    /// Rebuilds the engine of the current track on the new default audio device and reloads
+    /// the track where the clock stood.
     fn restart_output(&mut self, cx: &mut Context<Self>) {
         let Some(track) = self.track.clone() else {
             return;
@@ -1387,10 +1635,11 @@ impl Playback {
                 self.start_engine(playback, cx);
             }
         }
-        self.load_after(&track, Start::Pick, cx);
-        self.seek_on_play = Some(at);
+        self.load_from(&track, at, Start::Pick, cx);
     }
 
+    /// Whether a track's failure is the session having gone stale, in which case the session
+    /// reconnects and playback continues from `rebind`.
     fn ask_for_reconnect(&mut self, cx: &mut Context<Self>) -> bool {
         if self.track.is_none() {
             return false;
@@ -1401,6 +1650,8 @@ impl Playback {
         self.awaiting_reconnect
     }
 
+    /// Moves playback onto a fresh engine, as after a reconnect, and resumes where it was if it
+    /// was playing or waiting to.
     fn rebind(&mut self, playback: Arc<dyn PlaybackFactory>, cx: &mut Context<Self>) {
         let resume = self.state == PlaybackState::Playing || self.awaiting_reconnect;
         self.awaiting_reconnect = false;
@@ -1418,6 +1669,7 @@ impl Playback {
         }
     }
 
+    /// Builds the streaming engine and starts pumping its events.
     fn start_engine(&mut self, playback: Arc<dyn PlaybackFactory>, cx: &mut Context<Self>) {
         let config = PlaybackConfig {
             normalisation: self.normalisation,
@@ -1453,6 +1705,7 @@ impl Playback {
         self.prepare_resume(cx);
     }
 
+    /// Pumps an engine's events into `on_backend_event` until the engine is dropped.
     fn listen(&mut self, mut events: Box<dyn PlaybackEvents>, local: bool, cx: &mut Context<Self>) {
         let task = Some(cx.spawn(async move |this, cx| {
             while let Some(event) = events.next().await {
@@ -1470,50 +1723,99 @@ impl Playback {
         }
     }
 
+    /// Applies what an engine reports. Events from the engine not playing the current track,
+    /// or about another track, are dropped, so a late event from a previous load cannot move
+    /// the clock.
     fn on_backend_event(&mut self, event: BackendEvent, local: bool, cx: &mut Context<Self>) {
         if local != self.local_active() {
             return;
         }
+        let current_id = self.track.as_ref().and_then(|track| track.id.as_deref());
+        if let Some(event_id) = event.id()
+            && current_id != Some(event_id)
+        {
+            return;
+        }
+        match event {
+            // A Loading with the current id is the engine restarting the load at a seek
+            // target, so a seek queued behind it must survive.
+            BackendEvent::Position { .. }
+            | BackendEvent::Length { .. }
+            | BackendEvent::Loading { .. }
+            | BackendEvent::OutputChanged => {}
+            BackendEvent::Playing { .. }
+            | BackendEvent::Paused { .. }
+            | BackendEvent::Seeked { .. } => {
+                self.seek_in_flight = None;
+            }
+            _ => {
+                self.seek_in_flight = None;
+                self.seek_next = None;
+            }
+        }
         match event {
             BackendEvent::OutputChanged => self.restart_output(cx),
-            BackendEvent::Unavailable | BackendEvent::Refused if self.resume_ready => {
+            BackendEvent::Unavailable { .. } | BackendEvent::Refused if self.resume_ready => {
                 self.resume_ready = false;
                 self.state = PlaybackState::Paused;
                 log::warn!("playback: cannot hold the restored track, waiting for play");
             }
-            BackendEvent::Loading(position) => {
+            BackendEvent::Loading { at, .. } => {
                 self.state = PlaybackState::Loading;
-                self.position = position;
-                self.clock.reset(position, false);
+                self.position = at;
+                self.clock.reset(at, false);
             }
-            BackendEvent::Playing(position) => {
+            BackendEvent::Playing { at, .. } => {
+                let at = self.landed(at);
                 let started = self.state != PlaybackState::Playing;
+                self.intent = Intent::Play;
                 self.state = PlaybackState::Playing;
-                self.position = position;
-                self.clock.reset(position, true);
-                if let Some(at) = self.seek_on_play.take() {
-                    self.seek(at, cx);
-                }
+                self.position = at;
+                self.clock.reset(at, true);
                 if started {
                     cx.emit(PlaybackEvent::StartedPlayback);
                 }
+                self.follow_up_seek(cx);
             }
-            BackendEvent::Paused(position) => {
+            BackendEvent::Paused { at, .. } => {
+                self.intent = Intent::Pause;
                 self.state = PlaybackState::Paused;
-                self.position = position;
-                self.clock.reset(position, false);
+                self.position = at;
+                self.clock.reset(at, false);
                 self.remember(true, cx);
+                self.follow_up_seek(cx);
             }
-            BackendEvent::Position(position) => {
-                self.position = position;
-                match self.state == PlaybackState::Playing {
-                    true => self.clock.correct(position),
-                    false => self.clock.reset(position, false),
+            BackendEvent::Seeked { at, .. } => {
+                let at = self.landed(at);
+                self.position = at;
+                self.clock.reset(at, self.state == PlaybackState::Playing);
+                self.remember(true, cx);
+                self.follow_up_seek(cx);
+            }
+            BackendEvent::Position { at, .. } => {
+                let mut failed = false;
+                if self.seek_in_flight.is_some() {
+                    self.stale_positions += 1;
+                    if self.stale_positions <= STALE_POSITIONS {
+                        return;
+                    }
+                    log::warn!("playback: the seek did not land, carrying on from {at:?}");
+                    self.seek_in_flight = None;
+                    failed = true;
+                }
+                self.position = at;
+                match (self.state == PlaybackState::Playing, failed) {
+                    (true, true) => self.clock.reset(at, true),
+                    (true, false) => self.clock.correct(at),
+                    (false, _) => self.clock.reset(at, false),
                 }
                 self.remember(false, cx);
-                self.preload_next(position, cx);
+                self.preload_next(at, cx);
+                if failed {
+                    self.follow_up_seek(cx);
+                }
             }
-            BackendEvent::Length(duration) => {
+            BackendEvent::Length { duration, .. } => {
                 if let Some(track) = self.track.as_mut()
                     && !duration.is_zero()
                     && track.duration != duration
@@ -1521,22 +1823,27 @@ impl Playback {
                     track.duration = duration;
                 }
             }
-            BackendEvent::Ended => {
+            BackendEvent::Ended { .. } => {
                 let ended = self.track.take();
                 self.state = PlaybackState::Idle;
                 self.position = Duration::ZERO;
                 self.clock.reset(Duration::ZERO, false);
                 cx.emit(PlaybackEvent::EndedPlayback);
-                self.advance(ended, cx);
+                match self.sleep == Some(Sleep::EndOfTrack) {
+                    true => self.doze(cx),
+                    false => self.advance(ended, cx),
+                }
             }
-            BackendEvent::Unavailable if self.ask_for_reconnect(cx) => {
+            BackendEvent::Unavailable { .. } if self.ask_for_reconnect(cx) => {
                 self.state = PlaybackState::Loading;
                 log::warn!("playback: the provider went stale, waiting for a reconnect");
             }
-            BackendEvent::Unavailable => {
+            BackendEvent::Unavailable { .. } => {
                 let failed = self.track.take();
                 let target = failed.as_ref().and_then(song_target);
-                let name = failed.map_or_else(|| "?".to_owned(), |track| track.name);
+                let name = failed
+                    .as_ref()
+                    .map_or_else(|| "?".to_owned(), |track| track.name.clone());
                 log::warn!(
                     "playback: {name} failed to load, backing off {}s",
                     KEY_COOLDOWN.as_secs()
@@ -1547,6 +1854,10 @@ impl Playback {
                 self.clock.reset(Duration::ZERO, false);
                 Toasts::linked(Outcome::Failed, "toast-track-unplayable", name, target, cx);
                 cx.emit(PlaybackEvent::EndedPlayback);
+                match self.repeat {
+                    Repeat::One => self.segue_queue(cx),
+                    _ => self.advance(failed, cx),
+                }
             }
             BackendEvent::Refused => {
                 self.refuse(cx);
@@ -1560,6 +1871,8 @@ impl Playback {
         cx.notify();
     }
 
+    /// Drops the streaming engine and everything derived from its session on sign-out. A local
+    /// track keeps playing.
     fn teardown(&mut self, cx: &mut Context<Self>) {
         self.task = None;
         self.engine = None;
@@ -1580,20 +1893,26 @@ impl Playback {
             self.position = Duration::ZERO;
             self.clock.reset(Duration::ZERO, false);
             self.resume_at = None;
-            self.seek_on_play = None;
+            self.seek_in_flight = None;
+            self.seek_next = None;
+            self.seek_target = None;
             self.resume_ready = false;
             self.awaiting_reconnect = false;
             self.stored = Duration::ZERO;
+            self.sleep = None;
+            self.sleep_task = None;
         }
         cx.notify();
     }
 
+    /// Stops with a reason the UI can show.
     fn failed(&mut self, problem: String, cx: &mut Context<Self>) {
         log::error!("playback: {problem}");
         self.state = PlaybackState::Failed(problem);
         cx.notify();
     }
 
+    /// Records that the provider wants a signed-in listener and stops until sign-in.
     fn gate(&mut self, cx: &mut Context<Self>) {
         let first = self.refused.is_none();
         self.refused = Some(Refusal::SignIn);
@@ -1622,6 +1941,7 @@ impl Playback {
         cx.notify();
     }
 
+    /// Records that Spotify denied an audio key and stops for the rest of the session.
     fn refuse(&mut self, cx: &mut Context<Self>) {
         let first = self.refused.is_none();
         self.refused = Some(Refusal::Keys);

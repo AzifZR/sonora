@@ -28,9 +28,9 @@ pub use detail::{Collection, Detail, Header};
 pub use genre::{GenreDetails, Genres};
 pub use history::{History, HistoryState};
 pub use home::Home;
-pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem};
+pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf};
 pub use lyrics::{Lyrics, LyricsState};
-pub use playback::{Origin, Playback, PlaybackState, Repeat, Whence};
+pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;
 pub use queue::{Named, Queue, Resume, Stub};
 pub use remote::{Remote, attach as attach_remote};
@@ -78,6 +78,14 @@ impl Io {
         F::Output: Send + 'static,
     {
         self.0.spawn(future)
+    }
+
+    pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.0.spawn_blocking(func)
     }
 }
 

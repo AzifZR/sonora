@@ -16,7 +16,8 @@ use anyhow::{Context as _, Result};
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::WindowDecorations;
 use gpui::{
-    App, Bounds, Context, Pixels, Size, Subscription, Task, Window, WindowBounds, point, px, size,
+    App, Bounds, Context, DisplayId, Pixels, Size, Subscription, Task, Window, WindowBounds, point,
+    px, size,
 };
 use music::WritingSystem;
 use rusqlite::{OptionalExtension, params};
@@ -179,6 +180,7 @@ struct Values {
     version: u32,
     normalisation: bool,
     gapless: bool,
+    sleep_timer: bool,
     lyrics_for_local_files: bool,
     karaoke_lyrics: bool,
     blur_lyrics: bool,
@@ -195,6 +197,8 @@ struct Values {
     startup: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     local_folder: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    local_folders: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hidden_nav: Vec<String>,
     appearance: Appearance,
@@ -229,6 +233,7 @@ impl Default for Values {
             version: SETTINGS_VERSION,
             normalisation: false,
             gapless: true,
+            sleep_timer: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
@@ -243,6 +248,7 @@ impl Default for Values {
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
             local_folder: None,
+            local_folders: Vec::new(),
             hidden_nav: Vec::new(),
             appearance: Appearance::default(),
         }
@@ -480,6 +486,13 @@ impl AppSettings {
         if values.local_folder.is_none() {
             values.local_folder = legacy_local.clone();
         }
+        // A single `local_folder` predates multiple local libraries; fold it into
+        // `local_folders` once and never write the singular field back out.
+        if let Some(folder) = values.local_folder.take()
+            && !values.local_folders.contains(&folder)
+        {
+            values.local_folders.push(folder);
+        }
 
         let inherited = || {
             bytes
@@ -524,6 +537,10 @@ impl AppSettings {
 
     pub fn gapless(&self) -> bool {
         self.values.gapless
+    }
+
+    pub fn sleep_timer(&self) -> bool {
+        self.values.sleep_timer
     }
 
     pub fn lyrics_for_local_files(&self) -> bool {
@@ -614,8 +631,8 @@ impl AppSettings {
         &self.state.provider
     }
 
-    pub fn local_folder(&self) -> Option<&std::path::Path> {
-        self.values.local_folder.as_deref()
+    pub fn local_folders(&self) -> &[PathBuf] {
+        &self.values.local_folders
     }
 
     pub fn startup(&self) -> &str {
@@ -720,11 +737,11 @@ impl AppSettings {
         self.path.clone()
     }
 
-    pub fn set_local_folder(&mut self, folder: Option<PathBuf>, cx: &mut Context<Self>) {
-        if self.values.local_folder == folder {
+    pub fn set_local_folders(&mut self, folders: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if self.values.local_folders == folders {
             return;
         }
-        self.values.local_folder = folder;
+        self.values.local_folders = folders;
         self.schedule_save(cx);
     }
 
@@ -740,6 +757,11 @@ impl AppSettings {
 
     pub fn set_gapless(&mut self, gapless: bool, cx: &mut Context<Self>) {
         self.values.gapless = gapless;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_sleep_timer(&mut self, sleep_timer: bool, cx: &mut Context<Self>) {
+        self.values.sleep_timer = sleep_timer;
         self.schedule_save(cx);
     }
 
@@ -1169,8 +1191,8 @@ impl AppSettings {
     }
 }
 
-/// The saved window frame as a placement, if it still lands on a connected display.
-pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<WindowBounds> {
+/// The saved window frame and its display, if its centre still lands on a connected display.
+pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<(WindowBounds, DisplayId)> {
     let frame = Sonora::global(cx).settings.read(cx).state.window?;
     if !frame.sane() {
         return None;
@@ -1180,8 +1202,8 @@ pub fn window_placement(least: Size<Pixels>, cx: &App) -> Option<WindowBounds> {
     let bounds = placement.get_bounds();
     cx.displays()
         .iter()
-        .any(|display| display.bounds().intersects(&bounds))
-        .then_some(placement)
+        .find(|display| display.bounds().contains(&bounds.center()))
+        .map(|display| (placement, display.id()))
 }
 
 /// Starts saving the window frame for the next launch.
@@ -1486,8 +1508,8 @@ mod tests {
         assert_eq!(settings.provider(), "youtube");
         assert!(!settings.sidebar_open());
         assert_eq!(
-            settings.local_folder(),
-            Some(std::path::Path::new("/music"))
+            settings.local_folders(),
+            &[std::path::PathBuf::from("/music")]
         );
         assert!(!legacy_local.exists());
 
@@ -1497,9 +1519,10 @@ mod tests {
         let object = cleaned.as_object().expect("settings are an object");
         assert_eq!(object.get("version"), Some(&serde_json::json!(2)));
         assert_eq!(
-            object.get("local_folder"),
-            Some(&serde_json::json!("/music"))
+            object.get("local_folders"),
+            Some(&serde_json::json!(["/music"]))
         );
+        assert!(!object.contains_key("local_folder"));
         for key in ["volume", "provider", "sidebar_open"] {
             assert!(!object.contains_key(key), "{key} survived cleanup");
         }

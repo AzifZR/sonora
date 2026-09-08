@@ -22,6 +22,10 @@ trait CatalogBackend: Send + Sync {
     async fn track_playcount(&self, id: &str) -> Result<Option<u64>>;
     async fn album(&self, id: &str) -> Result<AlbumDetail>;
     async fn playlist(&self, id: &str) -> Result<PlaylistDetail>;
+    async fn playlist_continuation(
+        &self,
+        continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)>;
     async fn genre(&self, id: &str) -> Result<GenreDetail>;
 }
 
@@ -49,6 +53,12 @@ impl CatalogBackend for ApiBackend {
     }
     async fn playlist(&self, id: &str) -> Result<PlaylistDetail> {
         self.0.playlist(id).await
+    }
+    async fn playlist_continuation(
+        &self,
+        continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)> {
+        self.0.playlist_continuation(continuation).await
     }
     async fn genre(&self, id: &str) -> Result<GenreDetail> {
         self.0.genre(id).await
@@ -169,6 +179,13 @@ impl CatalogSource {
 
     pub(crate) async fn invalidate_playlist(&self, id: &str) {
         self.playlists.invalidate(id).await;
+    }
+
+    pub(crate) async fn playlist_continuation(
+        &self,
+        continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)> {
+        self.backend.playlist_continuation(continuation).await
     }
 
     pub(crate) fn peek_genre(&self, id: &str) -> Option<Arc<GenreDetail>> {
@@ -390,6 +407,7 @@ mod tests {
                     modified_at: None,
                 },
                 tracks: Vec::new(),
+                continuation: None,
             }
         }
     }
@@ -453,6 +471,12 @@ mod tests {
         async fn playlist(&self, id: &str) -> anyhow::Result<PlaylistDetail> {
             self.count("playlist", id);
             Ok(self.playlist_value(id))
+        }
+        async fn playlist_continuation(
+            &self,
+            _continuation: &str,
+        ) -> anyhow::Result<(Vec<Track>, Option<String>)> {
+            Ok((Vec::new(), None))
         }
         async fn genre(&self, id: &str) -> anyhow::Result<GenreDetail> {
             self.count("genre", id);

@@ -310,7 +310,15 @@ impl ArtistView {
                 )
                 .from(self.playing_from(cx)),
             )
-            .children(self.follow_button(cx))
+            .child(
+                HeroPlayButton::shuffle(
+                    "shuffle-artist",
+                    self.popular.as_ref().clone(),
+                    self.playback.clone(),
+                )
+                .from(self.playing_from(cx)),
+            )
+            .children(self.favorite_button(cx))
             .children(overflow);
 
         let cover = artist.and_then(|artist| artist.cover_large.clone());
@@ -344,33 +352,30 @@ impl ArtistView {
         })
     }
 
-    fn follow_button(&self, cx: &App) -> Option<Button> {
+    fn favorite_button(&self, cx: &App) -> Option<Button> {
         let theme = *cx.theme();
         let library = Sonora::global(cx).library.clone();
         let target = self.saved_artist(cx)?;
-        if music::is_local_id(&target.id) {
-            return None;
-        }
-        let followed = library.read(cx).saved_artist(&target.id);
+        let saved = library.read(cx).saved_artist(&target.id);
 
         let heart = Button::new("artist-toggle-library")
             .outline()
-            .icon(match followed {
+            .icon(match saved {
                 true => "icons/heart-filled.svg",
                 false => "icons/heart.svg",
             })
-            .tooltip(match followed {
-                true => "artist-unfollow",
-                false => "artist-follow",
+            .tooltip(match saved {
+                true => "menu-remove-from-library",
+                false => "menu-add-to-library",
             })
             .disabled(library.read(cx).pending_artist(&target.id));
 
         Some(
-            match followed {
+            match saved {
                 true => heart.tint(theme.primary),
                 false => heart,
             }
-            .on_click(move |_, _, cx| match followed {
+            .on_click(move |_, _, cx| match saved {
                 true => Confirm::artists(vec![target.clone()], cx),
                 false => {
                     library.update(cx, |library, cx| library.toggle_artist(target.clone(), cx));

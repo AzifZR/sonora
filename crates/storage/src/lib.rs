@@ -48,6 +48,14 @@ const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS favorites (
         track_id TEXT PRIMARY KEY,
         added_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS favorite_albums (
+        album_id TEXT PRIMARY KEY,
+        added_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS favorite_artists (
+        artist_id TEXT PRIMARY KEY,
+        added_at INTEGER NOT NULL
     );";
 
 #[derive(Clone)]

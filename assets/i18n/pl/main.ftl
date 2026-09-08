@@ -25,7 +25,6 @@ nav-search = Szukaj
 nav-library = Twoja biblioteka
 nav-settings = Ustawienia
 nav-songs = Utwory
-nav-favorites = Ulubione
 nav-albums = Albumy
 nav-playlists = Playlisty
 nav-artists = Wykonawcy
@@ -42,12 +41,14 @@ library-play-liked-songs = Odtwórz
 library-no-songs = Brak ulubionych
 library-no-albums = Brak zapisanych albumów
 library-no-playlists = Brak playlist
-library-no-artists = Brak obserwowanych wykonawców
+library-no-artists = Brak ulubionych wykonawców
 library-no-local-songs = Nie znaleziono zaimportowanych utworów
-library-no-local-favorites = Brak lokalnych ulubionych
 library-no-local-albums = Nie znaleziono zaimportowanych albumów
 library-no-local-artists = Nie znaleziono zaimportowanych wykonawców
 library-no-local-playlists = Nie ma jeszcze lokalnych playlist
+library-no-catalog-songs = Nie znaleziono utworów
+library-no-catalog-albums = Nie znaleziono albumów
+library-no-catalog-artists = Nie znaleziono wykonawców
 library-no-matches = Brak wyników
 library-not-loaded = Biblioteka się nie wczytała
 library-part-not-loaded = Ta część biblioteki się nie wczytała
@@ -57,6 +58,19 @@ library-local-unconfigured = Skonfiguruj lokalną bibliotekę
 app-refresh-library = Odśwież bibliotekę
 app-sign-out = Wyloguj się
 app-quit = Zakończ
+app-settings = Ustawienia…
+app-hide = Ukryj Sonora
+app-hide-others = Ukryj pozostałe
+app-show-all = Pokaż wszystkie
+app-edit = Edycja
+app-cut = Wytnij
+app-copy = Kopiuj
+app-paste = Wklej
+app-select-all = Zaznacz wszystko
+app-window = Okno
+app-close-window = Zamknij okno
+app-minimize = Minimalizuj
+app-zoom = Powiększ
 
 # tray menu
 tray-show = Pokaż Sonorę
@@ -163,7 +177,6 @@ playlist-again-add = Dodaj ponownie
 confirm-remove-library-title = Usuń z biblioteki
 confirm-remove-playlist-title = Usuń z playlisty
 confirm-remove-history-title = Usuń z historii
-confirm-unfollow-title = Przestań obserwować
 confirm-remove-songs = { $count ->
     [one] Usunąć ten utwór z biblioteki?
     [few] Usunąć { $count } utwory z biblioteki?
@@ -184,9 +197,10 @@ confirm-remove-albums = { $count ->
     [few] Usunąć { $count } albumy z biblioteki?
    *[other] Usunąć { $count } albumów z biblioteki?
 }
-confirm-unfollow-artists = { $count ->
-    [one] Przestać obserwować tego artystę?
-   *[other] Przestać obserwować { $count } artystów?
+confirm-remove-artists = { $count ->
+    [one] Usunąć tego wykonawcę z ulubionych?
+    [few] Usunąć { $count } wykonawców z ulubionych?
+   *[other] Usunąć { $count } wykonawców z ulubionych?
 }
 confirm-remove-playlists = { $count ->
     [one] Usunąć tę playlistę z biblioteki?
@@ -235,6 +249,7 @@ filter-duration = Czas trwania
 filter-year = Rok
 filter-explicit = Tylko z wulgaryzmami
 filter-playable = Tylko dostępne
+filter-favorites = Tylko ulubione
 filter-owned = Moje
 
 # view
@@ -275,6 +290,12 @@ login-cookie-step-3 = Wybierz dowolne żądanie o nazwie „browse” lub „nex
 login-cookie-step-4 = Na karcie Nagłówki znajdź Cookie wśród nagłówków żądania, kliknij prawym przyciskiem i skopiuj wartość.
 login-cookie-step-note = Wklej całą wartość: panel Ciasteczka nie wystarczy, bo wartość musi zawierać SAPISID i __Secure-3PAPISID.
 login-cookie-title = Wklej pliki cookie YouTube Music, aby dokończyć logowanie
+login-server-title = Połącz się ze swoim serwerem Subsonic
+login-server-detail = Wpisz adres dowolnego serwera Subsonic lub OpenSubsonic (Navidrome, Airsonic, Gonic, …), a następnie zaloguj się przy użyciu nazwy użytkownika i hasła serwera. Sesja pozostaje na tym urządzeniu.
+login-server-hint = https://music.example.com
+login-username-hint = Nazwa użytkownika
+login-password-hint = Hasło
+login-server-submit = Połącz
 login-account-title = Wybierz konto
 login-account-detail = W tej sesji zalogowano więcej niż jedno konto Google. Wybierz to, którego ma używać Sonora.
 
@@ -288,6 +309,7 @@ detail-play-playlist = Odtwórz playlistę
 play-pause = Wstrzymaj
 play-resume = Wznów
 play-loading = Ładowanie…
+play-shuffle = Losowo
 
 # artist page
 artist-eyebrow = Wykonawca
@@ -297,8 +319,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } słuchaczy miesięcznie
 }
 artist-play = Odtwórz
-artist-follow = Obserwuj
-artist-unfollow = Nie obserwuj
 artist-popular = Popularne
 artist-popular-eyebrow = Poznaj tego wykonawcę
 artist-popular-empty = Nie ma jeszcze czego odtworzyć u tego wykonawcy
@@ -494,6 +514,7 @@ settings-typeface-search = Szukaj czcionki
 settings-typeface-none = Nie znaleziono czcionek
 settings-server-side-decorations = Dekoracje po stronie serwera
 settings-server-side-decorations-detail = Pozwól kompozytorowi rysować pasek tytułu, obramowanie i cień
+settings-typeface-loading = Ładowanie…
 settings-window-controls = Przyciski okna
 settings-window-controls-detail = Rysuj minimalizację, maksymalizację i zamknięcie na pasku tytułu
 settings-controls-side = Strona przycisków
@@ -543,11 +564,12 @@ settings-provider-current = Odtwarzanie z tego serwisu
 settings-provider-guest = Odtwarzanie jako gość
 settings-provider-switch = Przełącz
 settings-sign-out = Wyloguj się
-settings-local-folder = Folder zaimportowanej muzyki
+settings-local-folder = Foldery z muzyką
 settings-local-folder-empty = Nie skonfigurowano
 settings-choose-folder = Wybierz folder…
+settings-add-folder = Dodaj folder
+settings-remove-folder = Usuń folder
 settings-rescan = Skanuj ponownie
-settings-clear-folder = Wyczyść
 settings-tab-about = O programie
 settings-version = Wersja
 settings-version-detail = Wydanie sonory, które jest teraz uruchomione

@@ -25,7 +25,6 @@ nav-search = 検索
 nav-library = ライブラリ
 nav-settings = 設定
 nav-songs = 曲
-nav-favorites = お気に入り
 nav-albums = アルバム
 nav-playlists = プレイリスト
 nav-artists = アーティスト
@@ -42,9 +41,7 @@ library-play-liked-songs = 再生
 library-no-songs = お気に入りはまだありません
 library-no-albums = 保存したアルバムはまだありません
 library-no-playlists = プレイリストはまだありません
-library-no-artists = フォロー中のアーティストはまだいません
 library-no-local-songs = インポートされた曲が見つかりません
-library-no-local-favorites = ローカルのお気に入りはまだありません
 library-no-local-albums = インポートされたアルバムが見つかりません
 library-no-local-artists = インポートされたアーティストが見つかりません
 library-no-local-playlists = ローカルのプレイリストはまだありません
@@ -57,6 +54,19 @@ library-local-unconfigured = ローカルライブラリを設定する
 app-refresh-library = ライブラリを更新
 app-sign-out = サインアウト
 app-quit = 終了
+app-settings = 設定…
+app-hide = Sonoraを隠す
+app-hide-others = ほかを隠す
+app-show-all = すべてを表示
+app-edit = 編集
+app-cut = カット
+app-copy = コピー
+app-paste = ペースト
+app-select-all = すべてを選択
+app-window = ウインドウ
+app-close-window = ウインドウを閉じる
+app-minimize = しまう
+app-zoom = 拡大/縮小
 
 # table columns
 column-played-at = 再生日時
@@ -128,12 +138,10 @@ playlist-again-add = 再度追加
 confirm-remove-library-title = ライブラリから削除
 confirm-remove-playlist-title = プレイリストから削除
 confirm-remove-history-title = 履歴から削除
-confirm-unfollow-title = フォロー解除
 confirm-remove-songs = { $count }曲をライブラリから削除しますか？
 confirm-remove-playlist-songs = { $count }曲をプレイリストから削除しますか？
 confirm-remove-history-songs = { $count }曲を再生履歴から削除しますか？
 confirm-remove-albums = { $count }枚のアルバムをライブラリから削除しますか？
-confirm-unfollow-artists = { $count }人のアーティストのフォローを解除しますか？
 confirm-remove-playlists = { $count }件のプレイリストをライブラリから削除しますか？
 
 # queue panel
@@ -228,6 +236,7 @@ detail-play-playlist = プレイリストを再生
 play-pause = 一時停止
 play-resume = 再開
 play-loading = 読み込み中…
+play-shuffle = シャッフル
 
 # artist page
 artist-eyebrow = アーティスト
@@ -235,8 +244,6 @@ artist-monthly-listeners = { $count ->
    *[other] 月間リスナー { $value }人
 }
 artist-play = 今すぐ再生
-artist-follow = フォロー
-artist-unfollow = フォロー解除
 artist-popular = 人気の曲
 artist-popular-eyebrow = このアーティストを知る
 artist-popular-empty = このアーティストにはまだ再生できる曲がありません
@@ -412,6 +419,7 @@ settings-typeface-detail = インターフェース全体で Sonora が使う書
 settings-typeface-system = デフォルト
 settings-typeface-search = フォントを検索
 settings-typeface-none = フォントが見つかりません
+settings-typeface-loading = 読み込み中…
 settings-window-controls = ウィンドウコントロール
 settings-window-controls-detail = タイトルバーに最小化・最大化・閉じるを表示する
 settings-controls-side = コントロールの位置
@@ -454,7 +462,6 @@ settings-local-folder = インポートする音楽フォルダ
 settings-local-folder-empty = 未設定
 settings-choose-folder = フォルダを選択…
 settings-rescan = 再スキャン
-settings-clear-folder = クリア
 settings-tab-about = 情報
 settings-version = バージョン
 settings-version-detail = 実行中の Sonora のビルド

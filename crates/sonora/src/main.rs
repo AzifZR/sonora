@@ -9,6 +9,7 @@ mod memory;
 mod single;
 mod tray;
 
+use std::process::exit;
 use std::sync::Arc;
 
 use gpui::{
@@ -30,10 +31,19 @@ fn main() {
 
     let opened = std::env::args().skip(1).find(|arg| !arg.starts_with('-'));
     let (sender, mut links) = tokio::sync::mpsc::unbounded_channel();
-    if let single::Instance::Running = single::claim(opened.as_deref(), sender.clone()) {
-        return;
+    match single::claim(opened.as_deref(), sender.clone()) {
+        single::Instance::First => {}
+        single::Instance::Running => return,
+        single::Instance::Failed => exit(1),
     }
     let opened_start = opened.as_deref().and_then(router::destination);
+
+    // Two rustls backends are compiled in: librespot, oauth2 and ytmusic still ask for ring,
+    // while reqwest 0.13 and opensubsonic ask for aws-lc-rs. rustls refuses to guess between
+    // them, so one is picked here. A second install only means another crate got there first.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
 
     let io = match state::Io::new() {
         Ok(io) => io,
@@ -62,10 +72,11 @@ fn main() {
         let providers: Vec<Arc<dyn music::MusicProvider>> = vec![
             Arc::new(music::spotify::SpotifyProvider::from_env()),
             Arc::new(music::youtube::YouTubeProvider::new()),
+            Arc::new(music::subsonic::SubsonicProvider::new()),
         ];
         let local_provider: Arc<dyn music::MusicProvider> =
             Arc::new(music::local::LocalProvider::new(
-                dirs::config_dir()
+                dirs::cache_dir()
                     .unwrap_or_else(std::env::temp_dir)
                     .join("sonora"),
                 database.clone(),
@@ -177,18 +188,32 @@ fn open_window(cx: &mut App) {
         playback.clone(),
         queue.clone(),
     );
-    let placement = state::window_placement(LEAST_SIZE, cx)
-        .unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)));
+    let (placement, display_id) = state::window_placement(LEAST_SIZE, cx)
+        .map(|(placement, display_id)| (placement, Some(display_id)))
+        .unwrap_or_else(|| {
+            (
+                WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)),
+                None,
+            )
+        });
 
     let settings = Sonora::global(cx).settings.read(cx);
     let saver = settings.saver();
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let decorations = settings.window_decorations();
+    let background = match cfg!(target_os = "windows") {
+        true => match settings.transparent() {
+            true => WindowBackgroundAppearance::Transparent,
+            false => WindowBackgroundAppearance::Opaque,
+        },
+        false => WindowBackgroundAppearance::Transparent,
+    };
 
     cx.open_window(
         WindowOptions {
             window_bounds: Some(placement),
-            window_background: WindowBackgroundAppearance::Transparent,
+            display_id,
+            window_background: background,
             titlebar: Some(TitlebarOptions {
                 title: Some("Sonora".into()),
                 appears_transparent: true,
@@ -217,7 +242,7 @@ fn open_window(cx: &mut App) {
 fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY, DwmSetWindowAttribute,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
 
     let RawWindowHandle::Win32(handle) = HasWindowHandle::window_handle(window).ok()?.as_raw()
@@ -226,11 +251,12 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     };
     let handle = handle.hwnd.get() as *mut std::ffi::c_void;
     unsafe {
+        let preference = DWMWCP_ROUND;
         DwmSetWindowAttribute(
             handle,
-            DWMWA_NCRENDERING_POLICY as u32,
-            &DWMNCRP_DISABLED as *const _ as *const std::ffi::c_void,
-            size_of_val(&DWMNCRP_DISABLED) as u32,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &preference as *const _ as *const std::ffi::c_void,
+            size_of_val(&preference) as u32,
         );
     }
     Some(handle)

@@ -10,8 +10,10 @@ pub mod lyrics;
 mod models;
 pub mod musixmatch;
 pub mod netease;
+mod sink;
 mod spectrum;
 pub mod spotify;
+pub mod subsonic;
 pub mod youtube;
 
 use std::collections::HashMap;
@@ -80,10 +82,14 @@ pub trait MusicApi: Send + Sync {
     async fn artist(&self, artist_id: &str) -> Result<Artist>;
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile>;
     async fn artist_images(&self, ids: Vec<String>) -> Result<HashMap<String, String>>;
+
+    /// The tracks the user starred. On a `Shape::Saved` provider this is the whole songs
+    /// library; on a `Shape::Catalog` one it only feeds the hearts and the favorites filter.
     async fn saved_tracks(&self, limit: u32) -> Result<Vec<Track>>;
 
-    async fn all_tracks(&self, limit: u32) -> Result<Vec<Track>> {
-        self.saved_tracks(limit).await
+    /// Every track the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_tracks(&self, _limit: u32) -> Result<Vec<Track>> {
+        Ok(Vec::new())
     }
 
     async fn set_track_saved(&self, track_id: &str, saved: bool) -> Result<()>;
@@ -111,12 +117,31 @@ pub trait MusicApi: Send + Sync {
     async fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
     async fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
     async fn saved_albums(&self, limit: u32) -> Result<Vec<Album>>;
+
+    /// Every album the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_albums(&self, _limit: u32) -> Result<Vec<Album>> {
+        Ok(Vec::new())
+    }
+
     async fn set_album_saved(&self, album_id: &str, saved: bool) -> Result<()>;
     async fn saved_artists(&self, limit: u32) -> Result<Vec<SavedArtist>>;
+
+    /// Every artist the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_artists(&self, _limit: u32) -> Result<Vec<SavedArtist>> {
+        Ok(Vec::new())
+    }
+
     async fn set_artist_saved(&self, artist_id: &str, saved: bool) -> Result<()>;
     async fn album(&self, album_id: &str) -> Result<AlbumDetail>;
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>>;
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail>;
+    async fn playlist_continuation(
+        &self,
+        _continuation: &str,
+    ) -> Result<(Vec<Track>, Option<String>)> {
+        anyhow::bail!("playlist pagination is not supported")
+    }
+
     async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>>;
     async fn playlist_covers(&self, playlist_id: &str, wanted: usize) -> Result<Vec<String>>;
     async fn track_radio(&self, track_id: &str) -> Result<Vec<Track>>;
@@ -161,33 +186,82 @@ pub struct PlaybackConfig {
     pub gain: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// What an engine reports back. `Playing` and `Seeked` mean audio from `at` is reaching the
+/// output, not that a decoder is ready, so whatever follows the sound can start on them.
+#[derive(Clone, Debug, PartialEq)]
 pub enum PlaybackEvent {
-    Loading(Duration),
-    Playing(Duration),
-    Paused(Duration),
-    Position(Duration),
-    Length(Duration),
-    Ended,
-    Unavailable,
+    Loading {
+        id: Option<String>,
+        at: Duration,
+    },
+    Playing {
+        id: Option<String>,
+        at: Duration,
+    },
+    Paused {
+        id: Option<String>,
+        at: Duration,
+    },
+    /// A progress report from the decoder. It runs ahead of what is audible by whatever the
+    /// output has queued, and none arrive while the engine is busy with a seek.
+    Position {
+        id: Option<String>,
+        at: Duration,
+    },
+    /// Audio from the new position has reached the output after a seek.
+    Seeked {
+        id: Option<String>,
+        at: Duration,
+    },
+    Length {
+        id: Option<String>,
+        duration: Duration,
+    },
+    Ended {
+        id: Option<String>,
+    },
+    Unavailable {
+        id: Option<String>,
+    },
     Refused,
     Gated,
     OutputChanged,
 }
 
-pub trait Player: Send + Sync {
-    fn load(&self, track_id: &str, seamless: bool) -> Result<()>;
-
-    fn load_paused_at(&self, track_id: &str, at: Duration) -> Result<()> {
-        self.load(track_id, false)?;
-        self.pause();
-        self.seek(at);
-        Ok(())
+impl PlaybackEvent {
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            Self::Loading { id, .. }
+            | Self::Playing { id, .. }
+            | Self::Paused { id, .. }
+            | Self::Position { id, .. }
+            | Self::Seeked { id, .. }
+            | Self::Length { id, .. }
+            | Self::Ended { id, .. }
+            | Self::Unavailable { id, .. } => id.as_deref(),
+            _ => None,
+        }
     }
+}
 
-    fn preload(&self, track_id: &str) -> Result<()>;
+/// Transport control of one engine. Every call is fire-and-forget: the outcome arrives as a
+/// `PlaybackEvent`, never as a return value.
+pub trait Player: Send + Sync {
+    /// Fetches a track and plays it from `at`. A `seamless` load is a queue segue: a gapless
+    /// engine keeps what it has queued so the join has no gap, any other load drops it.
+    fn load(&self, track_id: &str, at: Duration, seamless: bool) -> Result<()>;
+
+    /// Fetches a track and leaves it paused at `at`, ready for `play`.
+    fn load_paused_at(&self, track_id: &str, at: Duration) -> Result<()>;
+
+    /// Fetches a track ahead of time so a later `load` starts at once. `segue` marks the next
+    /// queue item, which a gapless engine may already line up behind the current one.
+    fn preload(&self, track_id: &str, segue: bool) -> Result<()>;
     fn play(&self);
     fn pause(&self);
+
+    /// Moves to `position`. While loading, the track starts there instead; while playing, a
+    /// `Seeked` event follows once audio from there reaches the output.
     fn seek(&self, position: Duration);
     fn set_gain(&self, gain: f32);
 
@@ -205,10 +279,22 @@ pub trait PlaybackFactory: Send + Sync {
     fn start(&self, config: PlaybackConfig) -> (Box<dyn Player>, Box<dyn PlaybackEvents>);
 }
 
+/// What a provider's library is made of. It decides which `MusicApi` methods fill the library
+/// pages and whether a favorites filter is offered on them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// The library is what the user starred, read through the `saved_*` methods.
+    Saved,
+    /// The library is everything the provider has, read through the `all_*` methods, with the
+    /// `saved_*` set drawn on top as hearts and a filter.
+    Catalog,
+}
+
 pub struct ProviderSession {
     pub profile: UserProfile,
     pub api: Arc<dyn MusicApi>,
     pub playback: Arc<dyn PlaybackFactory>,
+    pub shape: Shape,
     pub authenticated: bool,
     pub playcounts: bool,
 }
@@ -218,7 +304,12 @@ pub enum SignIn {
     Default,
     Anonymous,
     Secret,
-    Path(PathBuf),
+    Path(Vec<PathBuf>),
+    Credentials {
+        server: String,
+        username: String,
+        password: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,6 +352,7 @@ pub struct AccountChoice {
 pub enum SignInPrompt {
     Accounts(Vec<AccountChoice>),
     Code { code: String, url: String },
+    Url(String),
     Secret,
 }
 

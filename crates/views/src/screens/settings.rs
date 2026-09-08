@@ -6,24 +6,24 @@ use std::process::Command;
 use crate::shared::local;
 use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, TextRun, Window,
-    div, font, px,
+    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, Task, Window, div,
+    font, px,
 };
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
-    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
+    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Modal, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
     ScrubberState, Separator, Skeleton, Stillness, Switch, Text, Theme, ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LICENSE_URL: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
-const SOURCE_URL: &str = "https://github.com/nolight132/sonora";
+const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
@@ -70,6 +70,7 @@ fn offered(method: &SignIn, stored: bool, guest: bool) -> bool {
     match method {
         SignIn::Default | SignIn::Anonymous => !stored,
         SignIn::Secret => !stored || guest,
+        SignIn::Credentials { .. } => !stored,
         SignIn::Path(_) => false,
     }
 }
@@ -127,10 +128,16 @@ pub struct SettingsView {
     opacity: ScrubberState,
     popovers: Popovers,
     secret: Entity<Input>,
+    server: Entity<Input>,
+    username: Entity<Input>,
+    password: Entity<Input>,
+    credentials_for: Option<&'static str>,
     languages: SearchPopup,
     typefaces: SearchPopup,
     typeface_faced: RefCell<HashSet<SharedString>>,
     installed: Option<Vec<SharedString>>,
+    loading_fonts: bool,
+    font_task: Option<Task<()>>,
 }
 
 impl SettingsView {
@@ -156,6 +163,7 @@ impl SettingsView {
             cx.notify();
         })
         .detach();
+
         Self {
             session,
             playback,
@@ -165,10 +173,16 @@ impl SettingsView {
             opacity: ScrubberState::new("opacity"),
             popovers: Popovers::default(),
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
+            server: cx.new(|cx| Input::new("login-server-hint", cx)),
+            username: cx.new(|cx| Input::new("login-username-hint", cx)),
+            password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
+            credentials_for: None,
             languages,
             typefaces,
             typeface_faced: RefCell::new(HashSet::new()),
             installed: None,
+            loading_fonts: false,
+            font_task: None,
         }
     }
 
@@ -220,6 +234,7 @@ impl SettingsView {
             SettingsTab::Playback => vec![
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
+                Row::Item(self.sleep_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
@@ -249,6 +264,10 @@ impl SettingsView {
         panel
     }
 
+    #[allow(
+        unused_variables,
+        reason = "cx is unused on macOS, no elements are contructed there"
+    )]
     fn decoration_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let rows = vec![
@@ -435,85 +454,118 @@ impl SettingsView {
             false => SharedString::from(chosen.clone()),
         };
 
+        let picking = self.popovers.shows(TYPEFACES);
         let asked = self.typefaces.query();
         let installed = self.installed.as_deref().unwrap_or_default();
-        let entries = std::iter::once((
-            SharedString::from(SYSTEM_FONT),
-            t!("settings-typeface-system"),
-        ))
-        .chain(installed.iter().map(|name| (name.clone(), name.clone())))
-        .filter(|(id, label)| matches_query(id, label, &asked))
-        .take(TYPEFACE_LIMIT)
-        .collect::<Vec<_>>();
-        let barren = entries.is_empty();
+
+        let mut entries = Vec::new();
+        if picking {
+            entries.push((
+                SharedString::from(SYSTEM_FONT),
+                t!("settings-typeface-system"),
+            ));
+            entries.extend(installed.iter().map(|name| (name.clone(), name.clone())));
+            entries = entries
+                .into_iter()
+                .filter(|(id, label)| matches_query(id, label, &asked))
+                .take(TYPEFACE_LIMIT)
+                .collect();
+        }
+
+        let barren = picking && entries.is_empty();
         let count = entries.len();
         let cursor = self.typefaces.cursor(count);
         let submitted = entries
             .iter()
             .map(|(name, _)| name.clone())
             .collect::<Vec<_>>();
-        // a face costs a font load
-        let scroll = self.typefaces.scroll(cx);
-        let row = scroll
-            .bounds_for_item(0)
-            .map(|item| item.size.height)
-            .filter(|height| *height > px(0.));
-        let first = row.map_or(cursor, |row| {
-            ((-scroll.offset().y) / row).floor().max(0.) as usize
-        });
-        let shown = row.map_or(TYPEFACE_GUESS, |row| {
-            (self.typefaces.height() / row).ceil() as usize
-        });
-        let previewed = first.saturating_sub(TYPEFACE_LEAD)..first + shown + TYPEFACE_LEAD;
-        let picking = self.popovers.shows(TYPEFACES);
 
-        let mut budget = TYPEFACE_BATCH;
+        let mut items = Vec::new();
         let mut waiting = false;
-        let mut faced = self.typeface_faced.borrow_mut();
-        let items = entries
-            .into_iter()
-            .enumerate()
-            .map(|(place, (id, label))| {
-                let name = id.clone();
-                let preview = name.clone();
-                let wanted = picking && name.as_ref() != SYSTEM_FONT && previewed.contains(&place);
-                let shows = match (wanted, faced.contains(&name)) {
-                    (false, _) => false,
-                    (true, true) => true,
-                    (true, false) => match budget {
-                        0 => {
-                            waiting = true;
-                            false
-                        }
-                        _ => {
-                            budget -= 1;
-                            faced.insert(name.clone());
-                            true
-                        }
-                    },
-                };
-                MenuItem::new(id, label)
-                    .selected(place == cursor)
-                    .checked(chosen == name.as_ref())
-                    .when(shows, |item| item.face(preview))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let name = name.to_string();
-                        this.settings
-                            .update(cx, |settings, cx| settings.set_font(name, cx));
-                        cx.notify();
-                    }))
-            })
-            .collect::<Vec<_>>();
-        drop(faced);
+
+        if picking {
+            let scroll = self.typefaces.scroll(cx);
+            let row = scroll
+                .bounds_for_item(0)
+                .map(|item| item.size.height)
+                .filter(|height| *height > px(0.));
+            let first = row.map_or(cursor, |row| {
+                ((-scroll.offset().y) / row).floor().max(0.) as usize
+            });
+            let shown = row.map_or(TYPEFACE_GUESS, |row| {
+                (self.typefaces.height() / row).ceil() as usize
+            });
+            let previewed = first.saturating_sub(TYPEFACE_LEAD)..first + shown + TYPEFACE_LEAD;
+
+            let mut budget = TYPEFACE_BATCH;
+            let mut faced = self.typeface_faced.borrow_mut();
+
+            // forget the faces that scrolled out of view, so scrolling back spends
+            // the per-frame budget on them again rather than facing them all at once
+            faced.retain(|name| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .any(|(place, (id, _))| id == name && previewed.contains(&place))
+            });
+
+            items = entries
+                .into_iter()
+                .enumerate()
+                .map(|(place, (id, label))| {
+                    let name = id.clone();
+                    let preview = name.clone();
+                    let wanted = name.as_ref() != SYSTEM_FONT && previewed.contains(&place);
+                    let shows = match (wanted, faced.contains(&name)) {
+                        (false, _) => false,
+                        (true, true) => true,
+                        (true, false) => match budget {
+                            0 => {
+                                waiting = true;
+                                false
+                            }
+                            _ => {
+                                budget -= 1;
+                                faced.insert(name.clone());
+                                true
+                            }
+                        },
+                    };
+                    MenuItem::new(id, label)
+                        .selected(place == cursor)
+                        .checked(chosen == name.as_ref())
+                        .when(shows, |item| item.face(preview))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let name = name.to_string();
+                            this.settings
+                                .update(cx, |settings, cx| settings.set_font(name, cx));
+                            cx.notify();
+                        }))
+                })
+                .collect::<Vec<_>>();
+            drop(faced);
+        }
+
         if waiting {
-            cx.notify();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                this.update(cx, |_, cx| cx.notify()).ok();
+            })
+            .detach();
         }
 
         let picker = Picker::new(TYPEFACES, &self.popovers, current)
             .width(Picker::WIDE)
             .menu(self.typefaces.menu("typefaces-menu", Picker::WIDE))
             .items(items)
-            .when(barren, |picker| {
+            .when(self.loading_fonts, |picker| {
+                picker.item(
+                    MenuItem::new("typeface-loading", t!("settings-typeface-loading")).disabled(),
+                )
+            })
+            .when(barren && !self.loading_fonts, |picker| {
                 picker
                     .item(MenuItem::new("typeface-empty", t!("settings-typeface-none")).disabled())
             });
@@ -1102,6 +1154,30 @@ impl SettingsView {
         )
     }
 
+    fn sleep_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).sleep_timer();
+
+        self.row(
+            t!("settings-sleep"),
+            t!("settings-sleep-detail"),
+            muted,
+            small,
+            Switch::new("sleep-timer", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
+                    if on {
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
     fn updates_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1308,17 +1384,15 @@ impl SettingsView {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let path = self.session.read(cx).local_path();
-        let detail = match &path {
-            Some(path) => SharedString::from(path.clone()),
-            None => t!("settings-local-folder-empty"),
-        };
+        let paths = self.session.read(cx).local_paths();
 
-        let choose = local::choose_button("choose-local-folder")
+        let add = local::choose_button("add-local-folder")
+            .label(t!("settings-add-folder"))
+            .icon("icons/plus.svg")
             .small()
             .outline();
 
-        let rescan = path.is_some().then(|| {
+        let rescan = (!paths.is_empty()).then(|| {
             Button::new("rescan-local-folder")
                 .label(t!("settings-rescan"))
                 .small()
@@ -1326,46 +1400,91 @@ impl SettingsView {
                 .on_click(cx.listener(|this, _, _, cx| this.rescan_local_folder(cx)))
         });
 
-        let clear = path.is_some().then(|| {
-            Button::new("clear-local-folder")
-                .label(t!("settings-clear-folder"))
-                .small()
-                .ghost()
-                .on_click(cx.listener(|this, _, _, cx| this.clear_local_folder(cx)))
-        });
-
-        self.row(
+        let header = self.row(
             t!("settings-local-folder"),
-            detail,
+            match paths.is_empty() {
+                true => t!("settings-local-folder-empty"),
+                false => SharedString::default(),
+            },
             muted,
             small,
             div()
                 .flex()
                 .gap_2()
-                .child(choose)
+                .child(add)
                 .children(rescan)
-                .children(clear)
                 .into_any_element(),
-        )
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(header)
+            .children((!paths.is_empty()).then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .pb_2()
+                    .children(paths.into_iter().enumerate().map(|(index, path)| {
+                        Self::local_folder_item(index, path, muted, small, &mut *cx)
+                    }))
+            }))
+    }
+
+    fn local_folder_item(
+        index: usize,
+        path: String,
+        muted: gpui::Hsla,
+        small: Pixels,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id(("local-folder-item", index))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_color(muted)
+                    .text_size(small)
+                    .child(SharedString::from(path.clone())),
+            )
+            .child(
+                Button::new(("remove-local-folder", index))
+                    .ghost()
+                    .small()
+                    .icon("icons/x.svg")
+                    .tooltip("settings-remove-folder")
+                    .tint(muted)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.remove_local_folder(path.clone(), cx)
+                    })),
+            )
+            .into_any_element()
     }
 
     fn rescan_local_folder(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.session.read(cx).local_path() else {
-            return;
-        };
+        Sonora::global(cx)
+            .library
+            .clone()
+            .update(cx, |library, cx| library.rescan_local(cx));
+    }
+
+    fn remove_local_folder(&mut self, path: String, cx: &mut Context<Self>) {
         Sonora::global(cx)
             .library
             .clone()
             .update(cx, |library, cx| {
-                library.rescan_local(PathBuf::from(path), cx)
+                library.remove_local_folder(PathBuf::from(path), cx)
             });
-    }
-
-    fn clear_local_folder(&mut self, cx: &mut Context<Self>) {
-        Sonora::global(cx)
-            .library
-            .clone()
-            .update(cx, |library, cx| library.forget_local(cx));
     }
 
     fn accounts_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1545,6 +1664,7 @@ impl SettingsView {
 
     fn abandon(&mut self, cx: &mut Context<Self>) {
         self.secret.update(cx, |input, cx| input.set_text("", cx));
+        self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
     }
@@ -1559,10 +1679,73 @@ impl SettingsView {
             .update(cx, |session, cx| session.submit_input(text, cx));
     }
 
+    fn open_credentials(&mut self, slug: &'static str, cx: &mut Context<Self>) {
+        self.credentials_for = Some(slug);
+        cx.notify();
+    }
+
+    fn clear_credentials(&mut self, cx: &mut Context<Self>) {
+        self.credentials_for = None;
+        self.server.update(cx, |input, cx| input.set_text("", cx));
+        self.username.update(cx, |input, cx| input.set_text("", cx));
+        self.password.update(cx, |input, cx| input.set_text("", cx));
+    }
+
+    fn abandon_credentials(&mut self, cx: &mut Context<Self>) {
+        self.clear_credentials(cx);
+        cx.notify();
+    }
+
+    fn submit_credentials(&mut self, cx: &mut Context<Self>) {
+        let Some(slug) = self.credentials_for else {
+            return;
+        };
+        let server = self.server.read(cx).text().to_string();
+        let username = self.username.read(cx).text().to_string();
+        let password = self.password.read(cx).text().to_string();
+        if server.trim().is_empty() || username.trim().is_empty() || password.is_empty() {
+            return;
+        }
+        self.clear_credentials(cx);
+        self.session.update(cx, |session, cx| {
+            session.sign_in(
+                slug,
+                SignIn::Credentials {
+                    server,
+                    username,
+                    password,
+                },
+                cx,
+            )
+        });
+    }
+
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
         CookiePrompt::new(self.secret.clone())
             .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
             .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
+    }
+
+    fn credentials_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Modal::new("settings-server-prompt", t!("login-server-title"))
+            .w(px(560.))
+            .detail(t!("login-server-detail"))
+            .child(self.server.clone())
+            .child(self.username.clone())
+            .child(self.password.clone())
+            .action(
+                Button::new("settings-cancel-server")
+                    .ghost()
+                    .label(t!("common-cancel"))
+                    .on_click(cx.listener(|this, _, _, cx| this.abandon_credentials(cx))),
+            )
+            .action(
+                Button::new("settings-submit-server")
+                    .label(t!("login-server-submit"))
+                    .primary()
+                    .on_click(cx.listener(|this, _, _, cx| this.submit_credentials(cx))),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| this.abandon_credentials(cx)))
     }
 
     fn method(
@@ -1599,6 +1782,10 @@ impl SettingsView {
                 format!("connect-{slug}-path"),
                 t!("login-sign-in", provider = provider),
             ),
+            SignIn::Credentials { .. } => (
+                format!("connect-{slug}-server"),
+                t!("login-sign-in", provider = provider),
+            ),
         };
 
         Button::new(SharedString::from(id))
@@ -1606,10 +1793,13 @@ impl SettingsView {
             .small()
             .outline()
             .disabled(pending)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                let method = method.clone();
-                this.session
-                    .update(cx, |session, cx| session.sign_in(slug, method, cx));
+            .on_click(cx.listener(move |this, _, _, cx| match &method {
+                SignIn::Credentials { .. } => this.open_credentials(slug, cx),
+                method => {
+                    let method = method.clone();
+                    this.session
+                        .update(cx, |session, cx| session.sign_in(slug, method, cx));
+                }
             }))
     }
 
@@ -1819,34 +2009,60 @@ fn open_settings_file(path: &Path) -> std::io::Result<()> {
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.installed.is_none() {
-            self.installed = Some(usable_fonts(window, cx));
+        let in_appearance = self.tab == SettingsTab::Appearance;
+        let picking_typefaces = self.popovers.shows(TYPEFACES);
+        if (in_appearance || picking_typefaces) && self.installed.is_none() && !self.loading_fonts {
+            self.loading_fonts = true;
+            let text_system = cx.text_system().clone();
+            let io = Io::global(cx);
+            self.font_task = Some(cx.spawn(async move |this, cx| {
+                let names = io
+                    .spawn_blocking(move || usable_fonts(text_system))
+                    .await
+                    .unwrap_or_default();
+                this.update(cx, |this, cx| {
+                    this.installed = Some(names);
+                    this.loading_fonts = false;
+                    this.font_task = None;
+                    // the picker may already be open on an empty list: put the
+                    // cursor on the chosen face now that it can be found
+                    if this.popovers.shows(TYPEFACES) {
+                        let chosen = this.settings.read(cx).font();
+                        let place = this
+                            .typeface_entries()
+                            .iter()
+                            .position(|name| name.as_ref() == chosen);
+                        this.typefaces.place(place, cx);
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }));
         }
 
-        let chosen_language = self.settings.read(cx).language();
-        let language_selected = Language::ALL
-            .into_iter()
-            .position(|language| language.id() == chosen_language)
-            .map(|place| place + 1)
-            .or(Some(0));
-        self.languages.sync(
-            self.popovers.shows(LANGUAGES),
-            language_selected,
-            window,
-            cx,
-        );
+        let picking_languages = self.popovers.shows(LANGUAGES);
+        if picking_languages {
+            let chosen_language = self.settings.read(cx).language();
+            let language_selected = Language::ALL
+                .into_iter()
+                .position(|language| language.id() == chosen_language)
+                .map(|place| place + 1)
+                .or(Some(0));
+            self.languages.sync(true, language_selected, window, cx);
+        } else {
+            self.languages.sync(false, None, window, cx);
+        }
 
-        let chosen_typeface = self.settings.read(cx).font();
-        let typeface_selected = self
-            .typeface_entries()
-            .iter()
-            .position(|name| name.as_ref() == chosen_typeface);
-        self.typefaces.sync(
-            self.popovers.shows(TYPEFACES),
-            typeface_selected,
-            window,
-            cx,
-        );
+        if picking_typefaces {
+            let chosen_typeface = self.settings.read(cx).font();
+            let typeface_selected = self
+                .typeface_entries()
+                .iter()
+                .position(|name| name.as_ref() == chosen_typeface);
+            self.typefaces.sync(true, typeface_selected, window, cx);
+        } else {
+            self.typefaces.sync(false, None, window, cx);
+        }
 
         let accounts = match self.session.read(cx).state() {
             SessionState::Authorizing(Some(SignInPrompt::Accounts(accounts))) => {
@@ -1891,37 +2107,26 @@ impl Render for SettingsView {
             .when(secret, |this| {
                 this.child(self.secret_prompt(cx).into_any_element())
             })
+            .when(self.credentials_for.is_some(), |this| {
+                this.child(self.credentials_prompt(cx).into_any_element())
+            })
     }
 }
 
-fn usable_fonts(window: &Window, cx: &App) -> Vec<SharedString> {
-    let missing = resolved(window, "sonora-has-no-such-family");
-    let mut names = cx.text_system().all_font_names();
+fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedString> {
+    let missing = resolved(&text_system, "sonora-has-no-such-family");
+    let mut names = text_system.all_font_names();
     names.sort_unstable();
     names.dedup();
 
     names
         .into_iter()
         .filter(|name| !name.starts_with('.'))
-        .filter(|name| resolved(window, name) != missing)
+        .filter(|name| resolved(&text_system, name) != missing)
         .map(SharedString::from)
         .collect()
 }
 
-fn resolved(window: &Window, family: &str) -> Option<gpui::FontId> {
-    let run = TextRun {
-        len: 1,
-        font: font(SharedString::from(family.to_owned())),
-        color: gpui::black(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-
-    window
-        .text_system()
-        .shape_line(SharedString::from("A"), px(12.), &[run], None)
-        .runs
-        .first()
-        .map(|run| run.font_id)
+fn resolved(text_system: &gpui::TextSystem, family: &str) -> gpui::FontId {
+    text_system.resolve_font(&font(SharedString::from(family.to_owned())))
 }

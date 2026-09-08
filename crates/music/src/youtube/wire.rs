@@ -119,7 +119,18 @@ pub fn playlist_detail(source: ytmusic::PlaylistDetail) -> PlaylistDetail {
     PlaylistDetail {
         playlist: playlist(source.playlist, owned, public),
         tracks,
+        continuation: source.continuation,
     }
+}
+
+pub fn playlist_page(source: ytmusic::PlaylistPage) -> (Vec<Track>, Option<String>) {
+    let tracks = source
+        .tracks
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| track(item, index as u32))
+        .collect();
+    (tracks, source.continuation)
 }
 
 pub fn artist(source: ytmusic::Artist) -> Artist {

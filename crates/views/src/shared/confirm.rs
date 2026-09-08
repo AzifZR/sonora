@@ -20,7 +20,6 @@ impl Kind {
         match self {
             Self::PlaylistSongs(_) => t!("confirm-remove-playlist-title"),
             Self::History(_) => t!("confirm-remove-history-title"),
-            Self::Artists(_) => t!("confirm-unfollow-title"),
             _ => t!("confirm-remove-library-title"),
         }
     }
@@ -31,16 +30,13 @@ impl Kind {
             Self::PlaylistSongs(count) => t!("confirm-remove-playlist-songs", count = count),
             Self::History(count) => t!("confirm-remove-history-songs", count = count),
             Self::Albums(count) => t!("confirm-remove-albums", count = count),
-            Self::Artists(count) => t!("confirm-unfollow-artists", count = count),
+            Self::Artists(count) => t!("confirm-remove-artists", count = count),
             Self::Playlists(count) => t!("confirm-remove-playlists", count = count),
         }
     }
 
     fn action(&self) -> gpui::SharedString {
-        match self {
-            Self::Artists(_) => t!("artist-unfollow"),
-            _ => t!("common-delete"),
-        }
+        t!("common-delete")
     }
 }
 

@@ -25,7 +25,6 @@ nav-search = Buscar
 nav-library = Sua Biblioteca
 nav-settings = Configurações
 nav-songs = Músicas
-nav-favorites = Favoritas
 nav-albums = Álbuns
 nav-playlists = Playlists
 nav-artists = Artistas
@@ -42,9 +41,7 @@ library-play-liked-songs = Tocar
 library-no-songs = Nenhuma favorita ainda
 library-no-albums = Nenhum álbum salvo ainda
 library-no-playlists = Nenhuma playlist ainda
-library-no-artists = Nenhum artista seguido ainda
 library-no-local-songs = Nenhuma música importada encontrada
-library-no-local-favorites = Nenhuma favorita local ainda
 library-no-local-albums = Nenhum álbum importado encontrado
 library-no-local-artists = Nenhum artista importado encontrado
 library-no-local-playlists = Nenhuma playlist local ainda
@@ -57,6 +54,19 @@ library-local-unconfigured = Configure sua biblioteca local
 app-refresh-library = Atualizar Biblioteca
 app-sign-out = Sair
 app-quit = Sair do aplicativo
+app-settings = Ajustes…
+app-hide = Ocultar Sonora
+app-hide-others = Ocultar outros
+app-show-all = Mostrar tudo
+app-edit = Editar
+app-cut = Recortar
+app-copy = Copiar
+app-paste = Colar
+app-select-all = Selecionar tudo
+app-window = Janela
+app-close-window = Fechar janela
+app-minimize = Minimizar
+app-zoom = Zoom
 
 # table columns
 column-played-at = Tocada em
@@ -149,7 +159,6 @@ playlist-again-add = Adicionar novamente
 confirm-remove-library-title = Remover da biblioteca
 confirm-remove-playlist-title = Remover da playlist
 confirm-remove-history-title = Remover do histórico
-confirm-unfollow-title = Deixar de seguir
 confirm-remove-songs = { $count ->
     [one] Remover esta música da sua biblioteca?
    *[other] Remover { $count } músicas da sua biblioteca?
@@ -165,10 +174,6 @@ confirm-remove-history-songs = { $count ->
 confirm-remove-albums = { $count ->
     [one] Remover este álbum da sua biblioteca?
    *[other] Remover { $count } álbuns da sua biblioteca?
-}
-confirm-unfollow-artists = { $count ->
-    [one] Deixar de seguir este artista?
-   *[other] Deixar de seguir { $count } artistas?
 }
 confirm-remove-playlists = { $count ->
     [one] Remover esta playlist da sua biblioteca?
@@ -254,6 +259,12 @@ login-cookie-step-3 = Selecione qualquer requisição chamada "browse" ou "next"
 login-cookie-step-4 = Em Cabeçalhos, encontre Cookie em Cabeçalhos da Requisição, clique com o botão direito e copie o valor.
 login-cookie-step-note = Cole o valor completo abaixo: o painel Cookies da requisição não é suficiente, pois o valor precisa conter SAPISID e __Secure-3PAPISID.
 login-cookie-title = Cole seus cookies do YouTube Music para finalizar o login
+login-server-title = Conecte-se ao seu servidor Subsonic
+login-server-detail = Digite o endereço de qualquer servidor Subsonic ou OpenSubsonic (Navidrome, Airsonic, Gonic, …) e faça login com seu usuário e senha do servidor. A sessão permanece neste dispositivo.
+login-server-hint = https://music.example.com
+login-username-hint = Usuário
+login-password-hint = Senha
+login-server-submit = Conectar
 login-account-title = Escolha uma conta
 login-account-detail = Esta sessão está conectada a mais de uma conta Google. Escolha qual o Sonora deve usar.
 
@@ -267,6 +278,7 @@ detail-play-playlist = Tocar playlist
 play-pause = Pausar
 play-resume = Retomar
 play-loading = Carregando…
+play-shuffle = Aleatório
 
 # artist page
 artist-eyebrow = Artista
@@ -275,8 +287,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } ouvintes mensais
 }
 artist-play = Tocar agora
-artist-follow = Seguir
-artist-unfollow = Deixar de seguir
 artist-popular = Populares
 artist-popular-eyebrow = Explorar este artista
 artist-popular-empty = Nada para tocar deste artista ainda
@@ -456,6 +466,7 @@ settings-typeface-detail = A fonte usada pelo Sonora na interface
 settings-typeface-system = Padrão
 settings-typeface-search = Pesquisar fonte
 settings-typeface-none = Nenhuma fonte encontrada
+settings-typeface-loading = Carregando…
 settings-window-controls = Botões da janela
 settings-window-controls-detail = Desenhar minimizar, maximizar e fechar na barra de título
 settings-controls-side = Lado dos botões
@@ -498,7 +509,6 @@ settings-local-folder = Pasta de músicas importadas
 settings-local-folder-empty = Não configurada
 settings-choose-folder = Escolher pasta…
 settings-rescan = Revarrer
-settings-clear-folder = Limpar
 settings-tab-about = Sobre
 settings-version = Versão
 settings-version-detail = A compilação do sonora que você está executando

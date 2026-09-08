@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
-use ui::ActiveTheme as _;
+use ui::{ActiveTheme as _, Filter, FilterChange, FlagAxis};
 
 use gpui::{AnyElement, App, Entity, SharedString};
-use music::SavedArtist;
-use state::{Library, LibraryPart, LibraryState, Origin, Playback};
+use i18n::t;
+use music::{SavedArtist, Shape};
+use state::{Library, LibraryPart, Origin, Playback, Shelf};
 use ui::rank::{ESSENTIAL, HANDY};
 use ui::{Cell, ColumnSpec, Menu, Pin, TableSource, Width};
 
@@ -49,19 +50,21 @@ pub(super) const COLUMNS: &[ColumnSpec<ArtistField>] = &[INDEX, COVER, NAME, ADD
 pub(super) struct ArtistSource {
     library: Entity<Library>,
     playback: Entity<Playback>,
-    local: bool,
+    shelf: Shelf,
+    starred: bool,
 }
 
 impl ArtistSource {
     pub(super) fn shelved(
         library: Entity<Library>,
         playback: Entity<Playback>,
-        local: bool,
+        shelf: Shelf,
     ) -> Self {
         Self {
             library,
             playback,
-            local,
+            shelf,
+            starred: false,
         }
     }
 
@@ -81,15 +84,12 @@ impl ArtistSource {
     }
 
     fn artists<'a>(&self, cx: &'a App) -> &'a [SavedArtist] {
-        let library = self.library.read(cx);
-        let state = match self.local {
-            true => library.local_state(),
-            false => library.state(),
-        };
-        match state {
-            LibraryState::Ready { artists, .. } => artists.as_slice(),
-            _ => &[],
-        }
+        self.library.read(cx).state(self.shelf).artists()
+    }
+
+    /// Whether the shelf lists more than the favorites, so a favorites filter has something to do.
+    fn catalog(&self, cx: &App) -> bool {
+        self.library.read(cx).shape(self.shelf) == Shape::Catalog
     }
 }
 
@@ -105,8 +105,41 @@ impl TableSource for ArtistSource {
     }
 
     fn matches(&self, row: usize, query: &str, cx: &App) -> bool {
-        self.at(row, cx)
-            .is_some_and(|artist| holds(&artist.name, query))
+        self.at(row, cx).is_some_and(|artist| {
+            if self.starred && !self.library.read(cx).saved_artist(&artist.id) {
+                return false;
+            }
+            holds(&artist.name, query)
+        })
+    }
+
+    fn filter_axes(&self, _query: &str, cx: &App) -> Vec<Filter> {
+        match self.catalog(cx) {
+            true => vec![Filter::Flag(FlagAxis {
+                key: "filter-favorites",
+                label: t!("filter-favorites"),
+                on: self.starred,
+            })],
+            false => Vec::new(),
+        }
+    }
+
+    fn filter(&mut self, change: FilterChange, _cx: &App) -> bool {
+        match change {
+            FilterChange::Flag("filter-favorites", value) => {
+                self.starred = value;
+                true
+            }
+            FilterChange::Reset => {
+                self.starred = false;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn filtered(&self, _cx: &App) -> bool {
+        self.starred
     }
 
     fn playing(&self, row: usize, cx: &App) -> bool {
@@ -117,10 +150,9 @@ impl TableSource for ArtistSource {
     }
 
     fn is_loading(&self, cx: &App) -> bool {
-        match self.local {
-            true => self.library.read(cx).local_loading(LibraryPart::Artists),
-            false => self.library.read(cx).loading(LibraryPart::Artists),
-        }
+        self.library
+            .read(cx)
+            .loading(self.shelf, LibraryPart::Artists)
     }
 
     fn pin(&self, row: usize, cx: &App) -> Option<Pin> {
