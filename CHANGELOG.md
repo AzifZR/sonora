@@ -23,6 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the slider under the moon button in the player bar, and hide the button altogether under
   Settings > Playback if you never use it.
 
+- Local albums and artists take a heart too: on their pages, in the library grids and in the
+  context menu.
+
+### Changed
+
+- Local Music lists every imported song, album and artist under the same four tabs as Your Library,
+  and a Favorites only filter narrows each of them to what you starred. The separate Favorites tab
+  is gone. Spotify and YouTube Music keep showing only what you saved.
+
 ### Fixed
 
 - The Flatpak remote and the standalone bundles follow the repository to

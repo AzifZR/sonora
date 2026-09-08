@@ -10,7 +10,7 @@ use gpui::{
 };
 use i18n::t;
 use music::{Track, Voice};
-use router::{Destination, LibraryTab, Link as _, LocalTab};
+use router::{Destination, LibraryTab, Link as _};
 use state::{
     AppSettings, Lyrics, LyricsState, Playback, PlaybackState, Queue, RomanizationScripts, SideTab,
     Sonora, Whence,
@@ -1597,17 +1597,11 @@ impl Aside {
             Whence::Artist => Destination::Artist(id),
             Whence::Radio => Destination::Song(id),
             Whence::Saved => Destination::Library(LibraryTab::Songs),
-            Whence::Local => match origin.id.is_empty() {
-                true => Destination::Local(LocalTab::Songs),
-                false => Destination::Local(LocalTab::Favorites),
-            },
+            Whence::Local => Destination::Local(LibraryTab::Songs),
         };
         let name = match origin.whence {
             Whence::Saved => t!("library-liked-songs"),
-            Whence::Local => match origin.id.is_empty() {
-                true => t!("nav-local"),
-                false => t!("library-liked-songs"),
-            },
+            Whence::Local => t!("nav-local"),
             _ => origin.name.clone()?,
         };
 

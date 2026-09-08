@@ -5,7 +5,7 @@ use anyhow::Result;
 use gpui::{Context, Entity, Task};
 use music::{Album, ArtistRef, Playlist, Track};
 
-use crate::{Io, Library, LibraryState, Session, SessionEvent, join};
+use crate::{Io, Library, Session, SessionEvent, Shelf, join};
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
 const LIMIT: usize = 20;
@@ -321,19 +321,11 @@ impl Search {
 
         self.hits = {
             let held = self.library.read(cx);
-            let (tracks, albums, playlists) = match held.state() {
-                LibraryState::Ready {
-                    tracks,
-                    albums,
-                    playlists,
-                    ..
-                } => (tracks.as_slice(), albums.as_slice(), playlists.as_slice()),
-                _ => (&[][..], &[][..], &[][..]),
-            };
+            let state = held.state(Shelf::Streaming);
             rank(
-                tracks,
-                albums,
-                playlists,
+                state.tracks(),
+                state.albums(),
+                state.playlists(),
                 &self.catalog,
                 &self.portraits,
                 query,

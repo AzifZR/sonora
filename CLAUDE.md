@@ -580,7 +580,7 @@ an `Unavailable` track.
 | Entity                                     | Responsibility                                                                                                                                                             |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Session`                                  | auth lifecycle; emits `SessionEvent::{SignedIn, SignedOut}`; hands out `Arc<dyn MusicApi>` and `Arc<dyn PlaybackFactory>`                                                  |
-| `Library`                                  | saved tracks / playlists / albums / followed artists; `LibraryState` is `Empty \| Loading \| Ready{..,problems} \| Failed` — partial failure is normal, surface `problems` |
+| `Library`                                  | one shelf per live provider; `LibraryState` is `Empty \| Loading \| Ready(Ready) \| Failed` — partial failure is normal, surface `Ready::problems`                        |
 | `Playback`                                 | engine ownership, transport, shuffle/repeat, volume, `Origin` tracking, `toggle_origin`                                                                                    |
 | `Queue`                                    | past / current / upcoming; `start`, `next`, `next_random`, `previous`, `rewind`                                                                                            |
 | `Home`, `Detail`, `ArtistDetail`, `Search` | per-screen loaders, each owning its `Task`                                                                                                                                 |
@@ -611,14 +611,29 @@ toggles the group and nothing else, so a route change only ever comes from a tab
 also why an overlaid `SidebarLeft` survives opening a group — it dismisses on navigation, and there
 is none.
 
-**Local Music is a top-level route that reuses `LibraryView`.** `Destination::Local(LocalTab)` owns
-the imported library, and `Root` builds a second `LibraryView` with `Shelf::Local`; the shelf picks
-the state (`Library::local_state`, `local_favorites`) and the settings keys, and every
-`TableSource` takes it through a `shelved(.., local)` constructor. Local Music adds a Songs section
-holding every scanned track, with a heart on each row, beside the Favorites section the streaming
-shelf also has. Its `local-*` settings keys and the `nav-local` i18n key keep the old names so
-stored layouts survive; `Screen::Imported` keeps the stored id `imported` for the same reason.
-Rename the value, not the key.
+**A library has a shape, and the shape decides what its pages list.** `music::Shape` sits on
+`ProviderSession` beside `authenticated` and `playcounts`. `Saved` means the library is what the
+user starred, read through the `saved_*` methods; Spotify and YouTube say so. `Catalog` means the
+library is everything the provider has, read through `all_tracks`, `all_albums` and `all_artists`,
+with the `saved_*` set loaded beside it for hearts and a Favorites only filter; Local and any
+self-hosted server say so. The `saved_*` methods mean favorites on every provider, and the `all_*`
+methods default to an empty list, so a `Saved` provider never implements them. Spotify and YouTube
+get no filter, since their lists are the favorites already.
+
+**Two shelves, one code path.** `state::Shelf::{Streaming, Local}` names the two providers that can
+be live at once, and `Shelf::of(id)` routes an id by its prefix. `Library` holds one `Held` per
+shelf with the same loading, landing and favorites code, and every accessor takes the shelf:
+`state(shelf)`, `loading(shelf, part)`, `part_failed(shelf, part)`, `shape(shelf)`. `Session`
+answers `client_of(shelf)` and `shape_of(shelf)`. Do not add a `local_*` twin of anything; branch
+on `Shelf` or on `Shape`.
+
+**Local Music is a top-level route that reuses `LibraryView`.** `Destination::Local(LibraryTab)` owns
+the imported library, and `Root` builds a second `LibraryView` with `Shelf::Local`; both routes
+share `LibraryTab`, so the two shelves have the same four tabs, Songs included, whatever the shape.
+Every `TableSource` takes the shelf
+through a `shelved(.., shelf)` constructor. The `local-*` settings keys and the `nav-local` i18n key
+keep the old names so stored layouts survive; `Screen::Imported` keeps the stored id `imported` for
+the same reason. Rename the value, not the key.
 
 **Local files carry their own metadata.** `music::local::wire` resolves artwork by convention:
 embedded picture, then `cover`/`folder` beside the track, then the same beside the album folder;
@@ -628,12 +643,12 @@ an artist folder answers to `artist` first, then `folder`, then `cover`, in jpg,
 answers. `state::Tags` owns the read and the write and rescans the folder afterwards;
 `views::shared::tag_editor` is the dialog.
 
-**Saved tracks are called Favorites.** `LibraryTab::Songs`, `Section::Favorites`, the `songs`
-settings key and `library-liked-songs` all keep their old names; only the wording changed. Local
-favorites live in the local tables of `state.sqlite` and reach the same
-`MusicApi::set_track_saved` path, so
-`Library::saved`/`toggle` route by `music::is_local_id`. `MusicApi::all_tracks` is the odd one out:
-it defaults to `saved_tracks` and only the local provider gives it a different answer.
+**Saved tracks are called Favorites.** `LibraryTab::Songs`, the `songs` settings key and
+`library-liked-songs` all keep their old names; only the wording changed. Local favorites live in
+the `favorites`, `favorite_albums` and `favorite_artists` tables of `state.sqlite` and reach the
+same `MusicApi::set_*_saved` paths, so `Library::saved`/`toggle` route by `Shelf::of`. Hearts read
+the starred set on a `Catalog` shelf and the listed items on a `Saved` one. The songs table of a
+`Saved` shelf draws no heart at all, since every row there is a favorite already.
 
 **Which entries the sidebar shows is a setting.** `NavEntry::ALL` (router) is the list; a hidden one
 is stored by id in `hidden_nav` and read through `AppSettings::nav_shown`. Your Library still needs
@@ -665,10 +680,9 @@ add a sidebar entry in `views/src/chrome/sidebar_left.rs` if it's top-level.
 
 **New library section checklist:** `LibraryView` keeps one `TableState` per `Section`, and the
 fixed-size arrays (`views`, `sliders`, `Section::ALL`, `tables()`) are all indexed by
-`Section::slot()` — a new section means bumping every one of them, plus a `LibraryTab` or
-`LocalTab` variant, a `key(shelf)` for settings persistence, a `vacancy(shelf)` i18n key, a card
-renderer, a `deck` arm and a `LIBRARY_TABS` or `LOCAL_TABS` entry. `library/artists.rs` is the
-smallest complete example.
+`Section::slot()` — a new section means bumping every one of them, plus a `LibraryTab` variant, a
+`key(shelf)` for settings persistence, a `vacancy(shelf, shape)` i18n key, a card renderer, a `deck`
+arm and a `LIBRARY_TABS` entry. `library/artists.rs` is the smallest complete example.
 
 **Tables.** Implement `TableSource` (`columns`, `rows`, `cell`, and optionally `compare`, `matches`,
 `playing`, `is_loading`), define a `&'static [ColumnSpec<Field>]`, hold a

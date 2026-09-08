@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gpui::{App, Context, Entity, Task};
 use music::{GenreItem, GenreSection, Track};
 
-use crate::{Io, Library, LibraryPart, LibraryState, Session, SessionEvent, join};
+use crate::{Io, Library, LibraryPart, LibraryState, Session, SessionEvent, Shelf, join};
 
 const GROUP_SIZE: usize = 10;
 const LIMIT: usize = GROUP_SIZE * 3;
@@ -48,8 +48,8 @@ impl Home {
         .detach();
 
         cx.observe(&library, |this, library, cx| {
-            match library.read(cx).state() {
-                LibraryState::Ready { .. } if this.quick_picks.is_empty() => {
+            match library.read(cx).state(Shelf::Streaming) {
+                LibraryState::Ready(_) if this.quick_picks.is_empty() => {
                     this.quick_picks = picks(&library, this.quick_picks_seed, cx);
                 }
                 LibraryState::Empty | LibraryState::Failed(_) => {
@@ -154,7 +154,9 @@ impl Home {
     }
 
     pub fn is_loading(&self, cx: &App) -> bool {
-        self.library.read(cx).loading(LibraryPart::Tracks)
+        self.library
+            .read(cx)
+            .loading(Shelf::Streaming, LibraryPart::Tracks)
     }
 }
 
@@ -185,11 +187,8 @@ fn pruned(sections: &[GenreSection]) -> Vec<GenreSection> {
 }
 
 fn picks(library: &Entity<Library>, seed: u64, cx: &App) -> Rc<Vec<Track>> {
-    let tracks = match library.read(cx).state() {
-        LibraryState::Ready { tracks, .. } => mixed_tracks(tracks, seed),
-        _ => Vec::new(),
-    };
-    Rc::new(tracks)
+    let tracks = library.read(cx).state(Shelf::Streaming).tracks();
+    Rc::new(mixed_tracks(tracks, seed))
 }
 
 fn mixed_tracks(tracks: &[Track], seed: u64) -> Vec<Track> {

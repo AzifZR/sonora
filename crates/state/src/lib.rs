@@ -28,7 +28,7 @@ pub use detail::{Collection, Detail, Header};
 pub use genre::{GenreDetails, Genres};
 pub use history::{History, HistoryState};
 pub use home::Home;
-pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem};
+pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf};
 pub use lyrics::{Lyrics, LyricsState};
 pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;

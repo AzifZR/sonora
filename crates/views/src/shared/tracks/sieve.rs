@@ -5,11 +5,13 @@ pub(crate) struct TrackSieve {
     pub duration: Option<(f32, f32)>,
     pub explicit: bool,
     pub playable: bool,
+    /// Keep only starred tracks. `keeps` cannot see the library, so the source applies it.
+    pub favorites: bool,
 }
 
 impl TrackSieve {
     pub(crate) fn active(&self) -> bool {
-        self.duration.is_some() || self.explicit || self.playable
+        self.duration.is_some() || self.explicit || self.playable || self.favorites
     }
 
     pub(super) fn keeps(&self, track: &Track) -> bool {
@@ -55,6 +57,7 @@ mod tests {
             duration: Some((60., 180.)),
             explicit: true,
             playable: true,
+            favorites: false,
         };
 
         assert!(sieve.keeps(&track(120, true, true)));

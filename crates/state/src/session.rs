@@ -5,11 +5,12 @@ use std::time::Duration;
 use anyhow::Error;
 use gpui::{Context, Entity, EventEmitter, Task};
 use music::{
-    MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, SignIn, SignInFailure,
-    SignInProblem, SignInPrompt, UserProfile,
+    MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, Shape, SignIn,
+    SignInFailure, SignInProblem, SignInPrompt, UserProfile,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::Shelf;
 use crate::catalog::CatalogSource;
 use crate::settings::AppSettings;
 use crate::{Io, join};
@@ -85,6 +86,7 @@ pub struct Session {
     client: Option<Arc<dyn MusicApi>>,
     catalog: Option<Arc<CatalogSource>>,
     playback: Option<Arc<dyn PlaybackFactory>>,
+    shape: Shape,
     authenticated: bool,
     playcounts: bool,
     io: Io,
@@ -129,6 +131,7 @@ impl Session {
             client: None,
             catalog: None,
             playback: None,
+            shape: Shape::Saved,
             authenticated: false,
             playcounts: false,
             io,
@@ -164,6 +167,22 @@ impl Session {
 
     pub fn local_client(&self) -> Option<Arc<dyn MusicApi>> {
         self.local_client.clone()
+    }
+
+    /// The client serving a shelf, if that shelf has a provider right now.
+    pub fn client_of(&self, shelf: Shelf) -> Option<Arc<dyn MusicApi>> {
+        match shelf {
+            Shelf::Streaming => self.client.clone(),
+            Shelf::Local => self.local_client.clone(),
+        }
+    }
+
+    /// What a shelf's library is made of. The local shelf is always a catalog.
+    pub fn shape_of(&self, shelf: Shelf) -> Shape {
+        match shelf {
+            Shelf::Streaming => self.shape,
+            Shelf::Local => Shape::Catalog,
+        }
     }
 
     pub(crate) fn catalog(&self, id: &str) -> Option<Arc<CatalogSource>> {
@@ -442,6 +461,7 @@ impl Session {
         self.client = None;
         self.catalog = None;
         self.playback = None;
+        self.shape = Shape::Saved;
         self.authenticated = false;
         self.playcounts = false;
         self.state = SessionState::SignedOut;
@@ -467,6 +487,7 @@ impl Session {
         self.catalog = Some(Arc::new(CatalogSource::new(session.api.clone())));
         self.client = Some(session.api);
         self.playback = Some(session.playback);
+        self.shape = session.shape;
         self.authenticated = session.authenticated;
         self.playcounts = session.playcounts;
         self.state = SessionState::SignedIn(session.profile);
@@ -480,6 +501,7 @@ impl Session {
         self.client = None;
         self.catalog = None;
         self.playback = None;
+        self.shape = Shape::Saved;
         self.authenticated = false;
         self.playcounts = false;
         self.watch = None;
@@ -551,6 +573,7 @@ impl Session {
         self.catalog = Some(Arc::new(CatalogSource::new(session.api.clone())));
         self.client = Some(session.api);
         self.playback = Some(session.playback);
+        self.shape = session.shape;
         self.authenticated = session.authenticated;
         self.playcounts = session.playcounts;
         log::debug!("session: reconnected");

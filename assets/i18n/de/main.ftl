@@ -25,7 +25,6 @@ nav-search = Suche
 nav-library = Deine Bibliothek
 nav-settings = Einstellungen
 nav-songs = Songs
-nav-favorites = Favoriten
 nav-albums = Alben
 nav-playlists = Playlists
 nav-artists = Künstler
@@ -42,9 +41,7 @@ library-play-liked-songs = Abspielen
 library-no-songs = Noch keine Favoriten
 library-no-albums = Noch keine gespeicherten Alben
 library-no-playlists = Noch keine Playlists
-library-no-artists = Noch keine gefolgten Künstler
 library-no-local-songs = Keine importierten Songs gefunden
-library-no-local-favorites = Noch keine lokalen Favoriten
 library-no-local-albums = Keine importierten Alben gefunden
 library-no-local-artists = Keine importierten Künstler gefunden
 library-no-local-playlists = Noch keine lokalen Playlists
@@ -167,7 +164,6 @@ playlist-again-add = Erneut hinzufügen
 confirm-remove-library-title = Von Bibliothek entfernen
 confirm-remove-playlist-title = Von Playlist entfernen
 confirm-remove-history-title = Von Verlauf entfernen
-confirm-unfollow-title = Entfolgen
 confirm-remove-songs = { $count ->
     [one] Den Song von der Bibliothek entfernen?
    *[other] { $count } Songs von der Bibliothek entfernen?
@@ -183,10 +179,6 @@ confirm-remove-history-songs = { $count ->
 confirm-remove-albums = { $count ->
     [one] Den Album von der Bibliothek entfernen?
    *[other] { $count } Alben von der Bibliothek entfernen?
-}
-confirm-unfollow-artists = { $count ->
-    [one] Den Künstler entfolgen?
-   *[other] { $count } Künstler entfolgen?
 }
 confirm-remove-playlists = { $count ->
     [one] Den Playlist von der Bibliothek entfernen?
@@ -296,8 +288,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } monatliche Hörer
 }
 artist-play = Jetzt abspielen
-artist-follow = Folgen
-artist-unfollow = Nicht mehr folgen
 artist-popular = Beliebt
 artist-popular-eyebrow = Diesen Künstler entdecken
 artist-popular-empty = Von diesem Künstler gibt es noch nichts zum Abspielen

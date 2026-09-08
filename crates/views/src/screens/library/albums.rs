@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use ui::{ActiveTheme as _, Filter, FilterChange, RangeAxis, Unit};
+use ui::{ActiveTheme as _, Filter, FilterChange, FlagAxis, RangeAxis, Unit};
 
 use gpui::{AnyElement, App, Entity, SharedString, TextAlign};
 use i18n::t;
-use music::Album;
-use state::{Library, LibraryPart, LibraryState, Origin, Playback};
+use music::{Album, Shape};
+use state::{Library, LibraryPart, Origin, Playback, Shelf};
 use ui::rank::{HANDY, NICE, SPARE, USEFUL};
 use ui::{Cell, ColumnSpec, Menu, Pin, TableSource, Width};
 
@@ -91,8 +91,9 @@ pub(super) const COLUMNS: &[ColumnSpec<AlbumField>] = &[
 pub(super) struct AlbumSource {
     library: Entity<Library>,
     playback: Entity<Playback>,
-    local: bool,
+    shelf: Shelf,
     year_span: Option<(f32, f32)>,
+    starred: bool,
     spread: RefCell<Option<Spread>>,
 }
 
@@ -105,13 +106,14 @@ impl AlbumSource {
     pub(super) fn shelved(
         library: Entity<Library>,
         playback: Entity<Playback>,
-        local: bool,
+        shelf: Shelf,
     ) -> Self {
         Self {
             library,
             playback,
-            local,
+            shelf,
             year_span: None,
+            starred: false,
             spread: RefCell::new(None),
         }
     }
@@ -156,15 +158,12 @@ impl AlbumSource {
     }
 
     fn albums<'a>(&self, cx: &'a App) -> &'a [Album] {
-        let library = self.library.read(cx);
-        let state = match self.local {
-            true => library.local_state(),
-            false => library.state(),
-        };
-        match state {
-            LibraryState::Ready { albums, .. } => albums.as_slice(),
-            _ => &[],
-        }
+        self.library.read(cx).state(self.shelf).albums()
+    }
+
+    /// Whether the shelf lists more than the favorites, so a favorites filter has something to do.
+    fn catalog(&self, cx: &App) -> bool {
+        self.library.read(cx).shape(self.shelf) == Shape::Catalog
     }
 }
 
@@ -181,6 +180,9 @@ impl TableSource for AlbumSource {
 
     fn matches(&self, row: usize, query: &str, cx: &App) -> bool {
         self.at(row, cx).is_some_and(|album| {
+            if self.starred && !self.library.read(cx).saved_album(&album.id) {
+                return false;
+            }
             if let Some((low, high)) = self.year_span {
                 let year = album.year as f32;
                 if album.year == 0 || year < low - 0.5 || year > high + 0.5 {
@@ -192,24 +194,31 @@ impl TableSource for AlbumSource {
     }
 
     fn filter_axes(&self, query: &str, cx: &App) -> Vec<Filter> {
+        let mut axes = Vec::new();
         let years = self.years(query, cx);
-        let (Some(first), Some(last)) = (years.first(), years.last()) else {
-            return Vec::new();
-        };
-        let bounds = (*first, *last);
-        let value = self.year_span.unwrap_or(bounds);
-
-        vec![Filter::Range(
-            RangeAxis {
-                key: "filter-year",
-                label: t!("filter-year"),
-                bounds,
-                value,
-                unit: Unit::Plain,
-                values: Some(years),
-            }
-            .clamped(),
-        )]
+        if let (Some(first), Some(last)) = (years.first(), years.last()) {
+            let bounds = (*first, *last);
+            let value = self.year_span.unwrap_or(bounds);
+            axes.push(Filter::Range(
+                RangeAxis {
+                    key: "filter-year",
+                    label: t!("filter-year"),
+                    bounds,
+                    value,
+                    unit: Unit::Plain,
+                    values: Some(years),
+                }
+                .clamped(),
+            ));
+        }
+        if self.catalog(cx) {
+            axes.push(Filter::Flag(FlagAxis {
+                key: "filter-favorites",
+                label: t!("filter-favorites"),
+                on: self.starred,
+            }));
+        }
+        axes
     }
 
     fn filter(&mut self, change: FilterChange, _cx: &App) -> bool {
@@ -218,8 +227,13 @@ impl TableSource for AlbumSource {
                 self.year_span = Some(value);
                 true
             }
+            FilterChange::Flag("filter-favorites", value) => {
+                self.starred = value;
+                true
+            }
             FilterChange::Reset => {
                 self.year_span = None;
+                self.starred = false;
                 true
             }
             _ => false,
@@ -227,7 +241,7 @@ impl TableSource for AlbumSource {
     }
 
     fn filtered(&self, _cx: &App) -> bool {
-        self.year_span.is_some()
+        self.year_span.is_some() || self.starred
     }
 
     fn playing(&self, row: usize, cx: &App) -> bool {
@@ -238,10 +252,9 @@ impl TableSource for AlbumSource {
     }
 
     fn is_loading(&self, cx: &App) -> bool {
-        match self.local {
-            true => self.library.read(cx).local_loading(LibraryPart::Albums),
-            false => self.library.read(cx).loading(LibraryPart::Albums),
-        }
+        self.library
+            .read(cx)
+            .loading(self.shelf, LibraryPart::Albums)
     }
 
     fn pin(&self, row: usize, cx: &App) -> Option<Pin> {

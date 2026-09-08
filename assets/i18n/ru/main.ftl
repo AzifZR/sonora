@@ -25,7 +25,6 @@ nav-search = Поиск
 nav-library = Моя медиатека
 nav-settings = Настройки
 nav-songs = Треки
-nav-favorites = Избранное
 nav-albums = Альбомы
 nav-playlists = Плейлисты
 nav-artists = Исполнители
@@ -42,12 +41,14 @@ library-play-liked-songs = Слушать
 library-no-songs = Пока нет избранного
 library-no-albums = Пока нет сохранённых альбомов
 library-no-playlists = Пока нет плейлистов
-library-no-artists = Пока нет отслеживаемых исполнителей
+library-no-artists = Пока нет избранных исполнителей
 library-no-local-songs = Импортированные треки не найдены
-library-no-local-favorites = Пока нет локального избранного
 library-no-local-albums = Импортированные альбомы не найдены
 library-no-local-artists = Импортированные исполнители не найдены
 library-no-local-playlists = Локальных плейлистов пока нет
+library-no-catalog-songs = Треки не найдены
+library-no-catalog-albums = Альбомы не найдены
+library-no-catalog-artists = Исполнители не найдены
 library-no-matches = Ничего не найдено
 library-not-loaded = Библиотека не загрузилась
 library-part-not-loaded = Этот раздел библиотеки не загрузился
@@ -167,6 +168,7 @@ filter-duration = Длительность
 filter-year = Год
 filter-explicit = Только с ненормативной лексикой
 filter-playable = Только доступные
+filter-favorites = Только избранное
 
 # view
 view-list = Список
@@ -229,8 +231,6 @@ artist-monthly-listeners = { $count ->
    *[other] { $value } слушателей в месяц
 }
 artist-play = Слушать
-artist-follow = Отслеживать
-artist-unfollow = Не отслеживать
 artist-popular = Популярное
 artist-popular-eyebrow = Знакомство с исполнителем
 artist-popular-empty = Пока нечего слушать у этого исполнителя

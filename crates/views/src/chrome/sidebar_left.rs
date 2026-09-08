@@ -10,7 +10,7 @@ use gpui::{
 };
 use gpui::{Window, div, px};
 use router::{
-    Destination, LibraryTab, LocalTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
+    Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
 };
 use state::{AppSettings, Origin, Playback, PlaybackState, Session, Sonora};
 
@@ -31,7 +31,7 @@ const NAV: [(Option<NavEntry>, &str, Destination); 6] = [
     (
         Some(NavEntry::Local),
         "icons/file-music.svg",
-        Destination::Local(LocalTab::Songs),
+        Destination::Local(LibraryTab::Songs),
     ),
     (
         Some(NavEntry::History),
@@ -46,18 +46,10 @@ const NAV: [(Option<NavEntry>, &str, Destination); 6] = [
 ];
 
 const LIBRARY_TABS: [(&str, LibraryTab); 4] = [
-    ("nav-favorites", LibraryTab::Songs),
+    ("nav-songs", LibraryTab::Songs),
     ("nav-albums", LibraryTab::Albums),
     ("nav-artists", LibraryTab::Artists),
     ("nav-playlists", LibraryTab::Playlists),
-];
-
-const LOCAL_TABS: [(&str, LocalTab); 5] = [
-    ("nav-favorites", LocalTab::Favorites),
-    ("nav-songs", LocalTab::Songs),
-    ("nav-albums", LocalTab::Albums),
-    ("nav-artists", LocalTab::Artists),
-    ("nav-playlists", LocalTab::Playlists),
 ];
 
 const SETTINGS_TABS: [(&str, SettingsTab); 5] = [
@@ -420,27 +412,19 @@ impl Render for SidebarLeft {
                 if self.local_open {
                     rows.push(
                         Tabs::new()
-                            .items(
-                                LOCAL_TABS
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(slot, (name, tab))| {
-                                        let chosen = current == Destination::Local(tab);
-                                        let tint = if chosen { foreground } else { muted };
+                            .items(LIBRARY_TABS.into_iter().enumerate().map(
+                                |(slot, (name, tab))| {
+                                    let chosen = current == Destination::Local(tab);
+                                    let tint = if chosen { foreground } else { muted };
 
-                                        nav_row(
-                                            ("local-tab", slot as u32),
-                                            name,
-                                            tint,
-                                            sidebar_accent,
-                                        )
+                                    nav_row(("local-tab", slot as u32), name, tint, sidebar_accent)
                                         .flex_1()
                                         .when(chosen, |button| button.bg(sidebar_accent))
-                                        .on_click(
-                                            move |_, _, cx| navigate(Destination::Local(tab), cx),
-                                        )
-                                    }),
-                            )
+                                        .on_click(move |_, _, cx| {
+                                            navigate(Destination::Local(tab), cx)
+                                        })
+                                },
+                            ))
                             .into_any_element(),
                     );
                 }
@@ -622,7 +606,7 @@ fn nav_row(id: impl Into<ElementId>, key: &'static str, tint: Hsla, accent: Hsla
 
 #[cfg(test)]
 mod tests {
-    use router::{Destination, LibraryTab, LocalTab, SettingsTab};
+    use router::{Destination, LibraryTab, SettingsTab};
 
     use super::expanded;
 
@@ -633,7 +617,7 @@ mod tests {
             (true, false, false)
         );
         assert_eq!(
-            expanded(&Destination::Local(LocalTab::Albums)),
+            expanded(&Destination::Local(LibraryTab::Albums)),
             (false, true, false)
         );
         assert_eq!(

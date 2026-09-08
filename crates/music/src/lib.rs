@@ -80,10 +80,14 @@ pub trait MusicApi: Send + Sync {
     async fn artist(&self, artist_id: &str) -> Result<Artist>;
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile>;
     async fn artist_images(&self, ids: Vec<String>) -> Result<HashMap<String, String>>;
+
+    /// The tracks the user starred. On a `Shape::Saved` provider this is the whole songs
+    /// library; on a `Shape::Catalog` one it only feeds the hearts and the favorites filter.
     async fn saved_tracks(&self, limit: u32) -> Result<Vec<Track>>;
 
-    async fn all_tracks(&self, limit: u32) -> Result<Vec<Track>> {
-        self.saved_tracks(limit).await
+    /// Every track the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_tracks(&self, _limit: u32) -> Result<Vec<Track>> {
+        Ok(Vec::new())
     }
 
     async fn set_track_saved(&self, track_id: &str, saved: bool) -> Result<()>;
@@ -111,8 +115,20 @@ pub trait MusicApi: Send + Sync {
     async fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
     async fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
     async fn saved_albums(&self, limit: u32) -> Result<Vec<Album>>;
+
+    /// Every album the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_albums(&self, _limit: u32) -> Result<Vec<Album>> {
+        Ok(Vec::new())
+    }
+
     async fn set_album_saved(&self, album_id: &str, saved: bool) -> Result<()>;
     async fn saved_artists(&self, limit: u32) -> Result<Vec<SavedArtist>>;
+
+    /// Every artist the provider has. Only a `Shape::Catalog` provider answers.
+    async fn all_artists(&self, _limit: u32) -> Result<Vec<SavedArtist>> {
+        Ok(Vec::new())
+    }
+
     async fn set_artist_saved(&self, artist_id: &str, saved: bool) -> Result<()>;
     async fn album(&self, album_id: &str) -> Result<AlbumDetail>;
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>>;
@@ -254,10 +270,22 @@ pub trait PlaybackFactory: Send + Sync {
     fn start(&self, config: PlaybackConfig) -> (Box<dyn Player>, Box<dyn PlaybackEvents>);
 }
 
+/// What a provider's library is made of. It decides which `MusicApi` methods fill the library
+/// pages and whether a favorites filter is offered on them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    /// The library is what the user starred, read through the `saved_*` methods.
+    Saved,
+    /// The library is everything the provider has, read through the `all_*` methods, with the
+    /// `saved_*` set drawn on top as hearts and a filter.
+    Catalog,
+}
+
 pub struct ProviderSession {
     pub profile: UserProfile,
     pub api: Arc<dyn MusicApi>,
     pub playback: Arc<dyn PlaybackFactory>,
+    pub shape: Shape,
     pub authenticated: bool,
     pub playcounts: bool,
 }

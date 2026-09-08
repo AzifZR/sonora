@@ -22,7 +22,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::spotify::playback::Factory;
-use crate::{MusicApi as _, MusicProvider, ProviderSession, SignInFailure, SignInProblem};
+use crate::{MusicApi as _, MusicProvider, ProviderSession, Shape, SignInFailure, SignInProblem};
 
 pub use auth::AuthConfig;
 pub use client::LibrespotClient;
@@ -57,6 +57,7 @@ impl SpotifyProvider {
             profile,
             api: Arc::new(client),
             playback,
+            shape: Shape::Saved,
             authenticated: true,
             playcounts: true,
         })

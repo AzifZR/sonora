@@ -93,7 +93,6 @@ const RESTART_WINDOW: Duration = Duration::from_secs(3);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
 const RESUME_STEP: Duration = Duration::from_secs(5);
 const TAPER_DB: f32 = 50.;
-const LOCAL_FAVORITES: &str = "favorites";
 const SIMILAR_LIMIT: usize = 20;
 
 /// The position shown between the engine's reports. It runs on wall time from `reset` and is
@@ -270,10 +269,6 @@ impl Origin {
 
     pub fn local() -> Self {
         Self::of(Whence::Local, String::new())
-    }
-
-    pub fn local_favorites() -> Self {
-        Self::of(Whence::Local, LOCAL_FAVORITES)
     }
 
     pub fn named(mut self, name: impl Into<SharedString>) -> Self {
