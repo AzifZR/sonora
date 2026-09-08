@@ -29,6 +29,7 @@ const CLIENT_NAME: &str = "sonora";
 pub struct SubsonicClient {
     client: Client,
     username: String,
+    http: reqwest::Client,
     /// The cover art endpoint with the fixed signature already on it. The library client signs
     /// every url afresh, which would give one cover a new url on every conversion and defeat
     /// every image cache between here and the screen.
@@ -55,6 +56,7 @@ impl SubsonicClient {
         Ok(Self {
             client,
             username,
+            http: reqwest::Client::new(),
             covers,
         })
     }
@@ -720,20 +722,27 @@ impl SubsonicClient {
             .unwrap_or_default()
     }
 
-    pub async fn stream_bytes(&self, track_id: &str) -> Result<(Vec<u8>, Duration)> {
-        let bytes = self
+    /// Opens the audio of a track and answers once the response headers are in; the body is
+    /// still on its way.
+    pub async fn open_stream(&self, track_id: &str) -> Result<reqwest::Response> {
+        let url = self
             .client
-            .stream(track_id, None, None, None, None)
+            .stream_url(track_id, None, None)
+            .context("cannot build the stream url")?;
+        self.http
+            .get(url)
+            .send()
             .await
-            .context("cannot stream the track")?;
-        let duration = self
-            .client
-            .get_song(track_id)
-            .await
-            .ok()
-            .and_then(|song| song.duration)
-            .map(|secs| Duration::from_secs(secs.max(0) as u64));
-        Ok((bytes.to_vec(), duration.unwrap_or(Duration::ZERO)))
+            .context("cannot stream the track")?
+            .error_for_status()
+            .context("the server refused the stream")
+    }
+
+    /// The length the server records for a track, when it has one.
+    pub async fn duration(&self, track_id: &str) -> Option<Duration> {
+        let song = self.client.get_song(track_id).await.ok()?;
+        let seconds = song.duration?;
+        Some(Duration::from_secs(u64::try_from(seconds).unwrap_or(0)))
     }
 }
 

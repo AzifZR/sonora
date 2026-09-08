@@ -1,14 +1,14 @@
-use std::io::Cursor;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
+use rodio::Source as _;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::audio::{Output, RAMP, SmoothGain, Volume};
 use crate::spectrum::Spectrum;
 use crate::subsonic::client::SubsonicClient;
+use crate::subsonic::stream::Stream;
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player};
 
 const POLL: Duration = Duration::from_millis(20);
@@ -127,9 +127,11 @@ impl PlaybackEvents for Events {
     }
 }
 
+/// A track ready to decode: its download, still in flight past the preroll, and the length the
+/// server knows for it.
 #[derive(Clone)]
 struct Loaded {
-    data: Arc<Vec<u8>>,
+    stream: Stream,
     duration: Option<Duration>,
 }
 
@@ -511,11 +513,12 @@ fn append(sink: &rodio::Player, id: &str, loaded: &Loaded, fade: bool) -> Result
         true => 0.0,
         false => 1.0,
     };
-    let source = decode(loaded.data.clone())?;
+    let source = decode(&loaded.stream)?;
+    let length = loaded.duration.or_else(|| source.total_duration());
     sink.append(SmoothGain::new(source, envelope.clone(), initial, RAMP));
     Ok(Slot {
         id: id.to_owned(),
-        length: loaded.duration,
+        length,
         envelope,
         gain: 1.0,
     })
@@ -543,28 +546,25 @@ fn announce(
     events.send(event).ok();
 }
 
+/// Opens the stream and asks for the length at the same time, so neither round trip waits on
+/// the other; the preroll usually covers the length lookup entirely.
 async fn fetch(client: &SubsonicClient, id: &str) -> Result<Loaded> {
-    let (bytes, duration) = client.stream_bytes(id).await?;
+    let (stream, duration) = tokio::join!(
+        async { Stream::open(client.open_stream(id).await?).await },
+        client.duration(id),
+    );
     Ok(Loaded {
-        data: Arc::new(bytes),
-        duration: Some(duration),
+        stream: stream?,
+        duration,
     })
 }
 
-fn decode(data: Arc<Vec<u8>>) -> Result<impl rodio::Source + Send + 'static> {
-    let length = data.len() as u64;
-    rodio::Decoder::builder()
-        .with_data(Cursor::new(Bytes(data)))
-        .with_byte_len(length)
-        .with_seekable(true)
-        .build()
-        .context("cannot decode subsonic audio")
-}
-
-struct Bytes(Arc<Vec<u8>>);
-
-impl AsRef<[u8]> for Bytes {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
+fn decode(stream: &Stream) -> Result<impl rodio::Source + Send + 'static> {
+    let mut builder = rodio::Decoder::builder()
+        .with_data(stream.reader())
+        .with_seekable(true);
+    if let Some(total) = stream.total() {
+        builder = builder.with_byte_len(total);
     }
+    builder.build().context("cannot decode subsonic audio")
 }

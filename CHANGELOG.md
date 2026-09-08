@@ -137,6 +137,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Local music cover thumbnails are cached under `$XDG_CACHE_HOME` instead of `$XDG_CONFIG_HOME`.
 - Passwords typed into a server login form are hidden as you type them.
+- A track from a Subsonic server starts as soon as the first seconds have arrived, instead of
+  after the whole file has downloaded.
 - The system Now Playing widget reads cover art from Sonora's own cache, so a cover that fails to
   download no longer takes the app down on macOS, and the widget shows artwork offline.
 

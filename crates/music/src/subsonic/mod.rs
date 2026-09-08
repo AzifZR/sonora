@@ -1,6 +1,7 @@
 mod auth;
 mod client;
 mod playback;
+mod stream;
 mod wire;
 
 use std::sync::Arc;
