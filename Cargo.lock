@@ -7192,6 +7192,7 @@ dependencies = [
  "raw-window-handle",
  "reqwest 0.12.28",
  "router",
+ "rustls 0.23.43",
  "sha2",
  "state",
  "storage",
