@@ -220,7 +220,11 @@ struct Appearance {
     transparency: f32,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     server_side_decorations: bool,
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    rounded_window: bool,
     window_controls: bool,
+    #[cfg(not(target_os = "macos"))]
+    mac_controls: bool,
     controls_on_left: bool,
     reduce_motion: String,
     motion_pace: String,
@@ -429,7 +433,11 @@ impl Default for Appearance {
             transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
+            #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+            rounded_window: false,
             window_controls: true,
+            #[cfg(not(target_os = "macos"))]
+            mac_controls: false,
             controls_on_left: false,
             reduce_motion: Stillness::default().id().to_owned(),
             motion_pace: Pace::default().id().to_owned(),
@@ -706,8 +714,18 @@ impl AppSettings {
         }
     }
 
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    pub fn rounded_window(&self) -> bool {
+        self.values.appearance.rounded_window
+    }
+
     pub fn window_controls(&self) -> bool {
         self.values.appearance.window_controls
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn mac_controls(&self) -> bool {
+        self.values.appearance.mac_controls
     }
 
     pub fn controls_on_left(&self) -> bool {
@@ -1099,8 +1117,20 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    pub fn set_rounded_window(&mut self, rounded: bool, cx: &mut Context<Self>) {
+        self.values.appearance.rounded_window = rounded;
+        self.schedule_save(cx);
+    }
+
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {
         self.values.appearance.window_controls = shown;
+        self.schedule_save(cx);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_mac_controls(&mut self, mac: bool, cx: &mut Context<Self>) {
+        self.values.appearance.mac_controls = mac;
         self.schedule_save(cx);
     }
 

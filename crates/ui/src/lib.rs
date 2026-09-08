@@ -14,6 +14,8 @@ mod inline_links;
 mod input;
 mod label;
 mod layout;
+#[cfg(not(target_os = "macos"))]
+mod mac_controls;
 mod menu;
 mod metrics;
 mod modal;
@@ -68,6 +70,8 @@ pub use input::{
 };
 pub use label::{eyebrow, faint, heading, upper, vacant};
 pub use layout::{ALWAYS, MIN_CONTENT, ROOMY, Room, SNUG, VAST, WIDE};
+#[cfg(not(target_os = "macos"))]
+pub use mac_controls::MacControls;
 pub use menu::{MENU_CONTEXT, Menu, MenuItem, SubmenuState};
 pub use metrics::{LEADING, Metrics, Rounding, Text, snapped, tucked};
 pub use modal::Modal;

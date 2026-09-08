@@ -275,12 +275,15 @@ impl SettingsView {
             self.title("settings-group-window-style", cx),
             Row::Item(self.server_side_decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
+            Row::Item(self.mac_controls_row(cx).into_any_element()),
         ];
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
         let rows = vec![
             self.title("settings-group-title-bar", cx),
             Row::Item(self.decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
+            Row::Item(self.mac_controls_row(cx).into_any_element()),
+            Row::Item(self.rounded_window_row(cx).into_any_element()),
         ];
         #[cfg(target_os = "macos")]
         let rows = Vec::<Row>::new();
@@ -740,6 +743,48 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_window_controls(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn mac_controls_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).mac_controls();
+
+        self.row(
+            t!("settings-mac-controls"),
+            t!("settings-mac-controls-detail"),
+            muted,
+            small,
+            Switch::new("mac-controls", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_mac_controls(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    fn rounded_window_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).rounded_window();
+
+        self.row(
+            t!("settings-rounded-window"),
+            t!("settings-rounded-window-detail"),
+            muted,
+            small,
+            Switch::new("rounded-window", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_rounded_window(!on, cx));
                 }))
                 .into_any_element(),
         )

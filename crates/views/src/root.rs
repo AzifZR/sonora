@@ -77,6 +77,8 @@ pub struct Root {
     screens: Screens,
     _adaptive: Entity<Adaptive>,
     background: Option<gpui::WindowBackgroundAppearance>,
+    #[cfg(target_os = "windows")]
+    rounded: Option<bool>,
 }
 
 impl Root {
@@ -234,6 +236,8 @@ impl Root {
             },
             _adaptive: adaptive,
             background: None,
+            #[cfg(target_os = "windows")]
+            rounded: None,
         };
         root.show(start, cx);
         root
@@ -581,6 +585,18 @@ impl Render for Root {
         if self.background != Some(appearance) {
             self.background = Some(appearance);
             window.set_background_appearance(appearance);
+        }
+
+        // Windows can only round a window's corners while it's opaque (DWM never rounds a
+        // per-pixel-alpha window), so this only takes effect once `backdrop` above lands on
+        // `Opaque`.
+        #[cfg(target_os = "windows")]
+        {
+            let rounded = Sonora::global(cx).settings.read(cx).rounded_window();
+            if self.rounded != Some(rounded) {
+                self.rounded = Some(rounded);
+                state::apply_rounded_window(window, rounded, cx);
+            }
         }
 
         let root = div()

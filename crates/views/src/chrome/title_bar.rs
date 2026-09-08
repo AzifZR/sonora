@@ -1,11 +1,13 @@
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::Decorations;
 use gpui::prelude::*;
+use gpui::{AnyElement, Window, div, px};
 use gpui::{
     AnyView, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Render,
 };
-use gpui::{Window, div, px};
+#[cfg(not(target_os = "macos"))]
+use ui::MacControls;
 use ui::WindowControls;
 use ui::{ActiveTheme as _, Button};
 
@@ -194,6 +196,10 @@ impl Render for TitleBar {
         let controls = settings.window_controls();
         let decorated = cfg!(not(target_os = "macos")) && controls;
         let leading = decorated && settings.controls_on_left();
+        #[cfg(not(target_os = "macos"))]
+        let mac = settings.mac_controls();
+        #[cfg(target_os = "macos")]
+        let mac = false;
 
         div()
             .flex()
@@ -240,7 +246,7 @@ impl Render for TitleBar {
                     .pr_3()
                     .gap_1()
                     .when(offset > Pixels::ZERO, |this| this.w(offset))
-                    .when(leading, |this| this.child(WindowControls::new(true)))
+                    .when(leading, |this| this.child(window_controls(true, mac)))
                     .when(navigation, |this| this.child(self.toggle(cx))),
             )
             .child(
@@ -266,12 +272,22 @@ impl Render for TitleBar {
                 this.child(
                     div()
                         .flex_none()
-                        .when(cfg!(target_os = "windows"), |this| {
+                        .when(cfg!(target_os = "windows") && !mac, |this| {
                             this.h_full().self_stretch()
                         })
-                        .when(!cfg!(target_os = "windows"), |this| this.pr_2())
-                        .child(WindowControls::new(false)),
+                        .when(!cfg!(target_os = "windows") || mac, |this| this.pr_2())
+                        .child(window_controls(false, mac)),
                 )
             })
     }
+}
+
+fn window_controls(leading: bool, mac: bool) -> AnyElement {
+    #[cfg(target_os = "macos")]
+    let _ = mac;
+    #[cfg(not(target_os = "macos"))]
+    if mac {
+        return MacControls::new(leading).into_any_element();
+    }
+    WindowControls::new(leading).into_any_element()
 }

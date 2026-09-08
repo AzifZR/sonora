@@ -58,6 +58,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Settings > Accounts with the server address, a username and a password. Your Library then lists
   the whole server, songs included, with a Favorites only filter for what you starred.
 
+- On Windows, Sonora's window corners can be rounded from Appearance, matching Windows 11's
+  native look.
+- Window controls can be drawn as macOS-style traffic-light dots from Appearance, on Windows and
+  Linux. They follow the existing controls-side setting, same as the standard controls.
+
 ### Changed
 
 - Local Music lists every imported song, album and artist under the same four tabs as Your Library,

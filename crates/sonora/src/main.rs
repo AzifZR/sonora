@@ -89,6 +89,8 @@ fn main() {
             Arc::new(music::netease::NetEase::new()),
         ];
         state::init(cx, io, database, providers, local_provider, lyrics);
+        #[cfg(target_os = "windows")]
+        state::install_rounded_window_hook(set_corner_preference, cx);
         let start = opened_start.unwrap_or_else(|| {
             let startup = Sonora::global(cx).settings.read(cx).startup().to_owned();
             Screen::from_id(&startup)
@@ -225,6 +227,11 @@ fn open_window(cx: &mut App) {
         },
         |window, cx| {
             window.set_rem_size(cx.theme().font_size);
+            #[cfg(target_os = "windows")]
+            set_corner_preference(
+                window,
+                Sonora::global(cx).settings.read(cx).rounded_window(),
+            );
             state::attach_remote(platform_handle(window), cx);
             state::remember_window(window, cx);
             cx.new(|cx| Root::new(session, library, playback, queue, window, cx))
@@ -234,11 +241,42 @@ fn open_window(cx: &mut App) {
 }
 
 #[cfg(target_os = "windows")]
+fn set_corner_preference(window: &gpui::Window, rounded: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DWMWCP_ROUND, DwmSetWindowAttribute,
+    };
+
+    let Ok(RawWindowHandle::Win32(handle)) =
+        HasWindowHandle::window_handle(window).map(|handle| handle.as_raw())
+    else {
+        return;
+    };
+    let handle = handle.hwnd.get() as *mut std::ffi::c_void;
+    // DWMWCP_DEFAULT ("let the system decide") does not reliably un-round a window DWM has
+    // already rounded once, so turning the setting off needs the explicit force-off value.
+    let preference: DWM_WINDOW_CORNER_PREFERENCE = match rounded {
+        true => DWMWCP_ROUND,
+        false => DWMWCP_DONOTROUND,
+    };
+    unsafe {
+        DwmSetWindowAttribute(
+            handle,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &preference as *const _ as *const std::ffi::c_void,
+            size_of_val(&preference) as u32,
+        );
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+        DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
     };
+    use windows_sys::Win32::UI::Controls::MARGINS;
 
     let RawWindowHandle::Win32(handle) = HasWindowHandle::window_handle(window).ok()?.as_raw()
     else {
@@ -246,12 +284,18 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
     };
     let handle = handle.hwnd.get() as *mut std::ffi::c_void;
     unsafe {
-        let preference = DWMWCP_ROUND;
+        // DWM's default drop shadow for a WS_THICKFRAME window is tied to its glass-frame
+        // margins, not to non-client rendering, so zeroing them removes the shadow without
+        // touching corner rounding.
+        DwmExtendFrameIntoClientArea(handle, &MARGINS::default());
+        // Sonora draws its own frame, so the default DWM accent-color outline around
+        // resizable windows would double up with it; DWMWA_COLOR_NONE removes just that
+        // outline without touching non-client rendering or corner rounding.
         DwmSetWindowAttribute(
             handle,
-            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
-            &preference as *const _ as *const std::ffi::c_void,
-            size_of_val(&preference) as u32,
+            DWMWA_BORDER_COLOR as u32,
+            &DWMWA_COLOR_NONE as *const _ as *const std::ffi::c_void,
+            size_of_val(&DWMWA_COLOR_NONE) as u32,
         );
     }
     hide_system_caption(handle);
