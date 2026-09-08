@@ -10,6 +10,7 @@ pub mod lyrics;
 mod models;
 pub mod musixmatch;
 pub mod netease;
+mod sink;
 mod spectrum;
 pub mod spotify;
 pub mod subsonic;

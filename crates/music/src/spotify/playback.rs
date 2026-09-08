@@ -10,8 +10,9 @@ use librespot_playback::player::{Player, PlayerEvent};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use crate::audio::Volume;
+use crate::sink::Cue;
 use crate::spectrum::Spectrum;
-use crate::spotify::sink::{Cue, OutputSink};
+use crate::spotify::sink::OutputSink;
 use crate::{
     PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player as MusicPlayer,
 };
