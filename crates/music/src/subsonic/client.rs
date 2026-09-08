@@ -240,6 +240,40 @@ impl MusicApi for SubsonicClient {
         Ok(tracks)
     }
 
+    /// Every song on the server. An empty `search3` query lists the whole library on
+    /// OpenSubsonic servers, a page at a time.
+    async fn all_tracks(&self, limit: u32) -> Result<Vec<Track>> {
+        let mut tracks = Vec::new();
+        let mut offset = 0i32;
+        loop {
+            let wanted = (limit - tracks.len() as u32).min(LIBRARY_PAGE as u32) as i32;
+            if wanted <= 0 {
+                break;
+            }
+            let page = self
+                .client
+                .search3(
+                    "",
+                    Some(0),
+                    None,
+                    Some(0),
+                    None,
+                    Some(wanted),
+                    Some(offset),
+                    None,
+                )
+                .await
+                .context("cannot load the songs")?;
+            let fetched = page.song.len();
+            tracks.extend(page.song.into_iter().map(|song| self.song(song)));
+            if fetched == 0 || fetched < wanted as usize {
+                break;
+            }
+            offset += fetched as i32;
+        }
+        Ok(tracks)
+    }
+
     async fn set_track_saved(&self, track_id: &str, saved: bool) -> Result<()> {
         self.change_saved(saved, &[track_id], &[], &[])
             .await
@@ -338,6 +372,20 @@ impl MusicApi for SubsonicClient {
     }
 
     async fn saved_albums(&self, limit: u32) -> Result<Vec<Album>> {
+        let starred = self
+            .client
+            .get_starred2(None)
+            .await
+            .context("cannot load the starred albums")?;
+        Ok(starred
+            .album
+            .into_iter()
+            .take(limit as usize)
+            .map(|album| self.convert_album(album))
+            .collect())
+    }
+
+    async fn all_albums(&self, limit: u32) -> Result<Vec<Album>> {
         let mut albums = Vec::new();
         let mut offset = 0i32;
         loop {
@@ -375,6 +423,27 @@ impl MusicApi for SubsonicClient {
     }
 
     async fn saved_artists(&self, limit: u32) -> Result<Vec<SavedArtist>> {
+        let starred = self
+            .client
+            .get_starred2(None)
+            .await
+            .context("cannot load the starred artists")?;
+        Ok(starred
+            .artist
+            .iter()
+            .take(limit as usize)
+            .map(|artist| {
+                let cover = self.artist_cover(
+                    artist.cover_art.as_deref(),
+                    artist.artist_image_url.as_deref(),
+                    &artist.id,
+                );
+                wire::saved_artist(artist, cover)
+            })
+            .collect())
+    }
+
+    async fn all_artists(&self, limit: u32) -> Result<Vec<SavedArtist>> {
         let artists = self
             .client
             .get_artists(None)

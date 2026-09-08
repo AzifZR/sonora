@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::credentials;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Credentials {
     pub server: String,
@@ -10,15 +12,8 @@ pub struct Credentials {
     pub password: String,
 }
 
-pub fn dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("sonora")
-        .join("subsonic")
-}
-
-pub fn path() -> PathBuf {
-    dir().join("credentials.json")
+fn path() -> PathBuf {
+    credentials::dir("subsonic").join(credentials::FILE)
 }
 
 pub fn normalize_server(raw: &str) -> Result<String> {
@@ -43,20 +38,12 @@ pub fn load() -> Option<Credentials> {
     }
 }
 
-pub fn store(credentials: &Credentials) -> Result<()> {
-    let dir = dir();
-    std::fs::create_dir_all(&dir).context("cannot create subsonic cache dir")?;
+pub fn store(stored: &Credentials) -> Result<()> {
     let bytes =
-        serde_json::to_vec_pretty(credentials).context("cannot serialize subsonic credentials")?;
-    std::fs::write(path(), &bytes).context("cannot store subsonic credentials")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let _ = std::fs::set_permissions(path(), std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+        serde_json::to_vec_pretty(stored).context("cannot serialize subsonic credentials")?;
+    credentials::write(&path(), &bytes).context("cannot store subsonic credentials")
 }
 
 pub fn forget() {
-    let _ = std::fs::remove_file(path());
+    credentials::remove(&path());
 }
