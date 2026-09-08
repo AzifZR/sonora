@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-09
+
 ### Added
 
 - Windows on ARM gets a native build: releases carry an `aarch64-pc-windows-msvc` executable and a
@@ -55,13 +57,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   track buffers, and the old audio stops the moment you seek or pick another track. Seeking
   repeatedly, as when clicking through the lyrics, no longer queues every position behind the
   last. The play button follows what you asked for and flips the moment you press it.
-- The Flatpak remote and the standalone bundles follow the repository to
-  `sonorahq.github.io/sonora`. A remote added before the move needs
-  `flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora` once.
-- The Flatpak shows its tray icon on KDE Plasma and other StatusNotifier desktops, so Close to
-  tray keeps Sonora playing after the window closes. The sandbox forbids the well-known bus name
-  the tray used to claim, and Sonora now registers under its unique connection name instead.
-  
 - On macOS, a socket file left behind by a crash no longer disables single-instance handling: the
   next launch notices nothing is listening, takes the socket over, and later launches and
   `spotify:` links reach that window again instead of opening a second Sonora.
@@ -1391,7 +1386,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.31.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/sonorahq/sonora/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/sonorahq/sonora/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/sonorahq/sonora/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/sonorahq/sonora/compare/v0.28.1...v0.29.0
