@@ -38,6 +38,13 @@ fn main() {
     }
     let opened_start = opened.as_deref().and_then(router::destination);
 
+    // Two rustls backends are compiled in: librespot, oauth2 and ytmusic still ask for ring,
+    // while reqwest 0.13 and opensubsonic ask for aws-lc-rs. rustls refuses to guess between
+    // them, so one is picked here. A second install only means another crate got there first.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
+
     let io = match state::Io::new() {
         Ok(io) => io,
         Err(error) => {
@@ -65,6 +72,7 @@ fn main() {
         let providers: Vec<Arc<dyn music::MusicProvider>> = vec![
             Arc::new(music::spotify::SpotifyProvider::from_env()),
             Arc::new(music::youtube::YouTubeProvider::new()),
+            Arc::new(music::subsonic::SubsonicProvider::new()),
         ];
         let local_provider: Arc<dyn music::MusicProvider> =
             Arc::new(music::local::LocalProvider::new(

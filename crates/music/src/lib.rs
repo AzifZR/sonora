@@ -10,8 +10,10 @@ pub mod lyrics;
 mod models;
 pub mod musixmatch;
 pub mod netease;
+mod sink;
 mod spectrum;
 pub mod spotify;
+pub mod subsonic;
 pub mod youtube;
 
 use std::collections::HashMap;
@@ -303,6 +305,11 @@ pub enum SignIn {
     Anonymous,
     Secret,
     Path(Vec<PathBuf>),
+    Credentials {
+        server: String,
+        username: String,
+        password: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

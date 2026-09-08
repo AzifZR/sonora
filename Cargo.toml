@@ -58,9 +58,11 @@ oauth2 = "5.0"
 open = "5.4"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
+  "blocking",
   "json",
-  "rustls-tls-native-roots",
+  "query",
+  "rustls",
 ] }
 raw-window-handle = "0.6"
 roxmltree = "0.21"
@@ -68,6 +70,7 @@ rodio = { version = "0.22", default-features = false, features = ["playback"] }
 rtrb = "0.3"
 rusqlite = { version = "0.32" }
 rustfft = "6.4"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_norway = "0.9"
@@ -93,6 +96,7 @@ librespot-playback = { version = "0.8.0", default-features = false, features = [
 librespot-protocol = "0.8.0"
 percent-encoding = "2.3"
 protobuf = "3"
+opensubsonic = "0.4.0"
 tokio = { version = "1.53", features = [
   "rt-multi-thread",
   "net",

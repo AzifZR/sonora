@@ -17,7 +17,7 @@ use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionSta
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
-    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
+    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Modal, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
     ScrubberState, Separator, Skeleton, Stillness, Switch, Text, Theme, ThemeKind,
 };
 
@@ -70,6 +70,7 @@ fn offered(method: &SignIn, stored: bool, guest: bool) -> bool {
     match method {
         SignIn::Default | SignIn::Anonymous => !stored,
         SignIn::Secret => !stored || guest,
+        SignIn::Credentials { .. } => !stored,
         SignIn::Path(_) => false,
     }
 }
@@ -127,6 +128,10 @@ pub struct SettingsView {
     opacity: ScrubberState,
     popovers: Popovers,
     secret: Entity<Input>,
+    server: Entity<Input>,
+    username: Entity<Input>,
+    password: Entity<Input>,
+    credentials_for: Option<&'static str>,
     languages: SearchPopup,
     typefaces: SearchPopup,
     typeface_faced: RefCell<HashSet<SharedString>>,
@@ -168,6 +173,10 @@ impl SettingsView {
             opacity: ScrubberState::new("opacity"),
             popovers: Popovers::default(),
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
+            server: cx.new(|cx| Input::new("login-server-hint", cx)),
+            username: cx.new(|cx| Input::new("login-username-hint", cx)),
+            password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
+            credentials_for: None,
             languages,
             typefaces,
             typeface_faced: RefCell::new(HashSet::new()),
@@ -1655,6 +1664,7 @@ impl SettingsView {
 
     fn abandon(&mut self, cx: &mut Context<Self>) {
         self.secret.update(cx, |input, cx| input.set_text("", cx));
+        self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
     }
@@ -1669,10 +1679,73 @@ impl SettingsView {
             .update(cx, |session, cx| session.submit_input(text, cx));
     }
 
+    fn open_credentials(&mut self, slug: &'static str, cx: &mut Context<Self>) {
+        self.credentials_for = Some(slug);
+        cx.notify();
+    }
+
+    fn clear_credentials(&mut self, cx: &mut Context<Self>) {
+        self.credentials_for = None;
+        self.server.update(cx, |input, cx| input.set_text("", cx));
+        self.username.update(cx, |input, cx| input.set_text("", cx));
+        self.password.update(cx, |input, cx| input.set_text("", cx));
+    }
+
+    fn abandon_credentials(&mut self, cx: &mut Context<Self>) {
+        self.clear_credentials(cx);
+        cx.notify();
+    }
+
+    fn submit_credentials(&mut self, cx: &mut Context<Self>) {
+        let Some(slug) = self.credentials_for else {
+            return;
+        };
+        let server = self.server.read(cx).text().to_string();
+        let username = self.username.read(cx).text().to_string();
+        let password = self.password.read(cx).text().to_string();
+        if server.trim().is_empty() || username.trim().is_empty() || password.is_empty() {
+            return;
+        }
+        self.clear_credentials(cx);
+        self.session.update(cx, |session, cx| {
+            session.sign_in(
+                slug,
+                SignIn::Credentials {
+                    server,
+                    username,
+                    password,
+                },
+                cx,
+            )
+        });
+    }
+
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
         CookiePrompt::new(self.secret.clone())
             .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
             .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
+    }
+
+    fn credentials_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Modal::new("settings-server-prompt", t!("login-server-title"))
+            .w(px(560.))
+            .detail(t!("login-server-detail"))
+            .child(self.server.clone())
+            .child(self.username.clone())
+            .child(self.password.clone())
+            .action(
+                Button::new("settings-cancel-server")
+                    .ghost()
+                    .label(t!("common-cancel"))
+                    .on_click(cx.listener(|this, _, _, cx| this.abandon_credentials(cx))),
+            )
+            .action(
+                Button::new("settings-submit-server")
+                    .label(t!("login-server-submit"))
+                    .primary()
+                    .on_click(cx.listener(|this, _, _, cx| this.submit_credentials(cx))),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| this.abandon_credentials(cx)))
     }
 
     fn method(
@@ -1709,6 +1782,10 @@ impl SettingsView {
                 format!("connect-{slug}-path"),
                 t!("login-sign-in", provider = provider),
             ),
+            SignIn::Credentials { .. } => (
+                format!("connect-{slug}-server"),
+                t!("login-sign-in", provider = provider),
+            ),
         };
 
         Button::new(SharedString::from(id))
@@ -1716,10 +1793,13 @@ impl SettingsView {
             .small()
             .outline()
             .disabled(pending)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                let method = method.clone();
-                this.session
-                    .update(cx, |session, cx| session.sign_in(slug, method, cx));
+            .on_click(cx.listener(move |this, _, _, cx| match &method {
+                SignIn::Credentials { .. } => this.open_credentials(slug, cx),
+                method => {
+                    let method = method.clone();
+                    this.session
+                        .update(cx, |session, cx| session.sign_in(slug, method, cx));
+                }
             }))
     }
 
@@ -2026,6 +2106,9 @@ impl Render for SettingsView {
             })
             .when(secret, |this| {
                 this.child(self.secret_prompt(cx).into_any_element())
+            })
+            .when(self.credentials_for.is_some(), |this| {
+                this.child(self.credentials_prompt(cx).into_any_element())
             })
     }
 }
