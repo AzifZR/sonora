@@ -8,7 +8,7 @@ use i18n::t;
 use music::{AccountChoice, SignIn, SignInPrompt};
 use state::{Session, SessionState, Sonora, Usage};
 use ui::ActiveTheme as _;
-use ui::{Button, Checkbox, Input, TabBar, Text};
+use ui::{Button, Checkbox, Input, Modal, TabBar, Text};
 
 const COLUMN: Pixels = px(280.);
 const LOGO: Pixels = px(48.);

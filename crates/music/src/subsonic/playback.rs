@@ -7,14 +7,23 @@ use async_trait::async_trait;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::audio::{Output, RAMP, SmoothGain, Volume};
+use crate::spectrum::Spectrum;
 use crate::subsonic::client::SubsonicClient;
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player};
 
 const POLL: Duration = Duration::from_millis(20);
 
 enum Command {
-    Load { id: String, at: Option<Duration> },
-    Preload { id: String },
+    Load {
+        id: String,
+        at: Option<Duration>,
+        play: bool,
+        seamless: bool,
+    },
+    Preload {
+        id: String,
+        segue: bool,
+    },
     Play,
     Pause,
     Seek(Duration),
@@ -36,26 +45,34 @@ impl PlaybackFactory for Factory {
         let (commands, command_rx) = unbounded_channel();
         let (events, event_rx) = unbounded_channel();
         let client = self.client.clone();
+        let spectrum = Spectrum::new();
+        let engine_spectrum = spectrum.clone();
         let spawned = std::thread::Builder::new()
             .name("subsonic-playback".to_owned())
-            .spawn(move || run(client, config, command_rx, events));
+            .spawn(move || run(client, config, command_rx, events, engine_spectrum));
         if let Err(error) = spawned {
             log::error!("playback: cannot spawn subsonic engine thread: {error}");
         }
-        (Box::new(Engine { commands }), Box::new(Events(event_rx)))
+        (
+            Box::new(Engine { commands, spectrum }),
+            Box::new(Events(event_rx)),
+        )
     }
 }
 
 struct Engine {
     commands: UnboundedSender<Command>,
+    spectrum: Spectrum,
 }
 
 impl Player for Engine {
-    fn load(&self, track_id: &str, _seamless: bool) -> Result<()> {
+    fn load(&self, track_id: &str, at: Duration, seamless: bool) -> Result<()> {
         self.commands
             .send(Command::Load {
                 id: track_id.to_owned(),
-                at: None,
+                at: (!at.is_zero()).then_some(at),
+                play: true,
+                seamless,
             })
             .context("cannot reach subsonic playback engine")
     }
@@ -65,14 +82,17 @@ impl Player for Engine {
             .send(Command::Load {
                 id: track_id.to_owned(),
                 at: Some(at),
+                play: false,
+                seamless: false,
             })
             .context("cannot reach subsonic playback engine")
     }
 
-    fn preload(&self, track_id: &str) -> Result<()> {
+    fn preload(&self, track_id: &str, segue: bool) -> Result<()> {
         self.commands
             .send(Command::Preload {
                 id: track_id.to_owned(),
+                segue,
             })
             .context("cannot reach subsonic playback engine")
     }
@@ -91,6 +111,10 @@ impl Player for Engine {
 
     fn set_gain(&self, gain: f32) {
         self.commands.send(Command::Gain(gain)).ok();
+    }
+
+    fn spectrum(&self) -> Option<Spectrum> {
+        Some(self.spectrum.clone())
     }
 }
 
@@ -128,7 +152,11 @@ impl Slot {
 
 enum Kind {
     Play,
-    Ahead,
+    /// Fetched ahead of a load. A segue is the next queue item, so it also lines up behind the
+    /// current track once it arrives; a plain preload only warms the cache.
+    Ahead {
+        segue: bool,
+    },
 }
 
 struct Fetched {
@@ -143,6 +171,7 @@ fn run(
     config: PlaybackConfig,
     commands: UnboundedReceiver<Command>,
     events: UnboundedSender<PlaybackEvent>,
+    spectrum: Spectrum,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -154,7 +183,7 @@ fn run(
             return;
         }
     };
-    runtime.block_on(engine_loop(client, config, commands, events));
+    runtime.block_on(engine_loop(client, config, commands, events, spectrum));
 }
 
 async fn engine_loop(
@@ -162,8 +191,9 @@ async fn engine_loop(
     config: PlaybackConfig,
     mut commands: UnboundedReceiver<Command>,
     events: UnboundedSender<PlaybackEvent>,
+    spectrum: Spectrum,
 ) {
-    let output = match Output::open(Volume::new(config.gain)) {
+    let output = match Output::open(Volume::new(config.gain), spectrum) {
         Ok(output) => output,
         Err(error) => {
             log::error!("playback: cannot open audio output: {error:#}");
@@ -178,6 +208,7 @@ async fn engine_loop(
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let report_every = (config.position_interval.as_millis() / POLL.as_millis()).max(1) as u32;
     let mut ticks = 0u32;
+    let mut output_ticks = 0u32;
 
     let mut playing = false;
     let mut autostart = true;
@@ -195,18 +226,27 @@ async fn engine_loop(
             command = commands.recv() => {
                 let Some(command) = command else { break };
                 match command {
-                    Command::Load { id, at } => {
-                        if at.is_none() && current.as_ref().is_some_and(|slot| slot.id == id) {
+                    Command::Load { id, at, play, seamless } => {
+                        let segued = seamless
+                            && at.is_none()
+                            && current.as_ref().is_some_and(|slot| slot.id == id);
+                        if segued {
                             playing = true;
                             autostart = true;
                             if let Some(slot) = &current {
                                 slot.unmute();
                                 if let Some(length) = slot.length {
-                                    events.send(PlaybackEvent::Length(length)).ok();
+                                    events.send(PlaybackEvent::Length {
+                                        id: Some(id.clone()),
+                                        duration: length,
+                                    }).ok();
                                 }
                             }
                             sink.play();
-                            events.send(PlaybackEvent::Playing(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Playing {
+                                id: Some(id),
+                                at: sink.get_pos(),
+                            }).ok();
                             continue;
                         }
                         epoch += 1;
@@ -222,12 +262,15 @@ async fn engine_loop(
                             pending = Some(epoch);
                             inflight = Some(spawn(&client, id.clone(), epoch, Kind::Play, &fetched));
                         }
-                        events.send(PlaybackEvent::Loading(at.unwrap_or_default())).ok();
+                        events.send(PlaybackEvent::Loading {
+                            id: Some(id.clone()),
+                            at: at.unwrap_or_default(),
+                        }).ok();
                         silence(&sink, current.as_ref()).await;
                         current = None;
                         queued = None;
                         playing = false;
-                        autostart = at.is_none();
+                        autostart = play;
                         hold = at;
                         prev_len = 0;
                         let Some(loaded) = cached else { continue };
@@ -240,26 +283,33 @@ async fn engine_loop(
                             }
                             Err(error) => {
                                 log::warn!("playback: cannot decode subsonic track {id}: {error:#}");
-                                events.send(PlaybackEvent::Unavailable).ok();
+                                events.send(PlaybackEvent::Unavailable { id: Some(id) }).ok();
                             }
                         }
                     }
-                    Command::Preload { id } => {
+                    Command::Preload { id, segue } => {
                         let known = current.as_ref().is_some_and(|slot| slot.id == id)
                             || queued.as_ref().is_some_and(|slot| slot.id == id)
                             || ahead.as_ref().is_some_and(|(cached, _)| *cached == id);
                         if known || current.is_none() {
                             continue;
                         }
-                        spawn(&client, id, epoch, Kind::Ahead, &fetched);
+                        spawn(&client, id, epoch, Kind::Ahead { segue }, &fetched);
                     }
                     Command::Play => {
+                        if output.failed() || output.changed() {
+                            events.send(PlaybackEvent::OutputChanged).ok();
+                            return;
+                        }
                         autostart = true;
                         if let Some(slot) = &current {
                             sink.play();
                             slot.unmute();
                             playing = true;
-                            events.send(PlaybackEvent::Playing(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Playing {
+                                id: Some(slot.id.clone()),
+                                at: sink.get_pos(),
+                            }).ok();
                         }
                     }
                     Command::Pause => {
@@ -270,8 +320,11 @@ async fn engine_loop(
                             slot.mute();
                             await_drain(&sink).await;
                             sink.pause();
+                            events.send(PlaybackEvent::Paused {
+                                id: Some(slot.id.clone()),
+                                at: position,
+                            }).ok();
                         }
-                        events.send(PlaybackEvent::Paused(position)).ok();
                     }
                     Command::Seek(position) => match &current {
                         None if hold.is_some() => hold = Some(position),
@@ -285,7 +338,10 @@ async fn engine_loop(
                             if playing {
                                 slot.unmute();
                             }
-                            events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Seeked {
+                                id: Some(slot.id.clone()),
+                                at: sink.get_pos(),
+                            }).ok();
                         }
                     },
                     Command::Gain(level) => output.set_volume(level),
@@ -313,15 +369,15 @@ async fn engine_loop(
                             }
                             Err(error) => {
                                 log::warn!("playback: cannot load subsonic track {id}: {error:#}");
-                                events.send(PlaybackEvent::Unavailable).ok();
+                                events.send(PlaybackEvent::Unavailable { id: Some(id) }).ok();
                             }
                         }
                     }
-                    Kind::Ahead => {
+                    Kind::Ahead { segue } => {
                         let Ok(loaded) = result else {
                             continue;
                         };
-                        if current.is_some() && queued.is_none() {
+                        if segue && current.is_some() && queued.is_none() {
                             match append(&sink, &id, &loaded, false) {
                                 Ok(slot) => {
                                     queued = Some(slot);
@@ -337,26 +393,47 @@ async fn engine_loop(
                 }
             }
             _ = ticker.tick() => {
+                output_ticks += 1;
+                if playing && (output.failed() || output_ticks >= report_every && output.changed()) {
+                    events.send(PlaybackEvent::OutputChanged).ok();
+                    return;
+                }
+                if output_ticks >= report_every {
+                    output_ticks = 0;
+                }
                 let len = sink.len();
                 ticks += 1;
                 if current.is_some() && playing && len < prev_len {
                     ticks = 0;
-                    events.send(PlaybackEvent::Ended).ok();
+                    if let Some(slot) = &current {
+                        events.send(PlaybackEvent::Ended { id: Some(slot.id.clone()) }).ok();
+                    }
                     current = queued.take();
                     ahead = None;
                     playing = current.is_some();
                     match &current {
                         Some(slot) => {
                             if let Some(length) = slot.length {
-                                events.send(PlaybackEvent::Length(length)).ok();
+                                events.send(PlaybackEvent::Length {
+                                    id: Some(slot.id.clone()),
+                                    duration: length,
+                                }).ok();
                             }
-                            events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Position {
+                                id: Some(slot.id.clone()),
+                                at: sink.get_pos(),
+                            }).ok();
                         }
                         None => log::debug!("playback: subsonic track ended with nothing queued"),
                     }
                 } else if playing && ticks >= report_every {
                     ticks = 0;
-                    events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                    if let Some(slot) = &current {
+                        events.send(PlaybackEvent::Position {
+                            id: Some(slot.id.clone()),
+                            at: sink.get_pos(),
+                        }).ok();
+                    }
                 }
                 prev_len = len;
             }
@@ -387,7 +464,7 @@ fn spawn(
     .abort_handle()
 }
 
-async fn silence(sink: &rodio::Sink, slot: Option<&Slot>) {
+async fn silence(sink: &rodio::Player, slot: Option<&Slot>) {
     let Some(slot) = slot else {
         sink.clear();
         return;
@@ -397,7 +474,7 @@ async fn silence(sink: &rodio::Sink, slot: Option<&Slot>) {
     sink.clear();
 }
 
-async fn await_drain(sink: &rodio::Sink) {
+async fn await_drain(sink: &rodio::Player) {
     if sink.is_paused() {
         return;
     }
@@ -405,7 +482,7 @@ async fn await_drain(sink: &rodio::Sink) {
 }
 
 fn begin(
-    sink: &rodio::Sink,
+    sink: &rodio::Player,
     id: &str,
     loaded: &Loaded,
     start: bool,
@@ -428,7 +505,7 @@ fn begin(
     Ok(slot)
 }
 
-fn append(sink: &rodio::Sink, id: &str, loaded: &Loaded, fade: bool) -> Result<Slot> {
+fn append(sink: &rodio::Player, id: &str, loaded: &Loaded, fade: bool) -> Result<Slot> {
     let envelope = Volume::new(1.0);
     let initial = match fade {
         true => 0.0,
@@ -436,7 +513,6 @@ fn append(sink: &rodio::Sink, id: &str, loaded: &Loaded, fade: bool) -> Result<S
     };
     let source = decode(loaded.data.clone())?;
     sink.append(SmoothGain::new(source, envelope.clone(), initial, RAMP));
-    let _ = id;
     Ok(Slot {
         id: id.to_owned(),
         length: loaded.duration,
@@ -451,12 +527,18 @@ fn announce(
     playing: bool,
     position: Duration,
 ) {
+    let id = Some(slot.id.clone());
     if let Some(length) = slot.length {
-        events.send(PlaybackEvent::Length(length)).ok();
+        events
+            .send(PlaybackEvent::Length {
+                id: id.clone(),
+                duration: length,
+            })
+            .ok();
     }
     let event = match playing {
-        true => PlaybackEvent::Playing(position),
-        false => PlaybackEvent::Paused(position),
+        true => PlaybackEvent::Playing { id, at: position },
+        false => PlaybackEvent::Paused { id, at: position },
     };
     events.send(event).ok();
 }
