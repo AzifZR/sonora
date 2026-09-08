@@ -137,6 +137,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Local music cover thumbnails are cached under `$XDG_CACHE_HOME` instead of `$XDG_CONFIG_HOME`.
 - Passwords typed into a server login form are hidden as you type them.
+- Local albums list their tracks in playing order, by disc and track number, instead of the order
+  the folders happened to be read in.
 - A track from a Subsonic server starts as soon as the first seconds have arrived, instead of
   after the whole file has downloaded. Seeking and skipping answer straight away, and the
   progress bar follows the sound rather than the decoder.

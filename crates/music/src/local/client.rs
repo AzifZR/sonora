@@ -75,6 +75,24 @@ impl LocalClient {
             .collect()
     }
 
+    /// One album's tracks in playing order. The scan keeps every track in the order the
+    /// folders were walked, which is not the order an album is meant to be heard in.
+    fn album_songs(&self, album_id: &str) -> Vec<Track> {
+        let scanned = self.scanned.read().unwrap();
+        let mut tracks: Vec<Track> = scanned
+            .tracks
+            .iter()
+            .filter(|track| track.album_id.as_deref() == Some(album_id))
+            .cloned()
+            .collect();
+        tracks.sort_by(|a, b| {
+            (a.disc_number, a.track_number)
+                .cmp(&(b.disc_number, b.track_number))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        tracks
+    }
+
     /// Every artist in the scan, one per distinct artist string, sorted by name.
     fn artists(&self) -> Vec<SavedArtist> {
         let scanned = self.scanned.read().unwrap();
@@ -372,30 +390,23 @@ impl MusicApi for LocalClient {
     }
 
     async fn album(&self, album_id: &str) -> Result<AlbumDetail> {
-        let scanned = self.scanned.read().unwrap();
-        let album = scanned
+        let album = self
+            .scanned
+            .read()
+            .unwrap()
             .albums
             .iter()
             .find(|album| album.id == album_id)
             .cloned()
             .ok_or_else(|| anyhow!("cannot find local album {album_id}"))?;
-        let tracks = scanned
-            .tracks
-            .iter()
-            .filter(|track| track.album_id.as_deref() == Some(album_id))
-            .cloned()
-            .collect();
-        Ok(AlbumDetail { album, tracks })
+        Ok(AlbumDetail {
+            album,
+            tracks: self.album_songs(album_id),
+        })
     }
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
-        let scanned = self.scanned.read().unwrap();
-        Ok(scanned
-            .tracks
-            .iter()
-            .filter(|track| track.album_id.as_deref() == Some(album_id))
-            .cloned()
-            .collect())
+        Ok(self.album_songs(album_id))
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {
