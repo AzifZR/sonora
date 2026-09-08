@@ -13,8 +13,8 @@ use async_trait::async_trait;
 use storage::Database;
 
 use crate::{
-    InputSource, MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, SignIn,
-    UserProfile,
+    InputSource, MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, Shape,
+    SignIn, UserProfile,
 };
 
 pub struct LocalProvider {
@@ -47,6 +47,7 @@ impl LocalProvider {
             },
             api,
             playback,
+            shape: Shape::Catalog,
             authenticated: false,
             playcounts: false,
         })

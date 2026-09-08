@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::scan::Scanned;
-use super::store::Store;
+use super::store::{Starred, Store};
 use super::{tags, wire};
 
 const COVERS: usize = 4;
@@ -72,6 +72,37 @@ impl LocalClient {
             .filter_map(wire::path_from_track_id)
             .map(Path::to_path_buf)
             .collect()
+    }
+
+    /// Every artist in the scan, one per distinct artist string, sorted by name.
+    fn artists(&self) -> Vec<SavedArtist> {
+        let scanned = self.scanned.read().unwrap();
+        let mut artists: Vec<SavedArtist> = Vec::new();
+        for track in &scanned.tracks {
+            if let Some(known) = artists.iter_mut().find(|known| known.name == track.artists) {
+                known.added_at = known.added_at.max(track.added_at);
+                continue;
+            }
+            artists.push(SavedArtist {
+                id: wire::artist_id(&track.artists),
+                name: track.artists.clone(),
+                cover: scanned
+                    .portraits
+                    .get(&track.artists)
+                    .cloned()
+                    .or_else(|| {
+                        scanned
+                            .albums
+                            .iter()
+                            .find(|album| album.artists == track.artists)
+                            .and_then(|album| album.cover.clone())
+                    })
+                    .or_else(|| track.cover.clone()),
+                added_at: track.added_at,
+            });
+        }
+        artists.sort_by_key(|artist| artist.name.to_lowercase());
+        artists
     }
 }
 
@@ -157,9 +188,9 @@ impl MusicApi for LocalClient {
     }
 
     async fn saved_tracks(&self, limit: u32) -> Result<Vec<Track>> {
-        let favorites = self.store.favorites()?;
+        let starred = self.store.starred(Starred::Tracks)?;
         let scanned = self.scanned.read().unwrap();
-        Ok(favorites
+        Ok(starred
             .into_iter()
             .take(limit as usize)
             .filter_map(|(id, added_at)| {
@@ -185,7 +216,7 @@ impl MusicApi for LocalClient {
     }
 
     async fn set_track_saved(&self, track_id: &str, saved: bool) -> Result<()> {
-        self.store.set_favorite(track_id, saved)
+        self.store.set_starred(Starred::Tracks, track_id, saved)
     }
 
     async fn track_tags(&self, track_id: &str) -> Result<TrackTags> {
@@ -273,6 +304,24 @@ impl MusicApi for LocalClient {
     }
 
     async fn saved_albums(&self, limit: u32) -> Result<Vec<Album>> {
+        let starred = self.store.starred(Starred::Albums)?;
+        let scanned = self.scanned.read().unwrap();
+        Ok(starred
+            .into_iter()
+            .take(limit as usize)
+            .filter_map(|(id, added_at)| {
+                let mut album = scanned
+                    .albums
+                    .iter()
+                    .find(|album| album.id == id)
+                    .cloned()?;
+                album.added_at = Some(added_at);
+                Some(album)
+            })
+            .collect())
+    }
+
+    async fn all_albums(&self, limit: u32) -> Result<Vec<Album>> {
         let scanned = self.scanned.read().unwrap();
         Ok(scanned
             .albums
@@ -282,43 +331,32 @@ impl MusicApi for LocalClient {
             .collect())
     }
 
-    async fn set_album_saved(&self, _album_id: &str, _saved: bool) -> Result<()> {
-        Ok(())
+    async fn set_album_saved(&self, album_id: &str, saved: bool) -> Result<()> {
+        self.store.set_starred(Starred::Albums, album_id, saved)
     }
 
     async fn saved_artists(&self, limit: u32) -> Result<Vec<SavedArtist>> {
-        let scanned = self.scanned.read().unwrap();
-        let mut artists: Vec<SavedArtist> = Vec::new();
-        for track in &scanned.tracks {
-            if let Some(known) = artists.iter_mut().find(|known| known.name == track.artists) {
-                known.added_at = known.added_at.max(track.added_at);
-                continue;
-            }
-            artists.push(SavedArtist {
-                id: wire::artist_id(&track.artists),
-                name: track.artists.clone(),
-                cover: scanned
-                    .portraits
-                    .get(&track.artists)
-                    .cloned()
-                    .or_else(|| {
-                        scanned
-                            .albums
-                            .iter()
-                            .find(|album| album.artists == track.artists)
-                            .and_then(|album| album.cover.clone())
-                    })
-                    .or_else(|| track.cover.clone()),
-                added_at: track.added_at,
-            });
-        }
-        artists.sort_by_key(|artist| artist.name.to_lowercase());
+        let starred = self.store.starred(Starred::Artists)?;
+        let known = self.artists();
+        Ok(starred
+            .into_iter()
+            .take(limit as usize)
+            .filter_map(|(id, added_at)| {
+                let mut artist = known.iter().find(|artist| artist.id == id).cloned()?;
+                artist.added_at = Some(added_at);
+                Some(artist)
+            })
+            .collect())
+    }
+
+    async fn all_artists(&self, limit: u32) -> Result<Vec<SavedArtist>> {
+        let mut artists = self.artists();
         artists.truncate(limit as usize);
         Ok(artists)
     }
 
-    async fn set_artist_saved(&self, _artist_id: &str, _saved: bool) -> Result<()> {
-        Ok(())
+    async fn set_artist_saved(&self, artist_id: &str, saved: bool) -> Result<()> {
+        self.store.set_starred(Starred::Artists, artist_id, saved)
     }
 
     async fn album(&self, album_id: &str) -> Result<AlbumDetail> {

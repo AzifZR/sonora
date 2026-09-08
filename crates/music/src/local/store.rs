@@ -10,6 +10,32 @@ pub struct Stored {
     pub modified_at: i64,
 }
 
+/// Which local favorites table a star lands in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Starred {
+    Tracks,
+    Albums,
+    Artists,
+}
+
+impl Starred {
+    fn table(self) -> &'static str {
+        match self {
+            Self::Tracks => "favorites",
+            Self::Albums => "favorite_albums",
+            Self::Artists => "favorite_artists",
+        }
+    }
+
+    fn column(self) -> &'static str {
+        match self {
+            Self::Tracks => "track_id",
+            Self::Albums => "album_id",
+            Self::Artists => "artist_id",
+        }
+    }
+}
+
 pub struct Store {
     database: Database,
 }
@@ -23,10 +49,15 @@ impl Store {
         self.database.open().context("cannot open local playlists")
     }
 
-    pub fn favorites(&self) -> Result<Vec<(String, i64)>> {
+    /// The starred ids of one kind, newest first, with the moment each was starred.
+    pub fn starred(&self, kind: Starred) -> Result<Vec<(String, i64)>> {
         let connection = self.open()?;
         let mut query = connection
-            .prepare("SELECT track_id, added_at FROM favorites ORDER BY added_at DESC")
+            .prepare(&format!(
+                "SELECT {}, added_at FROM {} ORDER BY added_at DESC",
+                kind.column(),
+                kind.table()
+            ))
             .context("cannot read local favorites")?;
         let rows = query
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -36,16 +67,20 @@ impl Store {
             .context("cannot read local favorites")
     }
 
-    pub fn set_favorite(&self, track_id: &str, saved: bool) -> Result<()> {
+    pub fn set_starred(&self, kind: Starred, id: &str, saved: bool) -> Result<()> {
         let connection = self.open()?;
         match saved {
             true => connection.execute(
-                "INSERT OR REPLACE INTO favorites (track_id, added_at) VALUES (?, ?)",
-                params![track_id, stamp()],
+                &format!(
+                    "INSERT OR REPLACE INTO {} ({}, added_at) VALUES (?, ?)",
+                    kind.table(),
+                    kind.column()
+                ),
+                params![id, stamp()],
             ),
             false => connection.execute(
-                "DELETE FROM favorites WHERE track_id = ?",
-                params![track_id],
+                &format!("DELETE FROM {} WHERE {} = ?", kind.table(), kind.column()),
+                params![id],
             ),
         }
         .context("cannot update a local favorite")?;
