@@ -450,15 +450,27 @@ struct Playing {
     channels: u16,
     rate: u32,
     base: Duration,
+    /// Samples queued before this track's first one. On a gapless join the one before it is
+    /// still being heard, so its own position only starts once the count passes this.
+    offset: u64,
 }
 
 impl Playing {
-    /// What is audible now: where the decode started plus what the output has drawn from the
-    /// queue since. The decoder itself runs ahead of this by whatever is queued.
+    /// What is audible now: where the decode started plus what the output has drawn from this
+    /// track since. The decoder itself runs ahead of this by whatever is queued.
     fn heard(&self, cue: &Cue) -> Duration {
-        let frames = cue.played() / u64::from(self.channels).max(1);
+        let mine = cue.played().saturating_sub(self.offset);
+        let frames = mine / u64::from(self.channels).max(1);
         self.base + Duration::from_secs_f64(frames as f64 / f64::from(self.rate).max(1.0))
     }
+}
+
+/// A track whose last sample is queued but not yet heard. The events for the join wait for it,
+/// so one track's end and the next one's start land together, on the sample.
+struct Join {
+    ended: String,
+    next: Option<(String, Option<Duration>)>,
+    at: u64,
 }
 
 /// Decodes and writes until told otherwise. Every wait here is on the queue draining or on a
@@ -478,6 +490,8 @@ fn audio_loop(
     };
 
     let mut current: Option<Playing> = None;
+    let mut written = 0u64;
+    let mut joining: Option<Join> = None;
     let mut queued: Option<(String, Stream, Option<Duration>)> = None;
     let mut playing = false;
     let mut reported_at = Instant::now();
@@ -497,6 +511,29 @@ fn audio_loop(
             },
         };
 
+        if let Some(join) = &joining
+            && cue.played() >= join.at
+        {
+            let Join { ended, next, .. } = joining.take().unwrap_or_else(|| unreachable!());
+            events.send(PlaybackEvent::Ended { id: Some(ended) }).ok();
+            if let Some((id, duration)) = next {
+                if let Some(duration) = duration {
+                    events
+                        .send(PlaybackEvent::Length {
+                            id: Some(id.clone()),
+                            duration,
+                        })
+                        .ok();
+                }
+                events
+                    .send(PlaybackEvent::Playing {
+                        id: Some(id),
+                        at: Duration::ZERO,
+                    })
+                    .ok();
+            }
+        }
+
         if let Some(job) = job {
             match job {
                 Job::Play {
@@ -506,7 +543,9 @@ fn audio_loop(
                     playing: start,
                 } => {
                     queued = None;
-                    current = begin(&id, &stream, at);
+                    joining = None;
+                    written = 0;
+                    current = begin(&id, &stream, at, 0);
                     playing = start && current.is_some();
                     match playing {
                         true if paced.play().is_err() => return,
@@ -560,6 +599,8 @@ fn audio_loop(
                             log::warn!("playback: cannot seek the subsonic track: {error}");
                         }
                         held.base = position;
+                        held.offset = 0;
+                        written = 0;
                         cue.arm();
                     }
                 }
@@ -573,64 +614,46 @@ fn audio_loop(
             continue;
         }
 
-        match take(held, CHUNK) {
-            Some(samples) => {
-                let Some(chunk) = packet(&samples, held.channels, held.rate) else {
-                    continue;
-                };
-                if paced.write(chunk).is_err() {
-                    return;
-                }
-                if playing && reported_at.elapsed() >= interval && !cue.cleared() {
-                    reported_at = Instant::now();
-                    events
-                        .send(PlaybackEvent::Position {
-                            id: Some(held.id.clone()),
-                            at: held.heard(&cue),
-                        })
-                        .ok();
-                }
-            }
-            None => {
-                events
-                    .send(PlaybackEvent::Ended {
-                        id: Some(held.id.clone()),
-                    })
-                    .ok();
-                match queued.take() {
-                    Some((id, stream, duration)) => {
-                        current = begin(&id, &stream, Duration::ZERO);
-                        playing = current.is_some();
-                        if let Some(held) = &current {
-                            if let Some(duration) = duration {
-                                events
-                                    .send(PlaybackEvent::Length {
-                                        id: Some(held.id.clone()),
-                                        duration,
-                                    })
-                                    .ok();
-                            }
-                            events
-                                .send(PlaybackEvent::Playing {
-                                    id: Some(held.id.clone()),
-                                    at: Duration::ZERO,
-                                })
-                                .ok();
-                        }
-                    }
-                    None => {
-                        current = None;
-                        playing = false;
-                    }
-                }
-            }
+        let pulled = take(held, CHUNK);
+        let Some(samples) = pulled else {
+            // the decoder is done, but its last samples are still queued
+            let ended = current.take().map(|held| held.id).unwrap_or_default();
+            let next = queued.take().and_then(|(id, stream, duration)| {
+                current = begin(&id, &stream, Duration::ZERO, written);
+                current.as_ref().map(|_| (id, duration))
+            });
+            playing = current.is_some();
+            // both events wait for the queue to reach here, so the join lands on the sample
+            joining = Some(Join {
+                ended,
+                next,
+                at: written,
+            });
+            continue;
+        };
+
+        let Some(chunk) = packet(&samples, held.channels, held.rate) else {
+            continue;
+        };
+        if paced.write(chunk).is_err() {
+            return;
+        }
+        written += samples.len() as u64;
+        if reported_at.elapsed() >= interval && !cue.cleared() {
+            reported_at = Instant::now();
+            events
+                .send(PlaybackEvent::Position {
+                    id: Some(held.id.clone()),
+                    at: held.heard(&cue),
+                })
+                .ok();
         }
     }
 }
 
 /// Builds a decoder over a stream and places it at `at`. The bytes past the preroll are still
 /// arriving, so this only reads the header.
-fn begin(id: &str, stream: &Stream, at: Duration) -> Option<Playing> {
+fn begin(id: &str, stream: &Stream, at: Duration, offset: u64) -> Option<Playing> {
     let mut builder = rodio::Decoder::builder()
         .with_data(stream.reader())
         .with_seekable(true);
@@ -661,6 +684,7 @@ fn begin(id: &str, stream: &Stream, at: Duration) -> Option<Playing> {
         channels,
         rate,
         base: at,
+        offset,
     })
 }
 
