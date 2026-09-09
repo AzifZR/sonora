@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
   on System and it follows a Turkish desktop on its own.
 
+### Changed
+
+- The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
+  the slider; the moon button leaves the player bar.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added

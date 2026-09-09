@@ -173,9 +173,9 @@ AI-assisted proofreading and translation of human-written text are permitted.
 | Italiano (`it`) | 493/551 | 89% |
 | Bahasa Indonesia (`id`) | 523/551 | 95% |
 | 日本語 (`ja`) | 506/551 | 92% |
-| Русский (`ru`) | 513/551 | 93% |
-| Українська (`uk`) | 513/551 | 93% |
-| Polski (`pl`) | 543/551 | 99% |
+| Русский (`ru`) | 517/551 | 94% |
+| Українська (`uk`) | 517/551 | 94% |
+| Polski (`pl`) | 547/551 | 99% |
 | Português (Brasil) (`pt-BR`) | 512/551 | 93% |
 | Türkçe (`tr`) | 547/551 | 99% |
 
