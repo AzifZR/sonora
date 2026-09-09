@@ -577,7 +577,7 @@ impl Render for Root {
 
         let theme = *cx.theme();
         window.set_rem_size(theme.font_size);
-        let appearance = theme.backdrop.appearance(theme.transparent);
+        let appearance = ui::backdrop(theme.blur, theme.transparent);
         if self.background != Some(appearance) {
             self.background = Some(appearance);
             window.set_background_appearance(appearance);

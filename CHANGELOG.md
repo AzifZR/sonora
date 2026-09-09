@@ -9,8 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Appearance settings carry a Backdrop picker. Blur draws the window over a blurred desktop, and
-  choosing it at full opacity lowers the opacity so the blur has something to show through.
+- Appearance settings carry a Blur switch, on by default, that draws the window over a blurred
+  desktop once the opacity drops below 100%. At full opacity the window stays plain and the switch
+  is greyed out.
 
 ### Fixed
 

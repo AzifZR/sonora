@@ -24,8 +24,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use storage::Database;
 use ui::{
-    Backdrop, Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind,
-    ThemeOverrides,
+    Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind, ThemeOverrides,
 };
 
 use crate::queue::{Resume, gap_target};
@@ -215,7 +214,7 @@ struct Appearance {
     visualizer: bool,
     icons: String,
     rounding: String,
-    backdrop: String,
+    blur: bool,
     font_size: f32,
     transparent: bool,
     transparency: f32,
@@ -424,7 +423,7 @@ impl Default for Appearance {
             visualizer: true,
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
-            backdrop: Backdrop::Plain.id().to_owned(),
+            blur: true,
             font_size: DEFAULT_FONT_SIZE,
             transparent: false,
             transparency: ui::BACKDROP_TRANSPARENCY,
@@ -662,8 +661,8 @@ impl AppSettings {
         &self.values.appearance.rounding
     }
 
-    pub fn backdrop(&self) -> &str {
-        &self.values.appearance.backdrop
+    pub fn blur(&self) -> bool {
+        self.values.appearance.blur
     }
 
     pub fn stillness(&self) -> Stillness {
@@ -689,7 +688,7 @@ impl AppSettings {
             font: self.font_size(),
             transparent: self.transparent(),
             transparency: self.transparency(),
-            backdrop: Backdrop::from_id(self.backdrop()),
+            blur: self.blur(),
             tint: None,
         }
     }
@@ -1055,8 +1054,8 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
-    pub fn set_backdrop(&mut self, backdrop: impl Into<String>, cx: &mut Context<Self>) {
-        self.values.appearance.backdrop = backdrop.into();
+    pub fn set_blur(&mut self, blur: bool, cx: &mut Context<Self>) {
+        self.values.appearance.blur = blur;
         self.schedule_save(cx);
     }
 
