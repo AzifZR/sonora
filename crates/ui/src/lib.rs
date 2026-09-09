@@ -38,6 +38,7 @@ mod theme;
 mod time;
 mod toast;
 mod tooltip;
+mod traffic_light_controls;
 mod vacancy;
 mod view;
 mod visualizer;
@@ -102,6 +103,7 @@ pub use theme::{
 pub use time::clock;
 pub use toast::Toast;
 pub use tooltip::{Perch, Tooltip};
+pub use traffic_light_controls::TrafficLightControls;
 pub use vacancy::Vacancy;
 pub use view::Mode;
 pub use visualizer::Visualizer;

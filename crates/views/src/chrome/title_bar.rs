@@ -1,11 +1,12 @@
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::Decorations;
 use gpui::prelude::*;
+use gpui::{AnyElement, Window, div, px};
 use gpui::{
     AnyView, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Render,
 };
-use gpui::{Window, div, px};
+use ui::TrafficLightControls;
 use ui::WindowControls;
 use ui::{ActiveTheme as _, Button};
 
@@ -194,6 +195,14 @@ impl Render for TitleBar {
         let controls = settings.window_controls();
         let decorated = cfg!(not(target_os = "macos")) && controls;
         let leading = decorated && settings.controls_on_left();
+        #[cfg(not(target_os = "macos"))]
+        let traffic_light = settings.traffic_light_controls();
+        #[cfg(target_os = "macos")]
+        let traffic_light = false;
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(settings);
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<Pixels> = None;
 
         div()
             .flex()
@@ -201,6 +210,7 @@ impl Render for TitleBar {
             .w_full()
             .h(height)
             .flex_none()
+            .when_some(radius, |this, radius| this.rounded_t(radius))
             .when(!theme.transparent, |this| this.bg(theme.background))
             .when(self.options.border, |this| {
                 this.border_b_1().border_color(theme.title_bar_border)
@@ -240,7 +250,9 @@ impl Render for TitleBar {
                     .pr_3()
                     .gap_1()
                     .when(offset > Pixels::ZERO, |this| this.w(offset))
-                    .when(leading, |this| this.child(WindowControls::new(true)))
+                    .when(leading, |this| {
+                        this.child(window_controls(true, traffic_light))
+                    })
                     .when(navigation, |this| this.child(self.toggle(cx))),
             )
             .child(
@@ -266,12 +278,21 @@ impl Render for TitleBar {
                 this.child(
                     div()
                         .flex_none()
-                        .when(cfg!(target_os = "windows"), |this| {
+                        .when(cfg!(target_os = "windows") && !traffic_light, |this| {
                             this.h_full().self_stretch()
                         })
-                        .when(!cfg!(target_os = "windows"), |this| this.pr_2())
-                        .child(WindowControls::new(false)),
+                        .when(!cfg!(target_os = "windows") || traffic_light, |this| {
+                            this.pr_2()
+                        })
+                        .child(window_controls(false, traffic_light)),
                 )
             })
+    }
+}
+
+fn window_controls(leading: bool, traffic_light: bool) -> AnyElement {
+    match traffic_light {
+        true => TrafficLightControls::new(leading).into_any_element(),
+        false => WindowControls::new(leading).into_any_element(),
     }
 }

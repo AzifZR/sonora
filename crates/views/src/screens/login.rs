@@ -423,6 +423,11 @@ impl Render for LoginView {
         let asking = self.usage.read(cx).asking();
         let orphan = asking && guest.is_none();
 
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(Sonora::global(cx).settings.read(cx));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<Pixels> = None;
+
         div()
             .relative()
             .flex()
@@ -431,6 +436,7 @@ impl Render for LoginView {
             .justify_center()
             .gap_6()
             .size_full()
+            .when_some(radius, |this, radius| this.rounded_b(radius))
             .child(
                 div()
                     .flex()
