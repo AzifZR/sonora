@@ -13,7 +13,6 @@ pub(crate) mod pins;
 pub(crate) mod playlist_editor;
 pub(crate) mod popups;
 pub(crate) mod shelves;
-pub(crate) mod steps;
 pub(crate) mod tag_editor;
 pub(crate) mod text;
 pub(crate) mod track_card;

@@ -1,4 +1,4 @@
-use crate::shared::popups::{AccountPicker, CookiePrompt};
+use crate::shared::popups::AccountPicker;
 use gpui::prelude::*;
 use gpui::{
     ClipboardItem, Context, Entity, FontWeight, IntoElement, Pixels, Render, SharedString, Window,
@@ -24,7 +24,6 @@ struct Column {
 pub struct LoginView {
     session: Entity<Session>,
     usage: Entity<Usage>,
-    secret: Entity<Input>,
     server: Entity<Input>,
     username: Entity<Input>,
     password: Entity<Input>,
@@ -40,7 +39,6 @@ impl LoginView {
         Self {
             session,
             usage,
-            secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
             server: cx.new(|cx| Input::new("login-server-hint", cx)),
             username: cx.new(|cx| Input::new("login-username-hint", cx)),
             password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
@@ -65,20 +63,8 @@ impl LoginView {
             }))
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        self.acted(cx);
-        let text = self.secret.read(cx).text().to_string();
-        if text.trim().is_empty() {
-            return;
-        }
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
-        self.session
-            .update(cx, |session, cx| session.submit_input(text, cx));
-    }
-
     fn abandon(&mut self, cx: &mut Context<Self>) {
         self.acted(cx);
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
         self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
@@ -151,7 +137,7 @@ impl LoginView {
             ),
             SignIn::Secret => (
                 format!("sign-in-{slug}-cookies"),
-                t!("login-connect-cookies"),
+                t!("login-sign-in", provider = provider),
             ),
             SignIn::Path(_) => (
                 format!("sign-in-{slug}-path"),
@@ -295,12 +281,6 @@ impl LoginView {
             })
     }
 
-    fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        CookiePrompt::new(self.secret.clone())
-            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
-            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
-    }
-
     fn account_modal(
         &self,
         accounts: Vec<AccountChoice>,
@@ -354,10 +334,7 @@ impl Render for LoginView {
             .map(|info| info.slug)
             .next();
         let waiting = match &state {
-            SessionState::Authorizing(prompt) => !matches!(
-                prompt,
-                Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))
-            ),
+            SessionState::Authorizing(prompt) => !matches!(prompt, Some(SignInPrompt::Accounts(_))),
             _ => false,
         };
         let tabs = providers
@@ -393,9 +370,7 @@ impl Render for LoginView {
         let status = match &state {
             SessionState::SignedOut => t!("login-signed-out"),
             SessionState::Restoring => t!("login-restoring"),
-            SessionState::Authorizing(Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))) => {
-                t!("login-signed-out")
-            }
+            SessionState::Authorizing(Some(SignInPrompt::Accounts(_))) => t!("login-signed-out"),
             SessionState::Authorizing(_) => t!("login-authorizing"),
             SessionState::SignedIn(profile) => t!("login-signed-in", name = &profile.display_name),
             SessionState::Failed(_) => t!("login-signed-out"),
@@ -405,7 +380,6 @@ impl Render for LoginView {
             SessionState::Authorizing(prompt) => prompt.clone(),
             _ => None,
         };
-        let secret = matches!(prompt, Some(SignInPrompt::Secret));
         let accounts = match &prompt {
             Some(SignInPrompt::Accounts(accounts)) => Some(accounts.clone()),
             _ => None,
@@ -487,9 +461,6 @@ impl Render for LoginView {
                 )
             })
             .when(orphan, |this| this.child(self.consent(cx)))
-            .when(secret, |this| {
-                this.child(self.secret_prompt(cx).into_any_element())
-            })
             .when(self.credentials_for.is_some(), |this| {
                 this.child(self.credentials_prompt(cx).into_any_element())
             })

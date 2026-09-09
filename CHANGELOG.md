@@ -12,6 +12,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
   on System and it follows a Turkish desktop on its own.
 
+- On macOS, YouTube Music signs in through a window Sonora opens itself. Sign in with Google
+  there and Sonora takes the cookies it needs; the window keeps nothing, so browsing YouTube or
+  Gmail in your regular browser no longer signs Sonora out.
+
+### Changed
+
+- Pasting a YouTube Music cookie header is gone. On macOS the sign-in window replaces it; on
+  Windows and Linux only Guest mode is offered until they get a window of their own.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added

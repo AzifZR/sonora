@@ -19,6 +19,7 @@ input = { path = "crates/input" }
 router = { path = "crates/router" }
 ui = { path = "crates/ui" }
 views = { path = "crates/views" }
+webview = { path = "crates/webview" }
 
 anyhow = "1.0"
 async-trait = "0.1"
@@ -61,7 +62,20 @@ log = "0.4"
 moka = { version = "0.12.15", features = ["future", "sync"] }
 oauth2 = "5.0"
 open = "5.4"
+block2 = "0.6"
 objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-app-kit",
+  "objc2-core-foundation",
+  "WKHTTPCookieStore",
+  "WKNavigation",
+  "WKWebView",
+  "WKWebViewConfiguration",
+  "WKWebsiteDataStore",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
 reqwest = { version = "0.13", default-features = false, features = [
   "blocking",

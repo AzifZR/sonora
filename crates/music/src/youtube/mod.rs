@@ -19,11 +19,15 @@ use crate::youtube::playback::Factory;
 
 use crate::{
     InputSource, MusicProvider, PromptSink, ProviderSession, Shape, SignIn, SignInPrompt,
-    UserProfile, credentials,
+    UserProfile, WebSignIn, credentials,
 };
 pub use client::YouTubeClient;
 
 const GUEST_ID: &str = "youtube-guest";
+/// Google's sign-in page, told to come back to YouTube Music once the account is in.
+const SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F";
+const LANDING: &str = "music.youtube.com";
+const COOKIE_DOMAIN: &str = "youtube.com";
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -301,5 +305,14 @@ impl MusicProvider for YouTubeProvider {
     fn sign_out(&self) {
         credentials::remove(&self.credentials);
         credentials::remove(&self.cookies);
+    }
+
+    fn web_sign_in(&self) -> Option<WebSignIn> {
+        Some(WebSignIn {
+            url: SIGN_IN_URL,
+            landing: LANDING,
+            domain: COOKIE_DOMAIN,
+            proof: auth::PROOF,
+        })
     }
 }

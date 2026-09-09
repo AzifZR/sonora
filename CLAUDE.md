@@ -34,6 +34,7 @@ crates/
   i18n/       Fluent localization: the `t!` macro, locale selection, embedded .ftl
   icons/      the icon packs: registry, active pack, path resolution, AssetSource
   embed/      build-script helper that walks a folder and writes include_bytes! literals
+  webview/    a native browser window with a throwaway session, for cookie sign-ins (macOS only so far)
 ```
 
 Dependency direction is strict; do not create a back edge:
@@ -41,6 +42,7 @@ Dependency direction is strict; do not create a back edge:
 ```
 sonora → views → state → music
          state, music → storage
+         state → webview
          all ui-side crates → ui, router, input → ui → gpui
          every ui-side crate → i18n, icons → gpui
 ```
@@ -62,6 +64,12 @@ sonora → views → state → music
   `ui`, so `ui` and `views` can both reach it.
 - `embed` is a build-support crate. Nothing links it at runtime; it is a `[build-dependencies]`
   entry of `icons` and `sonora` only.
+- `webview` is a leaf that knows nothing about gpui or music: `Login::open(Target)` puts up a
+  platform window over a non-persistent data store and `poll()` answers `Pending`, `Closed` or
+  `Cookies(header)`. Only `macos.rs` exists (AppKit + WebKit through `objc2`); `unsupported.rs`
+  is the stub the other platforms fill in with WebView2 and webkit2gtk, behind the same five
+  calls. Both AppKit and WebKit are main-thread only, so `state::Session` opens and polls it
+  from the GPUI foreground executor.
 
 ## Building
 
@@ -706,6 +714,16 @@ in `chrome::tools` (`columns`, `filters`, `sorts`, `views`) rather than writing 
 screen owns one `ui::Popovers` so only one of its popovers is open at a time, and holds its own
 `tools::Sliders` cache so scrubber positions survive across frames (`LibraryView` keeps one per
 section, so tab switches cannot bleed).
+
+**A cookie sign-in is the app's own browser window, nothing else.** `MusicProvider::web_sign_in`
+describes it: the url to load, the host that means the user is through, the cookie domain to
+collect and the proof cookie names. When `SignInPrompt::Secret` arrives, `Session::open_window`
+puts up a `webview::Login` and polls it; the header it produces goes through `submit_input`, and
+closing the window cancels the sign-in. There is no paste fallback and no modal: `Session::offered`
+drops `SignIn::Secret` from a provider's options unless `webview::supported()` and the provider
+describes a window, so a platform without a backend simply does not list it. A shared browser
+profile rotates Google's session cookies from any open tab and kills a copied header within
+hours; the throwaway session has no tab left to do that.
 
 **Filtering.** Implement `chrome::Searchable` on the view; `Toolbar::bind` binds it to the search
 field in the title bar. Don't build a second search box.
