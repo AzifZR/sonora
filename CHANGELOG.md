@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
+  on System and it follows a Turkish desktop on its own.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added
