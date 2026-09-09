@@ -476,17 +476,6 @@ impl Render for DetailView {
             )
         });
 
-        let more = (self.section == "playlist" && self.detail.read(cx).has_more()).then(|| {
-            let detail = self.detail.clone();
-            Button::new("playlist-load-more")
-                .label(t!("common-more"))
-                .outline()
-                .disabled(self.detail.read(cx).is_loading_more())
-                .on_click(move |_, _, cx| {
-                    detail.update(cx, |detail, cx| detail.load_more(cx));
-                })
-        });
-
         div()
             .relative()
             .size_full()
@@ -495,10 +484,7 @@ impl Render for DetailView {
                     .pt(inset)
                     .pb(inset)
                     .child(div().px(inset).child(self.header(cx)))
-                    .child(table(&self.table))
-                    .when_some(more, |this, more| {
-                        this.child(div().flex().justify_center().py(inset).child(more))
-                    }),
+                    .child(table(&self.table)),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }

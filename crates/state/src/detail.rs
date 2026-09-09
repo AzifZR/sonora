@@ -7,8 +7,6 @@ use tokio::task::AbortHandle;
 
 use crate::{Io, Library, LibraryEvent, Session, SessionEvent, join, mosaic};
 
-const MAX_PAGED_TRACKS: usize = 200;
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Collection {
     Album,
@@ -174,16 +172,8 @@ impl Detail {
         self.loading
     }
 
-    pub fn has_more(&self) -> bool {
-        self.continuation.is_some()
-    }
-
-    pub fn is_loading_more(&self) -> bool {
-        self.loading_more
-    }
-
-    /// Appends one provider page up to the detail-screen limit.
-    pub fn load_more(&mut self, cx: &mut Context<Self>) {
+    /// Appends provider pages in sequence while keeping the first page immediately usable.
+    fn load_more(&mut self, cx: &mut Context<Self>) {
         if self.loading_more {
             return;
         }
@@ -197,7 +187,6 @@ impl Detail {
             return;
         };
 
-        self.continuation = None;
         self.loading_more = true;
         cx.notify();
 
@@ -211,22 +200,22 @@ impl Detail {
                 this.loading_more = false;
                 this.request = None;
                 match loaded {
-                    Ok((tracks, _)) => {
+                    Ok((tracks, continuation)) => {
                         let offset = this.tracks.len() as u32;
-                        let remaining = MAX_PAGED_TRACKS.saturating_sub(this.tracks.len());
-                        this.tracks
-                            .extend(tracks.into_iter().take(remaining).enumerate().map(
-                                |(index, mut track)| {
-                                    track.track_number = offset + index as u32 + 1;
-                                    track
-                                },
-                            ));
+                        this.tracks.extend(tracks.into_iter().enumerate().map(
+                            |(index, mut track)| {
+                                track.track_number = offset + index as u32 + 1;
+                                track
+                            },
+                        ));
+                        this.continuation = continuation;
                         if let Some(playlist) = this.playlist.as_mut()
                             && playlist.track_count < this.tracks.len() as u32
                         {
                             playlist.track_count = this.tracks.len() as u32;
                             this.header = Some(playlist_header(playlist));
                         }
+                        this.load_more(cx);
                     }
                     Err(error) => log::warn!("detail: cannot load more playlist tracks: {error:#}"),
                 }
@@ -415,18 +404,12 @@ impl Detail {
                 }
                 self.header = Some(playlist_header(&playlist));
                 self.playlist = Some(playlist);
-                self.tracks = detail
-                    .tracks
-                    .iter()
-                    .take(MAX_PAGED_TRACKS)
-                    .cloned()
-                    .collect();
-                self.continuation = (self.tracks.len() < MAX_PAGED_TRACKS)
-                    .then(|| detail.continuation.clone())
-                    .flatten();
+                self.tracks = detail.tracks.clone();
+                self.continuation = detail.continuation.clone();
             }
         }
         self.loaded = true;
+        self.load_more(cx);
     }
 
     fn clear(&mut self) {
