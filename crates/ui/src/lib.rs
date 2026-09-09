@@ -96,8 +96,8 @@ pub use table::{
 };
 pub use tabs::{TabBar, Tabs};
 pub use theme::{
-    ActiveTheme, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE,
-    Theme, ThemeKind, ThemeOverrides,
+    ActiveTheme, BACKDROP_TRANSPARENCY, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
+    MIN_FONT, MIN_LYRICS_SCALE, Theme, ThemeKind, ThemeOverrides, backdrop,
 };
 pub use time::clock;
 pub use toast::Toast;

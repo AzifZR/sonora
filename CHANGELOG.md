@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-09
+
+### Added
+
+- Appearance settings carry a Blur switch, on by default, that draws the window over a blurred
+  desktop once the opacity drops below 100%. At full opacity the window stays plain and the switch
+  is greyed out.
+
+### Fixed
+
+- Playlists with more than 200 tracks load in full again. The remaining pages arrive in the
+  background after the first one shows.
+
+- Windows no longer draws its own minimize, maximize and close buttons beside the ones Sonora
+  draws in its title bar.
+
+- A maximized window on Windows stops at the taskbar instead of covering it.
+
 ## [0.32.0] - 2026-09-09
 
 ### Added
@@ -1386,7 +1404,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.32.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/sonorahq/sonora/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/sonorahq/sonora/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/sonorahq/sonora/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/sonorahq/sonora/compare/v0.29.0...v0.30.0

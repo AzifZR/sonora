@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.32.0"
+version = "0.33.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sonorahq/sonora"
@@ -40,7 +40,12 @@ gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "96ffcd35c2d1e
 ] }
 http = "1.3"
 winresource = "0.1"
-windows-sys = { version = "0.61", features = ["Win32_Graphics_Dwm"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 interprocess = "2.4"
 image = { version = "0.25", default-features = false, features = [
   "jpeg",

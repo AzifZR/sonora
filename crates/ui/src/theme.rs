@@ -1,7 +1,10 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
-use gpui::{App, Global, Hsla, Pixels, Rgba, SharedString, Task, WindowAppearance, px, rgb, rgba};
+use gpui::{
+    App, Global, Hsla, Pixels, Rgba, SharedString, Task, WindowAppearance,
+    WindowBackgroundAppearance, px, rgb, rgba,
+};
 use i18n::t;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +13,7 @@ use crate::metrics::{Metrics, Rounding, Text};
 pub const MIN_FONT: f32 = 10.;
 pub const MAX_FONT: f32 = 24.;
 pub const MAX_TRANSPARENCY: f32 = 1.;
+pub const BACKDROP_TRANSPARENCY: f32 = 0.15;
 pub const MIN_LYRICS_SCALE: f32 = 0.6;
 pub const MAX_LYRICS_SCALE: f32 = 2.;
 
@@ -22,6 +26,19 @@ const TEXT_TINT: f32 = 0.12;
 const MAX_WASH_SATURATION: f32 = 0.7;
 const MIN_ACCENT_SATURATION: f32 = 0.6;
 const MAX_ACCENT_SATURATION: f32 = 0.85;
+const SYSTEM_FILLS: bool = cfg!(target_os = "windows");
+
+/// The window background a look asks the platform for. Blur needs something to
+/// show through, so an opaque window always gets the plain background.
+pub fn backdrop(blur: bool, transparent: bool) -> WindowBackgroundAppearance {
+    match blur && transparent {
+        true => WindowBackgroundAppearance::Blurred,
+        false => match SYSTEM_FILLS && !transparent {
+            true => WindowBackgroundAppearance::Opaque,
+            false => WindowBackgroundAppearance::Transparent,
+        },
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Look {
@@ -30,6 +47,7 @@ pub struct Look {
     pub font: f32,
     pub transparent: bool,
     pub transparency: f32,
+    pub blur: bool,
     pub tint: Option<Hsla>,
 }
 
@@ -213,6 +231,7 @@ pub struct Theme {
     pub font_size: Pixels,
     pub metrics: Metrics,
     pub transparent: bool,
+    pub blur: bool,
     pub tint: Option<Hsla>,
 }
 
@@ -262,6 +281,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            blur: false,
             tint: None,
         }
     }
@@ -302,6 +322,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            blur: false,
             tint: None,
         }
     }
@@ -342,6 +363,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            blur: false,
             tint: None,
         }
     }
@@ -382,6 +404,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            blur: false,
             tint: None,
         }
     }
@@ -683,6 +706,7 @@ impl Theme {
         theme.font_size = base;
         theme.metrics = Metrics::new(base);
         theme.transparent = look.transparent;
+        theme.blur = look.blur;
         theme.tint = look.tint;
         theme
     }
@@ -853,6 +877,7 @@ mod tests {
             font: 14.,
             transparent: false,
             transparency: 0.,
+            blur: false,
             tint: Some(TINT),
         };
         let overrides = ThemeOverrides {

@@ -214,6 +214,7 @@ struct Appearance {
     visualizer: bool,
     icons: String,
     rounding: String,
+    blur: bool,
     font_size: f32,
     transparent: bool,
     transparency: f32,
@@ -422,9 +423,10 @@ impl Default for Appearance {
             visualizer: true,
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
+            blur: true,
             font_size: DEFAULT_FONT_SIZE,
             transparent: false,
-            transparency: 0.15,
+            transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
             window_controls: true,
@@ -659,6 +661,10 @@ impl AppSettings {
         &self.values.appearance.rounding
     }
 
+    pub fn blur(&self) -> bool {
+        self.values.appearance.blur
+    }
+
     pub fn stillness(&self) -> Stillness {
         Stillness::from_id(&self.values.appearance.reduce_motion)
     }
@@ -682,6 +688,7 @@ impl AppSettings {
             font: self.font_size(),
             transparent: self.transparent(),
             transparency: self.transparency(),
+            blur: self.blur(),
             tint: None,
         }
     }
@@ -1044,6 +1051,11 @@ impl AppSettings {
 
     pub fn set_rounding(&mut self, rounding: impl Into<String>, cx: &mut Context<Self>) {
         self.values.appearance.rounding = rounding.into();
+        self.schedule_save(cx);
+    }
+
+    pub fn set_blur(&mut self, blur: bool, cx: &mut Context<Self>) {
+        self.values.appearance.blur = blur;
         self.schedule_save(cx);
     }
 

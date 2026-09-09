@@ -139,6 +139,7 @@ fn main() {
                     font: 14.,
                     transparent: false,
                     transparency: 0.,
+                    blur: false,
                     tint: None,
                 },
                 &Default::default(),

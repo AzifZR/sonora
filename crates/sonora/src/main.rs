@@ -13,8 +13,8 @@ use std::process::exit;
 use std::sync::Arc;
 
 use gpui::{
-    App, AppContext as _, Bounds, Pixels, QuitMode, Size, TitlebarOptions,
-    WindowBackgroundAppearance, WindowBounds, WindowOptions, point, px, size,
+    App, AppContext as _, Bounds, Pixels, QuitMode, Size, TitlebarOptions, WindowBounds,
+    WindowOptions, point, px, size,
 };
 use music::LyricsProvider;
 use router::Screen;
@@ -201,13 +201,8 @@ fn open_window(cx: &mut App) {
     let saver = settings.saver();
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let decorations = settings.window_decorations();
-    let background = match cfg!(target_os = "windows") {
-        true => match settings.transparent() {
-            true => WindowBackgroundAppearance::Transparent,
-            false => WindowBackgroundAppearance::Opaque,
-        },
-        false => WindowBackgroundAppearance::Transparent,
-    };
+    let look = settings.look();
+    let background = ui::backdrop(look.blur, look.transparent);
 
     cx.open_window(
         WindowOptions {
@@ -259,7 +254,76 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
             size_of_val(&preference) as u32,
         );
     }
+    hide_system_caption(handle);
+    clamp_maximize(handle);
     Some(handle)
+}
+
+#[cfg(target_os = "windows")]
+fn hide_system_caption(handle: *mut std::ffi::c_void) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WS_CAPTION,
+    };
+
+    unsafe {
+        let style = GetWindowLongPtrW(handle, GWL_STYLE);
+        if style & WS_CAPTION as isize == 0 {
+            return;
+        }
+        SetWindowLongPtrW(handle, GWL_STYLE, style & !(WS_CAPTION as isize));
+        SetWindowPos(
+            handle,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+#[cfg(target_os = "windows")]
+const MAXIMIZE_SUBCLASS: usize = 1;
+#[cfg(target_os = "windows")]
+fn clamp_maximize(handle: *mut std::ffi::c_void) {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+
+    unsafe { SetWindowSubclass(handle, Some(work_area), MAXIMIZE_SUBCLASS, 0) };
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn work_area(
+    handle: *mut std::ffi::c_void,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    _subclass: usize,
+    _data: usize,
+) -> isize {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MINMAXINFO, WM_GETMINMAXINFO};
+
+    unsafe {
+        if message == WM_GETMINMAXINFO {
+            let monitor = MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST);
+            let mut monitor_info: MONITORINFO = std::mem::zeroed();
+            monitor_info.cbSize = size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(monitor, &mut monitor_info) != 0 {
+                let (screen, work) = (monitor_info.rcMonitor, monitor_info.rcWork);
+                let info = &mut *(lparam as *mut MINMAXINFO);
+                info.ptMaxPosition.x += work.left - screen.left;
+                info.ptMaxPosition.y += work.top - screen.top;
+                info.ptMaxSize.x -= (screen.right - screen.left) - (work.right - work.left);
+                info.ptMaxSize.y -= (screen.bottom - screen.top) - (work.bottom - work.top);
+            }
+        }
+        DefSubclassProc(handle, message, wparam, lparam)
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

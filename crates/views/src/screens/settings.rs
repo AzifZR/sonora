@@ -211,6 +211,7 @@ impl SettingsView {
                 Row::Item(self.visualizer_row(cx).into_any_element()),
                 Row::Item(self.icons_row(cx).into_any_element()),
                 Row::Item(self.opacity_row(cx).into_any_element()),
+                Row::Item(self.blur_row(cx).into_any_element()),
                 Row::Item(self.corners_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
@@ -622,6 +623,32 @@ impl SettingsView {
             muted,
             small,
             picker.into_any_element(),
+        )
+    }
+
+    fn blur_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let opaque = !look.transparent;
+
+        self.row(
+            t!("settings-blur"),
+            t!("settings-blur-detail"),
+            muted,
+            small,
+            Switch::new("blur", look.blur && !opaque)
+                .disabled(opaque)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let blur = !look.blur;
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_blur(blur, cx));
+                    Theme::set(Look { blur, ..look }, &overrides, cx);
+                    cx.notify();
+                }))
+                .into_any_element(),
         )
     }
 

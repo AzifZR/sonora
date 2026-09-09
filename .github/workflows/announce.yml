@@ -21,37 +21,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: taiki-e/install-action@parse-changelog
+
       - name: Send release announcement
         env:
-          GH_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
           RELEASE_TAG: ${{ inputs.tag }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          release="$(gh release view "$RELEASE_TAG" --repo "$REPO" --json name,body,url)"
+          version="${RELEASE_TAG#v}"
+          # discord breaks the line at every newline, so join the wrapped continuation lines
+          notes="$(parse-changelog CHANGELOG.md "$version" | perl -0pe 's/\n  +(?=\S)/ /g')"
           jq -n \
-            --arg username "Sonora Releases" \
-            --arg version "$RELEASE_TAG" \
-            --argjson release "$release" \
+            --arg tag "$RELEASE_TAG" \
+            --arg repo "$REPO" \
+            --arg notes "$notes" \
             '{
-              username: $username,
+              username: "Sonora Releases",
               embeds: [{
-                title: (if $release.name == "" then $version else $release.name end),
-                url: $release.url,
+                title: ("Sonora " + $tag),
+                url: ("https://github.com/" + $repo + "/releases/tag/" + $tag),
                 description: (
-                  if $release.body == "" then
-                    "A new Sonora release is available."
+                  if ($notes | length) > 4000 then
+                    $notes[0:3900] + "\n\n[Full notes on GitHub](https://github.com/" + $repo + "/blob/" + $tag + "/CHANGELOG.md)"
                   else
-                    $release.body[0:4000]
+                    $notes
                   end
                 ),
-                color: 5793266,
-                fields: [{
-                  name: "Version",
-                  value: $version,
-                  inline: true
-                }]
+                color: 5793266
               }]
             }' |
           curl --fail-with-body \
