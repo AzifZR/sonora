@@ -482,11 +482,11 @@ impl Input {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        cx.stop_propagation();
+        self.focus(window, cx);
         if event.button == MouseButton::Right {
             self.context_menu = Some(event.position);
-            self.focus(window, cx);
             window.prevent_default();
-            cx.stop_propagation();
             cx.notify();
             return;
         }
