@@ -16,9 +16,10 @@ use router::{NavEntry, Screen, SettingsTab};
 use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
-    Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
-    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Modal, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
-    ScrubberState, Separator, Skeleton, Stillness, Switch, Text, Theme, ThemeKind,
+    Avatar, BACKDROP_TRANSPARENCY, Backdrop, Button, InfoCard, Initials, Input, Look, MAX_FONT,
+    MAX_LYRICS_SCALE, MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Modal, Pace, Picker,
+    Popovers, Rounding, Saver, Scrubber, ScrubberState, Separator, Skeleton, Stillness, Switch,
+    Text, Theme, ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -28,6 +29,7 @@ const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
 const CORNERS: &str = "corners";
+const BACKDROP: &str = "backdrop";
 const LANGUAGES: &str = "languages";
 const TYPEFACES: &str = "typefaces";
 const TYPEFACE_LIMIT: usize = 200;
@@ -211,6 +213,7 @@ impl SettingsView {
                 Row::Item(self.visualizer_row(cx).into_any_element()),
                 Row::Item(self.icons_row(cx).into_any_element()),
                 Row::Item(self.opacity_row(cx).into_any_element()),
+                Row::Item(self.backdrop_row(cx).into_any_element()),
                 Row::Item(self.corners_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
@@ -619,6 +622,59 @@ impl SettingsView {
         self.row(
             t!("settings-corners"),
             t!("settings-corners-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    fn backdrop_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let overrides = self.settings.read(cx).theme_overrides().clone();
+
+        let picker = Picker::new(BACKDROP, &self.popovers, look.backdrop.label())
+            .width(Picker::NARROW)
+            .items(Backdrop::available().iter().map(|backdrop| {
+                let overrides = overrides.clone();
+                MenuItem::new(backdrop.id(), backdrop.label())
+                    .selected(look.backdrop == *backdrop)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        // A visible backdrop needs a lowered alpha to show through,
+                        // so picking one at 100% opacity picks a sensible level too.
+                        // Plain leaves the slider wherever the user had it.
+                        let visible = *backdrop != Backdrop::Plain && look.transparency == 0.;
+                        let transparency = match visible {
+                            true => BACKDROP_TRANSPARENCY,
+                            false => look.transparency,
+                        };
+                        let transparent = transparency > 0.;
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_backdrop(backdrop.id(), cx);
+                            if visible {
+                                settings.set_transparent(true, cx);
+                                settings.set_transparency(transparency, cx);
+                            }
+                        });
+                        Theme::set(
+                            Look {
+                                backdrop: *backdrop,
+                                transparent,
+                                transparency,
+                                ..look
+                            },
+                            &overrides,
+                            cx,
+                        );
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-backdrop"),
+            t!("settings-backdrop-detail"),
             muted,
             small,
             picker.into_any_element(),
