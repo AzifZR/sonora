@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows no longer draws its own minimize, maximize and close buttons beside the ones Sonora
+  draws in its title bar.
+
 ## [0.32.0] - 2026-09-09
 
 ### Added

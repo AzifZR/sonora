@@ -254,7 +254,33 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
             size_of_val(&preference) as u32,
         );
     }
+    hide_system_caption(handle);
     Some(handle)
+}
+
+#[cfg(target_os = "windows")]
+fn hide_system_caption(handle: *mut std::ffi::c_void) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WS_CAPTION,
+    };
+
+    unsafe {
+        let style = GetWindowLongPtrW(handle, GWL_STYLE);
+        if style & WS_CAPTION as isize == 0 {
+            return;
+        }
+        SetWindowLongPtrW(handle, GWL_STYLE, style & !(WS_CAPTION as isize));
+        SetWindowPos(
+            handle,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
