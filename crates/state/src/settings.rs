@@ -24,7 +24,8 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use storage::Database;
 use ui::{
-    Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind, ThemeOverrides,
+    Backdrop, Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind,
+    ThemeOverrides,
 };
 
 use crate::queue::{Resume, gap_target};
@@ -214,6 +215,7 @@ struct Appearance {
     visualizer: bool,
     icons: String,
     rounding: String,
+    backdrop: String,
     font_size: f32,
     transparent: bool,
     transparency: f32,
@@ -422,9 +424,10 @@ impl Default for Appearance {
             visualizer: true,
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
+            backdrop: Backdrop::Plain.id().to_owned(),
             font_size: DEFAULT_FONT_SIZE,
             transparent: false,
-            transparency: 0.15,
+            transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
             window_controls: true,
@@ -659,6 +662,10 @@ impl AppSettings {
         &self.values.appearance.rounding
     }
 
+    pub fn backdrop(&self) -> &str {
+        &self.values.appearance.backdrop
+    }
+
     pub fn stillness(&self) -> Stillness {
         Stillness::from_id(&self.values.appearance.reduce_motion)
     }
@@ -682,6 +689,7 @@ impl AppSettings {
             font: self.font_size(),
             transparent: self.transparent(),
             transparency: self.transparency(),
+            backdrop: Backdrop::from_id(self.backdrop()),
             tint: None,
         }
     }
@@ -1044,6 +1052,11 @@ impl AppSettings {
 
     pub fn set_rounding(&mut self, rounding: impl Into<String>, cx: &mut Context<Self>) {
         self.values.appearance.rounding = rounding.into();
+        self.schedule_save(cx);
+    }
+
+    pub fn set_backdrop(&mut self, backdrop: impl Into<String>, cx: &mut Context<Self>) {
+        self.values.appearance.backdrop = backdrop.into();
         self.schedule_save(cx);
     }
 

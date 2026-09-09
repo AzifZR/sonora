@@ -1,7 +1,10 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
-use gpui::{App, Global, Hsla, Pixels, Rgba, SharedString, Task, WindowAppearance, px, rgb, rgba};
+use gpui::{
+    App, Global, Hsla, Pixels, Rgba, SharedString, Task, WindowAppearance,
+    WindowBackgroundAppearance, px, rgb, rgba,
+};
 use i18n::t;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +13,7 @@ use crate::metrics::{Metrics, Rounding, Text};
 pub const MIN_FONT: f32 = 10.;
 pub const MAX_FONT: f32 = 24.;
 pub const MAX_TRANSPARENCY: f32 = 1.;
+pub const BACKDROP_TRANSPARENCY: f32 = 0.15;
 pub const MIN_LYRICS_SCALE: f32 = 0.6;
 pub const MAX_LYRICS_SCALE: f32 = 2.;
 
@@ -22,6 +26,51 @@ const TEXT_TINT: f32 = 0.12;
 const MAX_WASH_SATURATION: f32 = 0.7;
 const MIN_ACCENT_SATURATION: f32 = 0.6;
 const MAX_ACCENT_SATURATION: f32 = 0.85;
+const SYSTEM_FILLS: bool = cfg!(target_os = "windows");
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backdrop {
+    Plain,
+    Blur,
+}
+
+impl Backdrop {
+    pub const ALL: [Self; 2] = [Self::Plain, Self::Blur];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::Blur => "blur",
+        }
+    }
+
+    pub fn label(self) -> SharedString {
+        match self {
+            Self::Plain => t!("backdrop-plain"),
+            Self::Blur => t!("backdrop-blur"),
+        }
+    }
+
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "blur" => Self::Blur,
+            _ => Self::Plain,
+        }
+    }
+
+    pub fn appearance(self, transparent: bool) -> WindowBackgroundAppearance {
+        match self {
+            Self::Blur => WindowBackgroundAppearance::Blurred,
+            Self::Plain => match SYSTEM_FILLS {
+                true => match transparent {
+                    true => WindowBackgroundAppearance::Transparent,
+                    false => WindowBackgroundAppearance::Opaque,
+                },
+                false => WindowBackgroundAppearance::Transparent,
+            },
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Look {
@@ -30,6 +79,7 @@ pub struct Look {
     pub font: f32,
     pub transparent: bool,
     pub transparency: f32,
+    pub backdrop: Backdrop,
     pub tint: Option<Hsla>,
 }
 
@@ -213,6 +263,7 @@ pub struct Theme {
     pub font_size: Pixels,
     pub metrics: Metrics,
     pub transparent: bool,
+    pub backdrop: Backdrop,
     pub tint: Option<Hsla>,
 }
 
@@ -262,6 +313,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            backdrop: Backdrop::Plain,
             tint: None,
         }
     }
@@ -302,6 +354,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            backdrop: Backdrop::Plain,
             tint: None,
         }
     }
@@ -342,6 +395,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            backdrop: Backdrop::Plain,
             tint: None,
         }
     }
@@ -382,6 +436,7 @@ impl Theme {
             font_size: px(14.),
             metrics: Metrics::default(),
             transparent: false,
+            backdrop: Backdrop::Plain,
             tint: None,
         }
     }
@@ -683,6 +738,7 @@ impl Theme {
         theme.font_size = base;
         theme.metrics = Metrics::new(base);
         theme.transparent = look.transparent;
+        theme.backdrop = look.backdrop;
         theme.tint = look.tint;
         theme
     }
@@ -853,6 +909,7 @@ mod tests {
             font: 14.,
             transparent: false,
             transparency: 0.,
+            backdrop: Backdrop::Plain,
             tint: Some(TINT),
         };
         let overrides = ThemeOverrides {
