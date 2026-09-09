@@ -20,7 +20,6 @@ use music::LyricsProvider;
 use router::Screen;
 use state::Sonora;
 use ui::ActiveTheme as _;
-use ui::Backdrop;
 use ui::ThemeKind;
 use views::Root;
 
@@ -202,7 +201,8 @@ fn open_window(cx: &mut App) {
     let saver = settings.saver();
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let decorations = settings.window_decorations();
-    let background = Backdrop::from_id(settings.backdrop()).appearance(settings.transparent());
+    let look = settings.look();
+    let background = look.backdrop.appearance(look.transparent);
 
     cx.open_window(
         WindowOptions {

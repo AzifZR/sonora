@@ -13,7 +13,6 @@ use crate::metrics::{Metrics, Rounding, Text};
 pub const MIN_FONT: f32 = 10.;
 pub const MAX_FONT: f32 = 24.;
 pub const MAX_TRANSPARENCY: f32 = 1.;
-/// The opacity picked for the user when a visible backdrop is chosen at 100%.
 pub const BACKDROP_TRANSPARENCY: f32 = 0.15;
 pub const MIN_LYRICS_SCALE: f32 = 0.6;
 pub const MAX_LYRICS_SCALE: f32 = 2.;
@@ -27,9 +26,8 @@ const TEXT_TINT: f32 = 0.12;
 const MAX_WASH_SATURATION: f32 = 0.7;
 const MIN_ACCENT_SATURATION: f32 = 0.6;
 const MAX_ACCENT_SATURATION: f32 = 0.85;
+const SYSTEM_FILLS: bool = cfg!(target_os = "windows");
 
-/// The material drawn behind the app window. Mirrors gpui's
-/// `WindowBackgroundAppearance` one to one, named for what the user sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Backdrop {
     Plain,
@@ -60,32 +58,10 @@ impl Backdrop {
         }
     }
 
-    /// The backdrops this platform can draw, in menu order.
-    pub fn available() -> &'static [Self] {
-        match cfg!(target_os = "windows") {
-            true => &Self::ALL,
-            false
-                if cfg!(any(
-                    target_os = "macos",
-                    target_os = "linux",
-                    target_os = "freebsd"
-                )) =>
-            {
-                &[Self::Plain, Self::Blur]
-            }
-            false => &[Self::Plain],
-        }
-    }
-
-    /// The window appearance for this backdrop. `transparent` is whether the
-    /// opacity slider has been moved off 100%.
     pub fn appearance(self, transparent: bool) -> WindowBackgroundAppearance {
         match self {
             Self::Blur => WindowBackgroundAppearance::Blurred,
-            // Plain reproduces what each platform does today: Windows goes
-            // non-opaque only when the slider says so, everyone else is always
-            // transparent because client-side decorations need it.
-            Self::Plain => match cfg!(target_os = "windows") {
+            Self::Plain => match SYSTEM_FILLS {
                 true => match transparent {
                     true => WindowBackgroundAppearance::Transparent,
                     false => WindowBackgroundAppearance::Opaque,

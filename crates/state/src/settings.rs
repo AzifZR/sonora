@@ -427,7 +427,7 @@ impl Default for Appearance {
             backdrop: Backdrop::Plain.id().to_owned(),
             font_size: DEFAULT_FONT_SIZE,
             transparent: false,
-            transparency: 0.15,
+            transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
             window_controls: true,
