@@ -28,6 +28,7 @@ const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
 const CORNERS: &str = "corners";
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
 const WINDOW_ROUNDING: &str = "window-rounding";
 const LANGUAGES: &str = "languages";
 const TYPEFACES: &str = "typefaces";
