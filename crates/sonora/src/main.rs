@@ -255,6 +255,7 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
         );
     }
     hide_system_caption(handle);
+    clamp_maximize(handle);
     Some(handle)
 }
 
@@ -280,6 +281,48 @@ fn hide_system_caption(handle: *mut std::ffi::c_void) {
             0,
             SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
+    }
+}
+
+#[cfg(target_os = "windows")]
+const MAXIMIZE_SUBCLASS: usize = 1;
+#[cfg(target_os = "windows")]
+fn clamp_maximize(handle: *mut std::ffi::c_void) {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+
+    unsafe { SetWindowSubclass(handle, Some(work_area), MAXIMIZE_SUBCLASS, 0) };
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn work_area(
+    handle: *mut std::ffi::c_void,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    _subclass: usize,
+    _data: usize,
+) -> isize {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MINMAXINFO, WM_GETMINMAXINFO};
+
+    unsafe {
+        if message == WM_GETMINMAXINFO {
+            let monitor = MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST);
+            let mut monitor_info: MONITORINFO = std::mem::zeroed();
+            monitor_info.cbSize = size_of::<MONITORINFO>() as u32;
+            if GetMonitorInfoW(monitor, &mut monitor_info) != 0 {
+                let (screen, work) = (monitor_info.rcMonitor, monitor_info.rcWork);
+                let info = &mut *(lparam as *mut MINMAXINFO);
+                info.ptMaxPosition.x += work.left - screen.left;
+                info.ptMaxPosition.y += work.top - screen.top;
+                info.ptMaxSize.x -= (screen.right - screen.left) - (work.right - work.left);
+                info.ptMaxSize.y -= (screen.bottom - screen.top) - (work.bottom - work.top);
+            }
+        }
+        DefSubclassProc(handle, message, wparam, lparam)
     }
 }
 
