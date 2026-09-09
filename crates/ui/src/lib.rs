@@ -14,8 +14,6 @@ mod inline_links;
 mod input;
 mod label;
 mod layout;
-#[cfg(not(target_os = "macos"))]
-mod mac_controls;
 mod menu;
 mod metrics;
 mod modal;
@@ -40,6 +38,7 @@ mod theme;
 mod time;
 mod toast;
 mod tooltip;
+mod traffic_light_controls;
 mod vacancy;
 mod view;
 mod visualizer;
@@ -70,8 +69,6 @@ pub use input::{
 };
 pub use label::{eyebrow, faint, heading, upper, vacant};
 pub use layout::{ALWAYS, MIN_CONTENT, ROOMY, Room, SNUG, VAST, WIDE};
-#[cfg(not(target_os = "macos"))]
-pub use mac_controls::MacControls;
 pub use menu::{MENU_CONTEXT, Menu, MenuItem, SubmenuState};
 pub use metrics::{LEADING, Metrics, Rounding, Text, snapped, tucked};
 pub use modal::Modal;
@@ -106,6 +103,7 @@ pub use theme::{
 pub use time::clock;
 pub use toast::Toast;
 pub use tooltip::{Perch, Tooltip};
+pub use traffic_light_controls::TrafficLightControls;
 pub use vacancy::Vacancy;
 pub use view::Mode;
 pub use visualizer::Visualizer;

@@ -28,6 +28,7 @@ const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
 const CORNERS: &str = "corners";
+const WINDOW_ROUNDING: &str = "window-rounding";
 const LANGUAGES: &str = "languages";
 const TYPEFACES: &str = "typefaces";
 const TYPEFACE_LIMIT: usize = 200;
@@ -271,19 +272,25 @@ impl SettingsView {
     )]
     fn decoration_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let rows = vec![
+        let mut rows = vec![
             self.title("settings-group-window-style", cx),
             Row::Item(self.server_side_decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
-            Row::Item(self.mac_controls_row(cx).into_any_element()),
+            Row::Item(self.traffic_light_controls_row(cx).into_any_element()),
         ];
+        // Server-side decorations put the compositor in charge of the frame, so window
+        // rounding is only ever this app's call with client-side ones.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if !self.settings.read(cx).server_side_decorations() {
+            rows.push(Row::Item(self.window_rounding_row(cx).into_any_element()));
+        }
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
         let rows = vec![
             self.title("settings-group-title-bar", cx),
             Row::Item(self.decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
-            Row::Item(self.mac_controls_row(cx).into_any_element()),
-            Row::Item(self.rounded_window_row(cx).into_any_element()),
+            Row::Item(self.traffic_light_controls_row(cx).into_any_element()),
+            Row::Item(self.window_rounding_row(cx).into_any_element()),
         ];
         #[cfg(target_os = "macos")]
         let rows = Vec::<Row>::new();
@@ -749,44 +756,53 @@ impl SettingsView {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn mac_controls_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn traffic_light_controls_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let on = self.settings.read(cx).mac_controls();
+        let on = self.settings.read(cx).traffic_light_controls();
 
         self.row(
-            t!("settings-mac-controls"),
-            t!("settings-mac-controls-detail"),
+            t!("settings-traffic-light-controls"),
+            t!("settings-traffic-light-controls-detail"),
             muted,
             small,
-            Switch::new("mac-controls", on)
+            Switch::new("traffic-light-controls", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_mac_controls(!on, cx));
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_traffic_light_controls(!on, cx)
+                    });
                 }))
                 .into_any_element(),
         )
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
-    fn rounded_window_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    fn window_rounding_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let on = self.settings.read(cx).rounded_window();
+        let current = self.settings.read(cx).window_rounding();
+
+        let picker = Picker::new(WINDOW_ROUNDING, &self.popovers, current.label())
+            .width(Picker::NARROW)
+            .items(Rounding::ALL.into_iter().map(|rounding| {
+                MenuItem::new(rounding.id(), rounding.label())
+                    .selected(current == rounding)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_window_rounding(rounding, cx)
+                        });
+                        cx.notify();
+                    }))
+            }));
 
         self.row(
-            t!("settings-rounded-window"),
-            t!("settings-rounded-window-detail"),
+            t!("settings-window-rounding"),
+            t!("settings-window-rounding-detail"),
             muted,
             small,
-            Switch::new("rounded-window", on)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_rounded_window(!on, cx));
-                }))
-                .into_any_element(),
+            picker.into_any_element(),
         )
     }
 

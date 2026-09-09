@@ -8,7 +8,7 @@ const SYSTEM_ACTS: bool = cfg!(target_os = "windows");
 const DOT: Pixels = px(12.);
 const GAP: Pixels = px(8.);
 const GLYPH: Pixels = px(7.);
-const GROUP: &str = "mac-controls";
+const GROUP: &str = "traffic-light-controls";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Control {
@@ -30,9 +30,9 @@ impl Control {
 
     fn id(self) -> &'static str {
         match self {
-            Self::Minimize => "mac-minimize",
-            Self::Maximize | Self::Restore => "mac-maximize",
-            Self::Close => "mac-close",
+            Self::Minimize => "traffic-light-minimize",
+            Self::Maximize | Self::Restore => "traffic-light-maximize",
+            Self::Close => "traffic-light-close",
         }
     }
 
@@ -57,18 +57,18 @@ impl Control {
     }
 }
 
-/// macOS-styled traffic-light window controls: three plain colored dots that only reveal
-/// their glyph on hover, in the fixed close/minimize/maximize order and coloring macOS uses
-/// (not themed — the whole point of this style is the recognizable, unthemed convention).
+/// Traffic-light styled window controls: three plain colored dots that only reveal their
+/// glyph on hover, in the familiar close/minimize/maximize order and coloring (not themed —
+/// the whole point of this style is the recognizable, unthemed convention).
 /// Position mirrors [`crate::WindowControls`]'s own `leading` flag: on the left the order
 /// reads red, yellow, green; on the right it's mirrored so close stays at the outer edge.
 #[derive(IntoElement)]
-pub struct MacControls {
+pub struct TrafficLightControls {
     base: Div,
     leading: bool,
 }
 
-impl MacControls {
+impl TrafficLightControls {
     pub fn new(leading: bool) -> Self {
         Self {
             base: div(),
@@ -77,13 +77,13 @@ impl MacControls {
     }
 }
 
-impl Styled for MacControls {
+impl Styled for TrafficLightControls {
     fn style(&mut self) -> &mut StyleRefinement {
         self.base.style()
     }
 }
 
-impl RenderOnce for MacControls {
+impl RenderOnce for TrafficLightControls {
     fn render(mut self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let supported = window.window_controls();
         let maximized = window.is_maximized();

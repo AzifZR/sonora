@@ -508,6 +508,11 @@ impl Render for PlayerBar {
             .child(clock_label(total, false))
             .into_any_element();
 
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(self.settings.read(cx));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<Pixels> = None;
+
         let base = div()
             .flex()
             .w_full()
@@ -515,6 +520,7 @@ impl Render for PlayerBar {
             .flex_none()
             .px_5()
             .when(stacked, |this| this.py_2())
+            .when_some(radius, |this, radius| this.rounded_b(radius))
             .when(!theme.transparent, |this| this.bg(theme.secondary))
             .border_t_1()
             .border_color(theme.border)

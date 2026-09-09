@@ -45,7 +45,7 @@ pub use tags::{TagState, Tags};
 pub use toast::{Outcome, Target, Toast, Toasts};
 pub use updates::{Release, UpdateState, Updates};
 pub use usage::Usage;
-pub use window_shape::{apply_rounded_window, install_rounded_window_hook};
+pub use window_shape::{apply_window_rounding, install_rounded_window_hook};
 
 use std::future::Future;
 use std::sync::Arc;

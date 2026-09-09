@@ -58,10 +58,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Settings > Accounts with the server address, a username and a password. Your Library then lists
   the whole server, songs included, with a Favorites only filter for what you starred.
 
-- On Windows, Sonora's window corners can be rounded from Appearance, matching Windows 11's
-  native look.
-- Window controls can be drawn as macOS-style traffic-light dots from Appearance, on Windows and
-  Linux. They follow the existing controls-side setting, same as the standard controls.
+- Sonora's own window corners can be rounded from Appearance, with the radius picked the same
+  way as the UI corner radius: Square, Subtle, Rounded or Round. On Windows this maps onto DWM's
+  own rounded presets; on Linux and FreeBSD it applies with client-side decorations, where the
+  compositor otherwise leaves the window square.
+- Window controls can be drawn as traffic-light dots from Appearance, on Windows and Linux. They
+  follow the existing controls-side setting, same as the standard controls.
 
 ### Changed
 

@@ -78,7 +78,7 @@ pub struct Root {
     _adaptive: Entity<Adaptive>,
     background: Option<gpui::WindowBackgroundAppearance>,
     #[cfg(target_os = "windows")]
-    rounded: Option<bool>,
+    rounded: Option<ui::Rounding>,
 }
 
 impl Root {
@@ -589,15 +589,25 @@ impl Render for Root {
 
         // Windows can only round a window's corners while it's opaque (DWM never rounds a
         // per-pixel-alpha window), so this only takes effect once `backdrop` above lands on
-        // `Opaque`.
+        // `Opaque`; Linux/FreeBSD round their own chrome directly instead, below.
         #[cfg(target_os = "windows")]
         {
-            let rounded = Sonora::global(cx).settings.read(cx).rounded_window();
-            if self.rounded != Some(rounded) {
-                self.rounded = Some(rounded);
-                state::apply_rounded_window(window, rounded, cx);
+            let rounding = Sonora::global(cx).settings.read(cx).window_rounding();
+            if self.rounded != Some(rounding) {
+                self.rounded = Some(rounding);
+                state::apply_window_rounding(window, rounding, cx);
             }
         }
+
+        // GPUI can't clip a subtree to a rounded parent (its content mask is a plain
+        // rectangle), so on Linux/FreeBSD each edge of the chrome that actually touches a
+        // corner rounds itself to match — see `chrome::window_radius`, and `TitleBar` /
+        // `PlayerBar` for the top and bottom edges. Rounding the root too keeps its own
+        // background quad correct and costs nothing.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(Sonora::global(cx).settings.read(cx));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<gpui::Pixels> = None;
 
         let root = div()
             .relative()
@@ -605,6 +615,9 @@ impl Render for Root {
             .font(ui_font(cx))
             .flex_col()
             .size_full()
+            .when_some(radius, |this, radius| {
+                this.rounded(radius).overflow_hidden()
+            })
             .bg(theme.background)
             .text_color(theme.foreground)
             .on_mouse_down(
