@@ -637,37 +637,29 @@ impl SettingsView {
 
         let picker = Picker::new(BACKDROP, &self.popovers, look.backdrop.label())
             .width(Picker::NARROW)
-            .items(Backdrop::available().iter().map(|backdrop| {
+            .items(Backdrop::ALL.into_iter().map(|backdrop| {
                 let overrides = overrides.clone();
                 MenuItem::new(backdrop.id(), backdrop.label())
-                    .selected(look.backdrop == *backdrop)
+                    .selected(look.backdrop == backdrop)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        // A visible backdrop needs a lowered alpha to show through,
-                        // so picking one at 100% opacity picks a sensible level too.
-                        // Plain leaves the slider wherever the user had it.
-                        let visible = *backdrop != Backdrop::Plain && look.transparency == 0.;
-                        let transparency = match visible {
-                            true => BACKDROP_TRANSPARENCY,
-                            false => look.transparency,
+                        let opaque = !look.transparent || look.transparency == 0.;
+                        let visible = backdrop != Backdrop::Plain && opaque;
+                        let look = match visible {
+                            true => Look {
+                                transparent: true,
+                                transparency: BACKDROP_TRANSPARENCY,
+                                ..look
+                            },
+                            false => look,
                         };
-                        let transparent = transparency > 0.;
                         this.settings.update(cx, |settings, cx| {
                             settings.set_backdrop(backdrop.id(), cx);
                             if visible {
                                 settings.set_transparent(true, cx);
-                                settings.set_transparency(transparency, cx);
+                                settings.set_transparency(BACKDROP_TRANSPARENCY, cx);
                             }
                         });
-                        Theme::set(
-                            Look {
-                                backdrop: *backdrop,
-                                transparent,
-                                transparency,
-                                ..look
-                            },
-                            &overrides,
-                            cx,
-                        );
+                        Theme::set(Look { backdrop, ..look }, &overrides, cx);
                         cx.notify();
                     }))
             }));

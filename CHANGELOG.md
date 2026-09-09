@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Appearance settings carry a Backdrop picker. Blur draws the window over a blurred desktop, and
+  choosing it at full opacity lowers the opacity so the blur has something to show through.
+
 ### Fixed
 
 - Windows no longer draws its own minimize, maximize and close buttons beside the ones Sonora
