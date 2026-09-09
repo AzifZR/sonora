@@ -218,10 +218,6 @@ player-previous = Previous track
 player-next = Next track
 player-fullscreen = Fullscreen
 player-fullscreen-leave = Leave fullscreen
-player-sleep = Sleep timer
-player-sleep-off = Off
-player-sleep-end-of-track = End of track
-player-sleep-minutes = { $count } mins
 fullscreen-artwork = Artwork
 
 # filters
@@ -510,6 +506,10 @@ settings-gapless = Gapless playback
 settings-gapless-detail = Runs one track into the next without a pause, the way an album was sequenced
 settings-sleep = Sleep timer
 settings-sleep-detail = Lets the music stop on its own after a set time, so it can play you to sleep
+settings-sleep-configure = Configure…
+settings-sleep-off = Off
+settings-sleep-end-of-track = End of track
+settings-sleep-minutes = { $count } mins
 settings-panel-lyrics-size = Lyrics size (panel)
 settings-panel-lyrics-size-detail = Size of the lyrics text in the side panel, on top of the base font size
 settings-fullscreen-lyrics-size = Lyrics size (fullscreen)

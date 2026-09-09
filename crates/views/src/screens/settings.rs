@@ -2,18 +2,21 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use crate::shared::local;
 use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, Task, Window, div,
-    font, px,
+    AnyElement, App, Context, Entity, FontWeight, MouseUpEvent, Pixels, Render, SharedString, Task,
+    Window, div, font, px,
 };
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{
+    AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sleep, Sonora,
+};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
@@ -43,6 +46,12 @@ const ENTRIES: &str = "entries";
 const MOTION: &str = "motion";
 const PACE: &str = "pace";
 const SAVER: &str = "saver";
+const SLEEP: &str = "sleep";
+const SLEEP_MAX_MINUTES: u64 = 120;
+const SLEEP_MAGNETS: [u64; 4] = [15, 30, 45, 60];
+const SLEEP_MAGNET_WEIGHT: usize = 4;
+const SLEEP_LAST: usize =
+    SLEEP_MAX_MINUTES as usize + SLEEP_MAGNETS.len() * (SLEEP_MAGNET_WEIGHT - 1) + 1;
 
 enum Row {
     Item(AnyElement),
@@ -128,6 +137,8 @@ pub struct SettingsView {
     tab: SettingsTab,
     scrollbar: Entity<Scrollbar>,
     opacity: ScrubberState,
+    sleep: ScrubberState,
+    pending_sleep: Option<Option<Sleep>>,
     popovers: Popovers,
     secret: Entity<Input>,
     server: Entity<Input>,
@@ -173,6 +184,8 @@ impl SettingsView {
             tab: SettingsTab::General,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
             opacity: ScrubberState::new("opacity"),
+            sleep: ScrubberState::new("sleep"),
+            pending_sleep: None,
             popovers: Popovers::default(),
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
             server: cx.new(|cx| Input::new("login-server-hint", cx)),
@@ -1249,22 +1262,88 @@ impl SettingsView {
         let small = theme.text(Text::Small);
         let on = self.settings.read(cx).sleep_timer();
 
+        let picker = Picker::plain(SLEEP, &self.popovers, t!("settings-sleep-configure"))
+            .width(Picker::REGULAR)
+            .selected(self.playback.read(cx).sleep().is_some())
+            .items(match self.popovers.shows(SLEEP) {
+                true => vec![self.sleep_dial(cx)],
+                false => Vec::new(),
+            });
+        let action = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .when(on, |this| this.child(picker))
+            .child(
+                Switch::new("sleep-timer", on).on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
+                    if on {
+                        this.popovers.close();
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
+                    }
+                })),
+            );
+
         self.row(
             t!("settings-sleep"),
             t!("settings-sleep-detail"),
             muted,
             small,
-            Switch::new("sleep-timer", on)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
-                    if on {
-                        this.playback
-                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
-                    }
-                }))
-                .into_any_element(),
+            action.into_any_element(),
         )
+    }
+
+    /// The slider that arms the timer: off at the left, end of track at the right, minutes in
+    /// between, with the quarter hours widened.
+    fn sleep_dial(&self, cx: &mut Context<Self>) -> MenuItem {
+        let theme = *cx.theme();
+        let current = self
+            .pending_sleep
+            .unwrap_or_else(|| self.playback.read(cx).sleep());
+
+        let dial = div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .gap_2()
+            .py_1()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .text_size(theme.text(Text::Small))
+                    .child(
+                        div()
+                            .text_color(theme.muted_foreground)
+                            .child(t!("settings-sleep")),
+                    )
+                    .child(sleep_label(current)),
+            )
+            .child(
+                Scrubber::new(&self.sleep, sleep_slot(current) as f32 / SLEEP_LAST as f32)
+                    .colors(
+                        theme.progress_bar,
+                        theme.muted_foreground.opacity(0.3),
+                        theme.foreground,
+                    )
+                    .on_move(cx.listener(|this, fraction: &f32, _, cx| {
+                        this.pending_sleep = Some(sleep_at_fraction(*fraction));
+                        cx.notify();
+                    }))
+                    .on_release(cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                        let Some(sleep) = this.pending_sleep.take() else {
+                            return;
+                        };
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(sleep, cx));
+                    })),
+            );
+
+        MenuItem::new("sleep-dial", "").content(dial)
     }
 
     fn updates_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2218,4 +2297,57 @@ fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedStri
 
 fn resolved(text_system: &gpui::TextSystem, family: &str) -> gpui::FontId {
     text_system.resolve_font(&font(SharedString::from(family.to_owned())))
+}
+
+fn sleep_slot(sleep: Option<Sleep>) -> usize {
+    match sleep {
+        None => 0,
+        Some(Sleep::EndOfTrack) => SLEEP_LAST,
+        Some(Sleep::After(after)) => minute_slot(after.as_secs() / 60),
+    }
+}
+
+fn sleep_at_fraction(fraction: f32) -> Option<Sleep> {
+    let slot = (fraction.clamp(0., 1.) * SLEEP_LAST as f32).round() as usize;
+    match slot {
+        0 => None,
+        SLEEP_LAST => Some(Sleep::EndOfTrack),
+        slot => Some(Sleep::After(Duration::from_secs(slot_minute(slot) * 60))),
+    }
+}
+
+fn minute_slot(minutes: u64) -> usize {
+    let minutes = minutes.clamp(1, SLEEP_MAX_MINUTES);
+    let earlier_magnets = SLEEP_MAGNETS
+        .iter()
+        .filter(|magnet| **magnet < minutes)
+        .count();
+    let width = match SLEEP_MAGNETS.contains(&minutes) {
+        true => SLEEP_MAGNET_WEIGHT,
+        false => 1,
+    };
+    minutes as usize + earlier_magnets * (SLEEP_MAGNET_WEIGHT - 1) + (width - 1) / 2
+}
+
+fn slot_minute(slot: usize) -> u64 {
+    let mut first = 1;
+    for minute in 1..=SLEEP_MAX_MINUTES {
+        let width = match SLEEP_MAGNETS.contains(&minute) {
+            true => SLEEP_MAGNET_WEIGHT,
+            false => 1,
+        };
+        if slot < first + width {
+            return minute;
+        }
+        first += width;
+    }
+    SLEEP_MAX_MINUTES
+}
+
+fn sleep_label(sleep: Option<Sleep>) -> SharedString {
+    match sleep {
+        Some(Sleep::EndOfTrack) => t!("settings-sleep-end-of-track"),
+        Some(Sleep::After(after)) => t!("settings-sleep-minutes", count = after.as_secs() / 60),
+        None => t!("settings-sleep-off"),
+    }
 }
