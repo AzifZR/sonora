@@ -685,8 +685,8 @@ nav-pin = Pin
 toast-library-pin-limit = Spotify’s pin limit has been reached. Unpin another item first.
 toast-library-pin-failed = Could not update the pin in Spotify.
 
-nav-pin-spotify = Pin in Spotify
-nav-unpin-spotify = Unpin in Spotify
 
 nav-sidebar-library = Sidebar library
 nav-return-top = Return to top
+
+nav-show-only-pinned = Show only pinned

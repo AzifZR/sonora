@@ -632,18 +632,22 @@ impl Library {
         self.sidebar_pin_task.is_some()
     }
 
-    pub fn set_sidebar_pinned(&mut self, uri: String, pinned: bool, cx: &mut Context<Self>) {
+    pub fn set_sidebar_pinned(
+        &mut self,
+        uri: String,
+        pinned: bool,
+        on_updated: impl FnOnce(&mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.sidebar_pin_pending() {
             return;
         }
-        let Some(item) = self
+        if self
             .sidebar_items
             .as_ref()
             .and_then(|items| items.iter().find(|item| item.uri == uri))
-        else {
-            return;
-        };
-        if item.pinned == pinned {
+            .is_some_and(|item| item.pinned == pinned)
+        {
             return;
         }
         let Some(client) = self.session.read(cx).client_of(Shelf::Streaming) else {
@@ -673,6 +677,7 @@ impl Library {
                 this.sidebar_pin_task = None;
                 match result {
                     Ok((music::LibraryPinResult::Updated, items)) => {
+                        on_updated(cx);
                         if this.sidebar_order == order {
                             this.sidebar_items = items;
                         }

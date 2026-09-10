@@ -695,6 +695,19 @@ pub(crate) fn playlist_menu(
     opened_here: bool,
     cx: &App,
 ) -> Menu {
+    let pin =
+        Pin::new(PinKind::Playlist, &playlist.id, &playlist.name).cover(playlist.cover.clone());
+    playlist_menu_base(playlist, playback, opened_here, cx)
+        .item(MenuItem::separator("playlist-pin-separator"))
+        .item(pin_action(&pin, cx))
+}
+
+fn playlist_menu_base(
+    playlist: Playlist,
+    playback: Entity<Playback>,
+    opened_here: bool,
+    cx: &App,
+) -> Menu {
     let opened = playlist.id.clone();
     let played = Origin::playlist(playlist.id.clone()).named(playlist.name.clone());
     let next = playlist.id.clone();
@@ -815,7 +828,7 @@ pub(crate) fn item_menu(
             .read(cx)
             .playlist(&pin.id)
             .cloned()
-            .map(|playlist| playlist_menu(playlist, playback.clone(), false, cx)),
+            .map(|playlist| playlist_menu_base(playlist, playback.clone(), false, cx)),
         PinKind::Artist => Some(artist_menu(
             library
                 .read(cx)
@@ -939,6 +952,85 @@ fn transport_items(pin: &Pin, playback: Entity<Playback>) -> Vec<MenuItem> {
                 }),
         ],
     }
+}
+
+pub(crate) fn pin_action(pin: &Pin, cx: &App) -> MenuItem {
+    let app = Sonora::global(cx);
+    let settings = app.settings.clone();
+    let library = app.library.clone();
+    let session = app.session.clone();
+    let slug = session.read(cx).slug_for(&pin.id);
+    let local_pinned = settings
+        .read(cx)
+        .pinned(&session.read(cx).active_slugs())
+        .iter()
+        .any(|local| local.same(pin));
+    let uri = (slug == Some("spotify") && pin.kind != PinKind::Song).then(|| {
+        let kind = match pin.kind {
+            PinKind::Playlist => "playlist",
+            PinKind::Album => "album",
+            PinKind::Artist => "artist",
+            PinKind::Song => unreachable!(),
+        };
+        if pin.id.starts_with("spotify:") {
+            pin.id.clone()
+        } else {
+            format!("spotify:{kind}:{}", pin.id)
+        }
+    });
+    let remote_pinned = uri.as_ref().is_some_and(|uri| {
+        library
+            .read(cx)
+            .sidebar_items()
+            .is_some_and(|items| items.iter().any(|item| &item.uri == uri && item.pinned))
+    });
+    let pinned = local_pinned || remote_pinned;
+    let pending = uri.is_some() && library.read(cx).sidebar_pin_pending();
+    let pin = pin.clone();
+    let item = MenuItem::new(
+        "pin",
+        i18n::lookup(if pinned { "nav-unpin" } else { "nav-pin" }, None),
+    )
+    .icon("icons/pin.svg");
+    let item = if pending || slug.is_none() {
+        item.disabled()
+    } else {
+        item
+    };
+    item.on_click(move |_, _, cx| {
+        let Some(slug) = slug else {
+            return;
+        };
+        if let Some(uri) = &uri {
+            if local_pinned && !remote_pinned {
+                settings.update(cx, |settings, cx| settings.unpin(slug, &pin, cx));
+            } else {
+                let settings = settings.clone();
+                let pin = pin.clone();
+                library.update(cx, |library, cx| {
+                    library.set_sidebar_pinned(
+                        uri.clone(),
+                        !pinned,
+                        move |cx| {
+                            if local_pinned {
+                                settings.update(cx, |settings, cx| settings.unpin(slug, &pin, cx));
+                            }
+                        },
+                        cx,
+                    )
+                });
+            }
+        } else {
+            let slugs = session.read(cx).active_slugs();
+            settings.update(cx, |settings, cx| {
+                if pinned {
+                    settings.unpin(slug, &pin, cx);
+                } else {
+                    settings.pin(slug, pin.clone(), None, &slugs, cx);
+                }
+            });
+        }
+    })
 }
 
 fn unpin_item(pin: &Pin) -> MenuItem {

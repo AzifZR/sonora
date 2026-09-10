@@ -618,8 +618,8 @@ nav-pin = Закріпити
 toast-library-pin-limit = Досягнуто ліміту закріплень Spotify. Спочатку відкріпіть інший елемент.
 toast-library-pin-failed = Не вдалося змінити закріплення у Spotify.
 
-nav-pin-spotify = Закріпити у Spotify
-nav-unpin-spotify = Відкріпити у Spotify
 
 nav-sidebar-library = Бібліотека в бічній панелі
 nav-return-top = Повернутися нагору
+
+nav-show-only-pinned = Лише закріплені

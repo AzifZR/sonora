@@ -201,6 +201,7 @@ struct Values {
     local_folders: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hidden_nav: Vec<String>,
+    sidebar_only_pinned: bool,
     appearance: Appearance,
 }
 
@@ -258,6 +259,7 @@ impl Default for Values {
             local_folder: None,
             local_folders: Vec::new(),
             hidden_nav: Vec::new(),
+            sidebar_only_pinned: true,
             appearance: Appearance::default(),
         }
     }
@@ -282,6 +284,7 @@ struct StateValues {
     sorting: HashMap<String, Option<Sorting>>,
     views: HashMap<String, Mode>,
     pinned: Vec<Held>,
+    sidebar_pin_order: Vec<String>,
     resume: Option<Resume>,
     window: Option<Frame>,
     system_theme: String,
@@ -304,6 +307,7 @@ impl Default for StateValues {
             sorting: HashMap::new(),
             views: HashMap::new(),
             pinned: Vec::new(),
+            sidebar_pin_order: Vec::new(),
             resume: None,
             window: None,
             system_theme: ThemeKind::Dark.id().to_owned(),
@@ -1011,6 +1015,24 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    pub fn sidebar_pin_order(&self) -> &[String] {
+        &self.state.sidebar_pin_order
+    }
+
+    pub fn set_sidebar_pin_order(&mut self, order: Vec<String>, cx: &mut Context<Self>) {
+        self.state.sidebar_pin_order = order;
+        self.schedule_state_save(cx);
+    }
+
+    pub fn sidebar_only_pinned(&self) -> bool {
+        self.values.sidebar_only_pinned
+    }
+
+    pub fn set_sidebar_only_pinned(&mut self, only_pinned: bool, cx: &mut Context<Self>) {
+        self.values.sidebar_only_pinned = only_pinned;
+        self.schedule_save(cx);
+    }
+
     pub fn nav_shown(&self, entry: &str) -> bool {
         !self.values.hidden_nav.iter().any(|hidden| hidden == entry)
     }
@@ -1393,6 +1415,21 @@ mod tests {
             }),
             ..Resume::default()
         }
+    }
+
+    #[test]
+    fn sidebar_filter_defaults_on_and_order_roundtrips() {
+        let values: Values = serde_json::from_str("{}").unwrap();
+        assert!(values.sidebar_only_pinned);
+        let values: Values = serde_json::from_str(r#"{"sidebar_only_pinned":false}"#).unwrap();
+        assert!(!values.sidebar_only_pinned);
+        let state = StateValues {
+            sidebar_pin_order: vec!["spotify:playlist:b".into(), "spotify:playlist:a".into()],
+            ..StateValues::default()
+        };
+        let saved = serde_json::to_string(&state).unwrap();
+        let loaded: StateValues = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded.sidebar_pin_order, state.sidebar_pin_order);
     }
 
     #[test]

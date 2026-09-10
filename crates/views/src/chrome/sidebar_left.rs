@@ -1,6 +1,6 @@
 use ui::{
     ActiveTheme as _, Button, Card, DraggedPin, Edge, Panel, Pin, Pinnable as _, Popup, SNUG,
-    Scrollbar, Shield, Side, Tabs, Text, drop_gap, drop_marker,
+    Scrollbar, Shield, Side, Spot, Tabs, Text, drop_gap, drop_marker,
 };
 
 use crate::shared::pins::Pinned as _;
@@ -17,8 +17,10 @@ use state::{
     AppSettings, Library, LibraryState, Origin, Playback, PlaybackState, Session, Shelf, Sonora,
 };
 
-use crate::shared::menus::{ItemMenu, item_menu, pin_menu};
+use crate::shared::menus::{ItemMenu, item_menu, pin_action, pin_menu};
 use music::{LibraryItem, LibraryItemKind, LibraryOrder};
+
+const SPOTIFY_PINS: &str = "sidebar-spotify-pins";
 
 const NAV: [(Option<NavEntry>, &str, Destination); 6] = [
     (Some(NavEntry::Home), "icons/house.svg", Destination::Home),
@@ -82,6 +84,7 @@ pub(crate) struct SidebarLeft {
     settings_open: bool,
     dropping: bool,
     drop_gap: Option<usize>,
+    library_drop_gap: Option<usize>,
     playback: Entity<Playback>,
     track_menu: ItemMenu,
     context_menu: Option<(Pin, Point<Pixels>)>,
@@ -138,6 +141,7 @@ impl SidebarLeft {
             settings_open,
             dropping: false,
             drop_gap: None,
+            library_drop_gap: None,
             playback,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
@@ -173,45 +177,37 @@ impl SidebarLeft {
         let (menu, position) = if let Some((item, position)) = &self.library_context_menu {
             let pin = item_pin(item);
             let mut menu = match &pin {
-                Some(pin) if self.context_menu.is_some() => {
-                    pin_menu(pin, &self.track_menu, self.playback.clone(), cx)
-                }
                 Some(pin) => item_menu(pin, &self.track_menu, self.playback.clone(), cx),
                 None => ui::Menu::new("sidebar-library-context"),
             };
-            let library = self.library.read(cx);
-            if let Some(current) = library
-                .sidebar_items()
-                .and_then(|items| items.iter().find(|current| current.uri == item.uri))
-            {
-                let pinned = current.pinned;
-                let pending = library.sidebar_pin_pending();
-                let uri = current.uri.clone();
-                let library = self.library.clone();
-                if pin.is_some() {
-                    menu = menu.item(ui::MenuItem::separator("library-pin-separator"));
+            if let Some(pin) = &pin {
+                menu = menu
+                    .item(ui::MenuItem::separator("library-pin-separator"))
+                    .item(pin_action(pin, cx));
+            } else {
+                let library = self.library.read(cx);
+                if let Some(current) = library
+                    .sidebar_items()
+                    .and_then(|items| items.iter().find(|current| current.uri == item.uri))
+                {
+                    let pinned = current.pinned;
+                    let pending = library.sidebar_pin_pending();
+                    let uri = current.uri.clone();
+                    let library = self.library.clone();
+                    menu = menu.item(
+                        ui::MenuItem::new(
+                            "library-pin",
+                            i18n::lookup(if pinned { "nav-unpin" } else { "nav-pin" }, None),
+                        )
+                        .icon("icons/pin.svg")
+                        .when(pending, ui::MenuItem::disabled)
+                        .on_click(move |_, _, cx| {
+                            library.update(cx, |library, cx| {
+                                library.set_sidebar_pinned(uri.clone(), !pinned, |_| {}, cx);
+                            });
+                        }),
+                    );
                 }
-                menu = menu.item(
-                    ui::MenuItem::new(
-                        "library-pin",
-                        i18n::lookup(
-                            match (self.context_menu.is_some(), pinned) {
-                                (true, true) => "nav-unpin-spotify",
-                                (true, false) => "nav-pin-spotify",
-                                (false, true) => "nav-unpin",
-                                (false, false) => "nav-pin",
-                            },
-                            None,
-                        ),
-                    )
-                    .icon("icons/pin.svg")
-                    .when(pending, ui::MenuItem::disabled)
-                    .on_click(move |_, _, cx| {
-                        library.update(cx, |library, cx| {
-                            library.set_sidebar_pinned(uri.clone(), !pinned, cx)
-                        });
-                    }),
-                );
             }
             (menu, *position)
         } else {
@@ -341,18 +337,8 @@ impl SidebarLeft {
                     let Some(gap) = drop_gap(event.bounds, event.event.position, index) else {
                         return;
                     };
-                    let dragged = event.drag(cx).pin.clone();
-                    let slugs = this.session.read(cx).active_slugs();
-                    let from = this
-                        .settings
-                        .read(cx)
-                        .pinned(&slugs)
-                        .iter()
-                        .position(|it| it.same(&dragged));
-                    let gap = match from {
-                        Some(from) if gap == from || gap == from + 1 => None,
-                        _ => Some(gap),
-                    };
+                    // Keep the actual gap even for a no-op drop: None means append.
+                    let gap = Some(gap);
                     if this.drop_gap != gap {
                         this.drop_gap = gap;
                         cx.notify();
@@ -371,13 +357,32 @@ impl SidebarLeft {
             .into_any_element()
     }
 
+    fn local_pins(&self, cx: &App) -> Vec<Pin> {
+        let slugs = self.session.read(cx).active_slugs();
+        self.settings
+            .read(cx)
+            .pinned(&slugs)
+            .into_iter()
+            .filter(|pin| {
+                !self.library.read(cx).sidebar_items().is_some_and(|items| {
+                    items.iter().any(|item| {
+                        item.pinned && item_pin(item).is_some_and(|remote| remote.same(pin))
+                    })
+                })
+            })
+            .collect()
+    }
+
     fn library_order(&self, local_pins: &[Pin], cx: &App) -> Vec<LibraryItem> {
         let library = self.library.read(cx);
         let items = library
             .sidebar_items()
             .map(<[LibraryItem]>::to_vec)
             .unwrap_or_else(|| fallback_library(library.state(Shelf::Streaming)));
-        without_local_pins(items, local_pins)
+        let settings = self.settings.read(cx);
+        let mut items = without_local_pins(items, local_pins, settings.sidebar_only_pinned());
+        order_library_pins(&mut items, settings.sidebar_pin_order());
+        items
     }
 
     fn library_toolbar(&self, empty: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -413,12 +418,14 @@ impl SidebarLeft {
                     .gap(theme.metrics.pad / 2.)
                     .child(
                         div().flex_1().min_w_0().overflow_hidden().child(
-                            ui::eyebrow(i18n::lookup("nav-library", None), cx)
+                            ui::eyebrow(i18n::lookup("nav-pinned", None), cx)
                                 .w_full()
                                 .truncate(),
                         ),
                     )
                     .when(self.session.read(cx).authenticated(), |row| {
+                        let only_pinned = self.settings.read(cx).sidebar_only_pinned();
+                        let settings = self.settings.clone();
                         let selected = self.library.read(cx).sidebar_order();
                         let library = self.library.clone();
                         row.child(
@@ -460,7 +467,23 @@ impl SidebarLeft {
                                                 });
                                             },
                                         )
-                                    })),
+                                    }))
+                                    .item(ui::MenuItem::separator("sidebar-filter-separator"))
+                                    .item(
+                                        ui::MenuItem::new(
+                                            "sidebar-only-pinned",
+                                            i18n::lookup("nav-show-only-pinned", None),
+                                        )
+                                        .checked(only_pinned)
+                                        .on_click(
+                                            move |_, _, cx| {
+                                                settings.update(cx, |settings, cx| {
+                                                    settings
+                                                        .set_sidebar_only_pinned(!only_pinned, cx)
+                                                });
+                                            },
+                                        ),
+                                    ),
                             ),
                         )
                     }),
@@ -479,7 +502,19 @@ impl SidebarLeft {
             .into_any_element()
     }
 
-    fn library_card(&self, item: LibraryItem, cx: &mut Context<Self>) -> AnyElement {
+    fn library_card(
+        &self,
+        index: usize,
+        count: usize,
+        item: LibraryItem,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let draggable = item.pinned.then(|| item_pin(&item)).flatten();
+        let edge = match self.library_drop_gap {
+            Some(gap) if gap == index => Some(Edge::Above),
+            Some(gap) if gap == index + 1 && index + 1 == count => Some(Edge::Below),
+            _ => None,
+        };
         let context_item = item.clone();
         let origin = item_origin(&item);
         let destination = item_destination(&item);
@@ -490,7 +525,7 @@ impl SidebarLeft {
                 .and_then(|origin| self.playback.read(cx).playing_from(origin)),
             Some(PlaybackState::Playing)
         );
-        sidebar_card(
+        let card = sidebar_card(
             gpui::SharedString::from(format!("sidebar-library-{}", item.uri)),
             item.name.clone().into(),
             active,
@@ -524,7 +559,42 @@ impl SidebarLeft {
             this.library_context_menu = Some((context_item.clone(), event.position));
             cx.notify();
         }))
-        .into_any_element()
+        .when_some(draggable, |card, pin| {
+            card.pin_from(pin, Spot::new(SPOTIFY_PINS, index))
+                .on_drag_move(
+                    cx.listener(move |this, event: &DragMoveEvent<DraggedPin>, _, cx| {
+                        if event.drag(cx).spot(SPOTIFY_PINS).is_none() {
+                            return;
+                        }
+                        let gap = drop_gap(event.bounds, event.event.position, index);
+                        if this.library_drop_gap != gap {
+                            this.library_drop_gap = gap;
+                            cx.notify();
+                        }
+                    }),
+                )
+                .on_drop(cx.listener(move |this, dragged: &DraggedPin, _, cx| {
+                    if dragged.spot(SPOTIFY_PINS).is_none() {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    let local = this.local_pins(cx);
+                    let items = this.library_order(&local, cx);
+                    if let Some(gap) = this.library_drop_gap.take() {
+                        if let Some(order) = moved_library_pins(&items, &dragged.pin, gap) {
+                            this.settings.update(cx, |settings, cx| {
+                                settings.set_sidebar_pin_order(order, cx)
+                            });
+                        }
+                    }
+                    cx.notify();
+                }))
+        });
+        div()
+            .relative()
+            .child(card)
+            .when_some(edge, |row, edge| row.child(drop_marker(edge, cx)))
+            .into_any_element()
     }
 
     fn navigation(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -733,12 +803,12 @@ impl Render for SidebarLeft {
         if !cx.has_active_drag() {
             self.dropping = false;
             self.drop_gap = None;
+            self.library_drop_gap = None;
         }
 
-        let slugs = self.session.read(cx).active_slugs();
         let library_enabled = self.settings.read(cx).nav_shown(NavEntry::LibraryList.id());
         let local_pins = if library_enabled {
-            self.settings.read(cx).pinned(&slugs)
+            self.local_pins(cx)
         } else {
             Vec::new()
         };
@@ -794,7 +864,12 @@ impl Render for SidebarLeft {
                     let card = if row < local_count {
                         this.pin_row(row, local_pins[row].clone(), local_count, cx)
                     } else {
-                        this.library_card(order[row - local_count].clone(), cx)
+                        this.library_card(
+                            row - local_count,
+                            order.len(),
+                            order[row - local_count].clone(),
+                            cx,
+                        )
                     };
                     div().w_full().px_3().pb_1().child(card).into_any_element()
                 }
@@ -820,11 +895,32 @@ impl Render for SidebarLeft {
                 }
             }))
             .on_drop(cx.listener(|this, dragged: &DraggedPin, _, cx| {
+                if dragged.spot(SPOTIFY_PINS).is_some() {
+                    this.library_drop_gap = None;
+                    cx.notify();
+                    return;
+                }
                 let gap = this.drop_gap.take();
                 this.dropping = false;
                 let pin = dragged.pin.clone();
                 if let Some(slug) = this.session.read(cx).slug_for(&pin.id) {
                     let slugs = this.session.read(cx).active_slugs();
+                    let stored = this.settings.read(cx).pinned(&slugs);
+                    let visible = this.local_pins(cx);
+                    // Resolve the visible gap through its neighbouring pin before
+                    // passing it to settings, which counts hidden duplicates too.
+                    let gap = gap.map(|gap| {
+                        visible
+                            .get(gap)
+                            .and_then(|next| stored.iter().position(|pin| pin.same(next)))
+                            .or_else(|| {
+                                visible
+                                    .last()
+                                    .and_then(|last| stored.iter().position(|pin| pin.same(last)))
+                                    .map(|index| index + 1)
+                            })
+                            .unwrap_or(stored.len())
+                    });
                     this.settings
                         .update(cx, |settings, cx| settings.pin(slug, pin, gap, &slugs, cx));
                 }
@@ -901,7 +997,7 @@ fn library_caption(kind: &str, subtitle: &str, pinned: bool, cx: &App) -> impl I
                     .path(icons::path("icons/pin.svg"))
                     .flex_none()
                     .size(theme.text(Text::Tiny))
-                    .text_color(theme.pinned),
+                    .text_color(theme.primary),
             )
         })
         .child(div().min_w_0().truncate().child(label))
@@ -934,9 +1030,40 @@ fn sidebar_card(
         .hover(move |style| style.bg(accent))
 }
 
-fn without_local_pins(mut items: Vec<LibraryItem>, local_pins: &[Pin]) -> Vec<LibraryItem> {
+fn order_library_pins(items: &mut [LibraryItem], order: &[String]) {
+    let mut pinned: Vec<_> = items.iter().filter(|item| item.pinned).cloned().collect();
+    pinned.sort_by_key(|item| {
+        order
+            .iter()
+            .position(|uri| uri == &item.uri)
+            .unwrap_or(usize::MAX)
+    });
+    let mut pinned = pinned.into_iter();
+    for item in items.iter_mut().filter(|item| item.pinned) {
+        *item = pinned.next().unwrap();
+    }
+}
+
+fn moved_library_pins(items: &[LibraryItem], pin: &Pin, gap: usize) -> Option<Vec<String>> {
+    let from = items.iter().position(|item| {
+        item.pinned && item_pin(item).is_some_and(|candidate| candidate.same(pin))
+    })?;
+    let mut order: Vec<_> = items.iter().map(|item| item.uri.clone()).collect();
+    let moved = order.remove(from);
+    let target = gap.min(items.len()).saturating_sub(usize::from(from < gap));
+    order.insert(target, moved);
+    order.retain(|uri| items.iter().any(|item| item.pinned && &item.uri == uri));
+    Some(order)
+}
+
+fn without_local_pins(
+    mut items: Vec<LibraryItem>,
+    local_pins: &[Pin],
+    only_pinned: bool,
+) -> Vec<LibraryItem> {
     items.retain(|item| {
-        item.kind != LibraryItemKind::LikedSongs
+        (!only_pinned || item.pinned)
+            && item.kind != LibraryItemKind::LikedSongs
             && item_pin(item).is_none_or(|pin| !local_pins.iter().any(|local| local.same(&pin)))
     });
     items
@@ -1089,6 +1216,51 @@ mod tests {
     use super::expanded;
 
     #[test]
+    fn spotify_pin_order_moves_both_directions_and_survives_refresh() {
+        let make = |id: &str, pinned| music::LibraryItem {
+            uri: format!("spotify:playlist:{id}"),
+            name: id.into(),
+            subtitle: String::new(),
+            cover: None,
+            kind: music::LibraryItemKind::Playlist,
+            pinned,
+        };
+        let mut items = vec![
+            make("a", true),
+            make("b", true),
+            make("c", true),
+            make("other", false),
+        ];
+        let a = super::item_pin(&items[0]).unwrap();
+        let order = super::moved_library_pins(&items, &a, 3).unwrap();
+        super::order_library_pins(&mut items, &order);
+        assert_eq!(
+            items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
+            ["b", "c", "a", "other"]
+        );
+        let order = super::moved_library_pins(&items, &a, 0).unwrap();
+        let mut refreshed = vec![
+            make("c", true),
+            make("other", false),
+            make("b", true),
+            make("a", true),
+            make("new", true),
+        ];
+        super::order_library_pins(&mut refreshed, &order);
+        assert_eq!(
+            refreshed
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "other", "b", "c", "new"]
+        );
+        assert!(
+            super::moved_library_pins(&refreshed, &super::item_pin(&refreshed[1]).unwrap(), 0)
+                .is_none()
+        );
+    }
+
+    #[test]
     fn merged_library_keeps_local_pins_once_and_preserves_spotify_order() {
         use music::{LibraryItem, LibraryItemKind};
         use ui::{Pin, PinKind};
@@ -1120,6 +1292,7 @@ mod tests {
                 item("last", LibraryItemKind::Artist, false),
             ],
             &local,
+            false,
         );
         assert_eq!(
             rows.iter()
@@ -1128,6 +1301,9 @@ mod tests {
             vec!["first", "shared", "last"]
         );
         assert!(rows[0].pinned);
+        let pinned = super::without_local_pins(rows, &local, true);
+        assert_eq!(pinned.len(), 1);
+        assert_eq!(pinned[0].name, "first");
     }
 
     #[test]
