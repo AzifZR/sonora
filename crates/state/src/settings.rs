@@ -181,6 +181,9 @@ struct Values {
     normalisation: bool,
     gapless: bool,
     sleep_timer: bool,
+    discord_presence: bool,
+    discord_as_provider: bool,
+    discord_without_details: bool,
     lyrics_for_local_files: bool,
     karaoke_lyrics: bool,
     blur_lyrics: bool,
@@ -242,6 +245,9 @@ impl Default for Values {
             normalisation: false,
             gapless: true,
             sleep_timer: false,
+            discord_presence: false,
+            discord_as_provider: false,
+            discord_without_details: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
@@ -556,6 +562,21 @@ impl AppSettings {
         self.values.sleep_timer
     }
 
+    /// Whether the playing track is published to a local Discord client.
+    pub fn discord_presence(&self) -> bool {
+        self.values.discord_presence
+    }
+
+    /// Whether the Discord status names the provider the track comes from rather than Sonora.
+    pub fn discord_as_provider(&self) -> bool {
+        self.values.discord_as_provider
+    }
+
+    /// Whether the Discord status leaves the track out and only says that music is playing.
+    pub fn discord_without_details(&self) -> bool {
+        self.values.discord_without_details
+    }
+
     pub fn lyrics_for_local_files(&self) -> bool {
         self.values.lyrics_for_local_files
     }
@@ -790,6 +811,21 @@ impl AppSettings {
 
     pub fn set_sleep_timer(&mut self, sleep_timer: bool, cx: &mut Context<Self>) {
         self.values.sleep_timer = sleep_timer;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_presence(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_presence = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_as_provider(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_as_provider = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_without_details(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_without_details = enabled;
         self.schedule_save(cx);
     }
 

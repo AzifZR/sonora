@@ -474,6 +474,7 @@ settings-tab-general = Ogólne
 settings-tab-appearance = Wygląd
 settings-tab-playback = Odtwarzanie
 settings-tab-privacy = Prywatność
+settings-tab-integrations = Integracje
 settings-theme = Motyw
 settings-theme-detail = Paleta kolorów aplikacji
 settings-opacity = Krycie

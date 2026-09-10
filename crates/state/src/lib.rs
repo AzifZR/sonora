@@ -2,6 +2,7 @@ mod artist;
 mod catalog;
 mod cover;
 mod detail;
+mod discord;
 mod genre;
 mod history;
 mod home;
@@ -156,7 +157,15 @@ pub fn init(
     });
     let cover = cx.new(|cx| Cover::new(session.clone(), playback.clone(), io.clone(), cx));
     let updates = cx.new(|cx| Updates::new(settings.clone(), io.clone(), cx));
-    let usage = cx.new(|cx| Usage::new(session.clone(), database, io, cx));
+    let usage = cx.new(|cx| Usage::new(session.clone(), database, io.clone(), cx));
+    discord::attach(
+        playback.clone(),
+        settings.clone(),
+        session.clone(),
+        cover.clone(),
+        io,
+        cx,
+    );
 
     cx.set_global(Sonora {
         session,
