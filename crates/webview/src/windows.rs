@@ -25,25 +25,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Interface as _, PCWSTR, PWSTR, w};
 
+use crate::native::{Fetch, HEIGHT, MIN_HEIGHT, MIN_WIDTH, Reading, WIDTH};
 use crate::{Cookie, Target};
 
-pub(crate) const SUPPORTED: bool = true;
-
-const WIDTH: i32 = 520;
-const HEIGHT: i32 = 720;
-const MIN_WIDTH: i32 = 400;
-const MIN_HEIGHT: i32 = 500;
+pub(crate) fn supported() -> bool {
+    true
+}
 
 thread_local! {
     /// Controllers are keyed by their host window so the Win32 callback can resize them.
     static CONTROLLERS: RefCell<HashMap<isize, ICoreWebView2Controller>> = RefCell::new(HashMap::new());
-}
-
-/// The state of one `GetCookies` round trip.
-enum Fetch {
-    Idle,
-    InFlight,
-    Done(Vec<Cookie>),
 }
 
 pub(crate) struct Window {
@@ -86,23 +77,27 @@ impl Window {
         let mut source = PWSTR::null();
         unsafe { view.Source(&mut source) }.ok()?;
         let source = CoTaskMemPWSTR::from(source).to_string();
-        host(&source)
+        crate::native::host(&source)
     }
 
     /// Hands back a finished cookie fetch, or starts one when none is in flight.
     pub(crate) fn fetch(&mut self) -> Option<Vec<Cookie>> {
-        let state = std::mem::replace(&mut *self.fetch.borrow_mut(), Fetch::Idle);
-        match state {
-            Fetch::Done(cookies) => return Some(cookies),
-            Fetch::InFlight => {
-                *self.fetch.borrow_mut() = Fetch::InFlight;
-                return None;
-            }
-            Fetch::Idle => {}
+        let reading = self.fetch.borrow_mut().take();
+        match reading {
+            Reading::Done(cookies) => return Some(cookies),
+            Reading::Waiting => return None,
+            Reading::Start => {}
         }
-
-        let cookies = self.browser.borrow().as_ref()?.cookies.clone();
-        *self.fetch.borrow_mut() = Fetch::InFlight;
+        // The controller may not have arrived yet; the claimed slot goes back if it has not.
+        let Some(cookies) = self
+            .browser
+            .borrow()
+            .as_ref()
+            .map(|browser| browser.cookies.clone())
+        else {
+            *self.fetch.borrow_mut() = Fetch::Idle;
+            return None;
+        };
         let slot = self.fetch.clone();
         let handler = GetCookiesCompletedHandler::create(Box::new(move |result, found| {
             let cookies = match result
@@ -133,10 +128,7 @@ impl Window {
 
     /// Forgets a finished fetch taken on a page that turned out not to be the landing.
     pub(crate) fn discard(&mut self) {
-        let mut fetch = self.fetch.borrow_mut();
-        if matches!(*fetch, Fetch::Done(_)) {
-            *fetch = Fetch::Idle;
-        }
+        self.fetch.borrow_mut().discard();
     }
 
     pub(crate) fn close(&self) {
@@ -342,20 +334,6 @@ fn browser_user_agent(
         .collect::<Vec<_>>()
         .join(" ");
     Ok(wide(&value))
-}
-
-/// Extracts the host from the absolute HTTP(S) URLs WebView2 reports as its source.
-fn host(url: &str) -> Option<String> {
-    let (_, rest) = url.split_once("://")?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let authority = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let host = authority
-        .strip_prefix('[')
-        .and_then(|host| host.split_once(']').map(|(host, _)| host))
-        .unwrap_or_else(|| authority.split(':').next().unwrap_or(authority));
-    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 fn resize(controller: ICoreWebView2Controller, hwnd: HWND) {

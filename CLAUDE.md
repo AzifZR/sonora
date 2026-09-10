@@ -34,7 +34,7 @@ crates/
   i18n/       Fluent localization: the `t!` macro, locale selection, embedded .ftl
   icons/      the icon packs: registry, active pack, path resolution, AssetSource
   embed/      build-script helper that walks a folder and writes include_bytes! literals
-  webview/    a native browser window with a throwaway session, for cookie sign-ins (macOS only so far)
+  webview/    a native browser window with a throwaway session, for cookie sign-ins
 ```
 
 Dependency direction is strict; do not create a back edge:
@@ -65,11 +65,19 @@ sonora → views → state → music
 - `embed` is a build-support crate. Nothing links it at runtime; it is a `[build-dependencies]`
   entry of `icons` and `sonora` only.
 - `webview` is a leaf that knows nothing about gpui or music: `Login::open(Target)` puts up a
-  platform window over a non-persistent data store and `poll()` answers `Pending`, `Closed` or
-  `Cookies(header)`. Only `macos.rs` exists (AppKit + WebKit through `objc2`); `unsupported.rs`
-  is the stub the other platforms fill in with WebView2 and webkit2gtk, behind the same five
-  calls. Both AppKit and WebKit are main-thread only, so `state::Session` opens and polls it
-  from the GPUI foreground executor.
+  platform window over a throwaway session and `poll()` answers `Pending`, `Closed` or
+  `Cookies(header)`. Every backend fits the same five calls. `macos.rs` is AppKit and WebKit
+  through `objc2`, `windows.rs` a Win32 host around an InPrivate WebView2, `linux.rs` a GTK window
+  around WebKitGTK, and `unsupported.rs` is what any other platform gets. `native.rs` holds what
+  the three share — the window's size, the source-url-to-host parsing, and the `Fetch`/`Reading`
+  cookie round trip every backend drives the same way — so a new backend writes only the calls
+  that are actually its own. Nothing links webkit2gtk: `linux.rs` reaches it through `dlopen`, one
+  handle whose dependencies also answer for gtk, glib and soup, so a system without it just
+  answers `supported() == false` and the Flatpak runtime, which ships no webkitgtk, keeps
+  building as it is. Each toolkit pins its window
+  to one thread: AppKit and WebView2 to GPUI's main thread, which is why `state::Session` opens
+  and polls from the foreground executor, and GTK to a resident thread of the backend's own, since
+  GPUI talks to X11 or Wayland itself and never initialises GTK.
 
 ## Building
 
@@ -78,6 +86,10 @@ sonora → views → state → music
 The GPUI renderer is Vulkan-based, so a Vulkan ICD is a **runtime** requirement, not just a build
 one. Link-time deps: `vulkan-loader`, `wayland`, `libxkbcommon`, `libxcb`, `libx11`, `libxcursor`,
 `libxi`, `fontconfig`, `freetype`, `alsa-lib`, `dbus`, `sqlite`, plus `pkg-config`.
+
+webkit2gtk is deliberately **not** on that list: `crates/webview` reaches
+`libwebkit2gtk-4.1.so.0` (or the older `4.0.so.37`) through `dlopen` when a provider signs in with
+cookies, so a Linux system without it loses that one window and nothing else.
 
 `.cargo/config.toml` passes `-fuse-ld=mold` for `x86_64-unknown-linux-gnu`, so **mold must be on
 PATH** for that target. If it isn't, either install mold or build with

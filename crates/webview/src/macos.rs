@@ -16,23 +16,15 @@ use objc2_foundation::{
 };
 use objc2_web_kit::{WKHTTPCookieStore, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore};
 
+use crate::native::{Fetch, HEIGHT, MIN_HEIGHT, MIN_WIDTH, Reading, WIDTH};
 use crate::{Cookie, Target};
 
-pub(crate) const SUPPORTED: bool = true;
-
-const WIDTH: f64 = 520.;
-const HEIGHT: f64 = 720.;
-const MIN_WIDTH: f64 = 400.;
-const MIN_HEIGHT: f64 = 500.;
 /// Safari's own user agent. WebKit's default leaves out the `Version/… Safari/…` tail, and
 /// Google refuses to sign in a browser it reads as embedded.
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 
-/// The state of one `getAllCookies` round trip.
-enum Fetch {
-    Idle,
-    InFlight,
-    Done(Vec<Cookie>),
+pub(crate) fn supported() -> bool {
+    true
 }
 
 pub(crate) struct Window {
@@ -48,7 +40,10 @@ impl Window {
             MainThreadMarker::new().context("the sign-in window has to open on the main thread")?;
         let url = NSURL::URLWithString(&NSString::from_str(&target.url))
             .context("cannot parse the sign-in url")?;
-        let frame = NSRect::new(NSPoint::new(0., 0.), NSSize::new(WIDTH, HEIGHT));
+        let frame = NSRect::new(
+            NSPoint::new(0., 0.),
+            NSSize::new(f64::from(WIDTH), f64::from(HEIGHT)),
+        );
 
         // The view copies the configuration, so the store is read back off the view afterwards.
         let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
@@ -76,7 +71,7 @@ impl Window {
         // Closing must not free the window under the `Retained` this struct holds.
         unsafe { window.setReleasedWhenClosed(false) };
         window.setTitle(&NSString::from_str(&target.title));
-        window.setMinSize(NSSize::new(MIN_WIDTH, MIN_HEIGHT));
+        window.setMinSize(NSSize::new(f64::from(MIN_WIDTH), f64::from(MIN_HEIGHT)));
         window.setContentView(Some(&view));
         window.center();
         window.makeKeyAndOrderFront(None);
@@ -102,16 +97,12 @@ impl Window {
 
     /// Hands back a finished cookie fetch, or starts one when none is in flight.
     pub(crate) fn fetch(&mut self) -> Option<Vec<Cookie>> {
-        let state = std::mem::replace(&mut *self.fetch.borrow_mut(), Fetch::Idle);
-        match state {
-            Fetch::Done(cookies) => return Some(cookies),
-            Fetch::InFlight => {
-                *self.fetch.borrow_mut() = Fetch::InFlight;
-                return None;
-            }
-            Fetch::Idle => {}
+        let reading = self.fetch.borrow_mut().take();
+        match reading {
+            Reading::Done(cookies) => return Some(cookies),
+            Reading::Waiting => return None,
+            Reading::Start => {}
         }
-        *self.fetch.borrow_mut() = Fetch::InFlight;
         let slot = self.fetch.clone();
         let done = RcBlock::new(move |found: NonNull<NSArray<NSHTTPCookie>>| {
             let found = unsafe { found.as_ref() };
@@ -131,10 +122,7 @@ impl Window {
 
     /// Forgets a finished fetch taken on a page that turned out not to be the landing.
     pub(crate) fn discard(&mut self) {
-        let mut fetch = self.fetch.borrow_mut();
-        if matches!(*fetch, Fetch::Done(_)) {
-            *fetch = Fetch::Idle;
-        }
+        self.fetch.borrow_mut().discard();
     }
 
     pub(crate) fn close(&self) {

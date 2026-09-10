@@ -5,8 +5,8 @@
 //! back and the window closes. No browser profile ever holds that session, so nothing rotates the
 //! cookies behind the app's back the way a shared browser session does.
 //!
-//! macOS and Windows have native backends. Every other platform reports `supported() == false`
-//! and `Login::open` fails, so a caller falls back to pasting a header.
+//! macOS, Windows and Linux have native backends. Every other platform reports
+//! `supported() == false` and `Login::open` fails, so a caller falls back to pasting a header.
 
 use anyhow::Result;
 
@@ -20,9 +20,17 @@ mod windows;
 #[cfg(target_os = "windows")]
 use windows as platform;
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux as platform;
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod native;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod unsupported;
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 use unsupported as platform;
 
 /// What a sign-in window is asked to do. `url` opens first. The user is through once the page is on
@@ -61,9 +69,10 @@ pub struct Login {
     window: platform::Window,
 }
 
-/// Whether this platform can open a sign-in window at all.
+/// Whether this platform can open a sign-in window at all. On Linux the answer is only known once
+/// webkit2gtk has been looked for, so ask it where a pause would not be felt.
 pub fn supported() -> bool {
-    platform::SUPPORTED
+    platform::supported()
 }
 
 impl Login {

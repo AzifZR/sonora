@@ -226,7 +226,9 @@ impl Session {
                 slug: provider.slug(),
                 name: provider.name(),
                 options: provider.sign_in_options(),
-                web_sign_in: webview::supported() && provider.web_sign_in().is_some(),
+                // Asked in this order because answering `supported` costs a library load on
+                // Linux, and only a provider that signs in with cookies is worth it.
+                web_sign_in: provider.web_sign_in().is_some() && webview::supported(),
                 stored: provider.stored(),
                 active: self.active == Some(index),
                 pending: self.awaiting == Some(index),

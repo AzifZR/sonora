@@ -1,11 +1,13 @@
-//! The backend for platforms without a sign-in window yet. Windows wants WebView2 and Linux
-//! webkit2gtk; both fit the same five calls `macos.rs` implements.
+//! The backend for platforms without a sign-in window yet. macOS, Windows and Linux each have
+//! one; anything else fits the same five calls they implement.
 
 use anyhow::{Result, bail};
 
 use crate::{Cookie, Target};
 
-pub(crate) const SUPPORTED: bool = false;
+pub(crate) fn supported() -> bool {
+    false
+}
 
 pub(crate) struct Window;
 
