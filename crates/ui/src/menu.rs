@@ -482,6 +482,9 @@ impl RenderOnce for Menu {
                 .min_w_0()
                 .items_center()
                 .justify_between()
+                // The gap is part of the row's own width, so a menu widens rather than letting
+                // a trailing mark crowd the label.
+                .gap_3()
                 .px_3()
                 .when_else(detailed, |this| this.py_2(), |this| this.py_1())
                 .rounded(tucked)
@@ -533,8 +536,12 @@ impl RenderOnce for Menu {
                                 .when_some(detail, |this, detail| this.child(detail)),
                         ),
                 )
-                .when(selected || checked, |this| this.child("✓"))
-                .when(submenu.is_some(), |this| this.child("›"))
+                .when(selected || checked, |this| {
+                    this.child(div().flex_none().child("✓"))
+                })
+                .when(submenu.is_some(), |this| {
+                    this.child(div().flex_none().child("›"))
+                })
                 .when_some(submenu_state, |this, state| {
                     this.on_hover(move |hovered, window, cx| {
                         state.near(Near::Item, *hovered, window.window_handle(), cx)

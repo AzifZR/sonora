@@ -58,7 +58,7 @@ pub use filters::{
     Filter, FilterChange, FlagAxis, RangeAxis, RangeScrubber, RangeState, SortAxis, Unit,
 };
 pub use form::{FORM_CONTEXT, Submit};
-pub use glide::Glide;
+pub use glide::{Glide, ScrollPosition};
 pub use info_card::{Fact, InfoCard};
 pub use inline_links::{InlineLink, InlineLinks};
 pub use input::{
@@ -84,7 +84,7 @@ pub use pin::{DraggedPin, Pin, PinKind, Pinnable, Spot};
 pub use popover::{Popover, Popovers};
 pub use popup::Popup;
 pub use scrollbar::{Scrollbar, quantize, scrolled};
-pub use scroller::Scroller;
+pub use scroller::{Scroller, perch_room, perched, return_top};
 pub use scrubber::{Scrubber, ScrubberState};
 pub use separator::Separator;
 pub use shield::Shield;

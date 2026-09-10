@@ -14,6 +14,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on
   System and it follows a Chinese desktop on its own.
 
+- The sidebar keeps one Pinned section for everything you pin, whatever provider it came from, so
+  a streamed album can sit between two local playlists. The order is the one you drag, and it
+  holds even where the provider cannot reorder its own pins. Click the heading to fold the
+  section away; it starts folded.
+
+- Pin sits in the context menu of every album, artist, playlist and song, not only the ones
+  already in the sidebar.
+
+- Pinning something from Spotify pins it in Spotify too, and anything pinned there turns up in
+  Sonora on its own.
+
+- The button beside Pinned sorts the section alphabetically or by type. Picking the same order
+  again turns it around, and once more hands the list back to the order you dragged.
+
+- Show full library, in that same menu, lists the rest of your albums, artists and playlists
+  under the pins, with a mark on the pinned ones.
+
+- A Back to top button appears in the sidebar and in the queue once either is scrolled, and
+  glides back rather than jumping.
+
 ### Changed
 
 - The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens

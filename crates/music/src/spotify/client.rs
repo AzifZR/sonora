@@ -212,16 +212,45 @@ impl MusicApi for LibrespotClient {
         playlists::remove_track(&self.session, playlist_id, track_id).await
     }
 
-    async fn playlists(&self, limit: u32) -> Result<Vec<Playlist>> {
-        let body = self
-            .session
-            .spclient()
-            .get_rootlist(0, Some(limit as usize))
-            .await?;
+    async fn set_library_item_pinned(
+        &self,
+        uri: &str,
+        pinned: bool,
+    ) -> Result<crate::LibraryPinResult> {
+        pathfinder::set_library_item_pinned(&self.session, uri, pinned).await
+    }
 
-        let rootlist =
-            RootList::parse_from_bytes(&body).context("cannot decode the rootlist protobuf")?;
-        let mut playlists = wire::playlists_from(&rootlist);
+    async fn library_items(
+        &self,
+        order: crate::LibraryOrder,
+    ) -> Result<Option<Vec<crate::LibraryItem>>> {
+        pathfinder::library(&self.session, order).await.map(Some)
+    }
+
+    async fn playlists(&self, limit: u32) -> Result<Vec<Playlist>> {
+        let mut playlists = Vec::new();
+        let mut offset = 0;
+        let mut seen = HashSet::new();
+        while playlists.len() < limit as usize {
+            let body = self
+                .session
+                .spclient()
+                .get_rootlist(offset, Some(300))
+                .await?;
+            let rootlist =
+                RootList::parse_from_bytes(&body).context("cannot decode the rootlist protobuf")?;
+            let count = rootlist.contents.items.len();
+            playlists.extend(
+                wire::playlists_from(&rootlist)
+                    .into_iter()
+                    .filter(|playlist| seen.insert(playlist.id.clone())),
+            );
+            offset += count;
+            if count == 0 || !rootlist.contents.truncated() {
+                break;
+            }
+        }
+        playlists.truncate(limit as usize);
 
         let owners = playlists
             .iter()
