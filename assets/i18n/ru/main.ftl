@@ -606,3 +606,12 @@ tags-isrc = ISRC
 tags-comment = Комментарий
 toast-tags-saved = Теги «{ $name }» сохранены
 toast-tags-failed = Не удалось сохранить теги
+
+nav-pin = Закрепить
+toast-library-pin-limit = Достигнут лимит закреплений Spotify. Сначала открепите другой элемент.
+toast-library-pin-failed = Не удалось изменить закрепление в Spotify.
+nav-nothing-pinned = Здесь пусто
+nav-pins-alphabetical = По алфавиту
+nav-pins-kind = По типу
+nav-show-full-library = Показывать всю медиатеку
+nav-return-top = Наверх

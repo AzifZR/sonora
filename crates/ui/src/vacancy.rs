@@ -6,6 +6,7 @@ use crate::theme::ActiveTheme as _;
 
 const GLYPH: f32 = 0.35;
 const GLYPH_SIZE: f32 = 0.5;
+const COMPACT_SIZE: f32 = 0.22;
 
 #[derive(IntoElement)]
 pub struct Vacancy {
@@ -13,6 +14,7 @@ pub struct Vacancy {
     label: SharedString,
     icon: Option<SharedString>,
     action: Option<AnyElement>,
+    compact: bool,
 }
 
 impl Vacancy {
@@ -22,7 +24,14 @@ impl Vacancy {
             label: label.into(),
             icon: None,
             action: None,
+            compact: false,
         }
+    }
+
+    /// A smaller glyph, for a narrow place like the sidebar.
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
+        self
     }
 
     pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
@@ -49,11 +58,16 @@ impl RenderOnce for Vacancy {
             label,
             icon,
             action,
+            compact,
         } = self;
 
         let theme = *cx.theme();
         let overrides = std::mem::take(base.style());
-        let glyph = theme.metrics.cover * GLYPH_SIZE;
+        let glyph = theme.metrics.cover
+            * match compact {
+                true => COMPACT_SIZE,
+                false => GLYPH_SIZE,
+            };
 
         let mut vacancy = base
             .flex()
@@ -66,7 +80,10 @@ impl RenderOnce for Vacancy {
                     svg()
                         .path(icons::path(icon))
                         .size(glyph)
-                        .mt(theme.metrics.inset)
+                        .mt(match compact {
+                            true => theme.metrics.pad,
+                            false => theme.metrics.inset,
+                        })
                         .flex_none()
                         .text_color(theme.muted_foreground.opacity(GLYPH)),
                 )

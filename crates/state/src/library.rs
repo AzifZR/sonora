@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use gpui::{Context, Entity, SharedString, Task};
+use gpui::{App, Context, Entity, SharedString, Task};
 use music::{Album, MusicApi, Playlist, SavedArtist, Shape, Track};
 
 use crate::{Io, Outcome, Session, SessionEvent, Target, Toasts, join, mosaic};
@@ -531,6 +531,9 @@ pub struct Library {
     session: Entity<Session>,
     io: Io,
     playlist_task: Option<Task<()>>,
+    sidebar_task: Option<Task<()>>,
+    sidebar_pin_task: Option<Task<()>>,
+    sidebar_items: Option<Vec<music::LibraryItem>>,
     pending: HashMap<String, Task<()>>,
     pending_albums: HashMap<String, Task<()>>,
     pending_artists: HashMap<String, Task<()>>,
@@ -543,14 +546,22 @@ impl Library {
     pub fn new(session: Entity<Session>, io: Io, cx: &mut Context<Self>) -> Self {
         cx.subscribe(&session, |this, session, event, cx| match event {
             SessionEvent::SignedIn => {
+                this.sidebar_pin_task = None;
                 if !session.read(cx).authenticated() {
+                    this.sidebar_task = None;
+                    this.sidebar_items = None;
                     this.held_mut(Shelf::Streaming).clear();
                     cx.notify();
                     return;
                 }
+                this.sidebar_items = None;
+                this.sync_sidebar(cx);
                 this.load(Shelf::Streaming, cx);
             }
             SessionEvent::SignedOut => {
+                this.sidebar_pin_task = None;
+                this.sidebar_task = None;
+                this.sidebar_items = None;
                 this.contents.clear();
                 this.reading.clear();
                 this.mosaics.clear();
@@ -581,6 +592,9 @@ impl Library {
             session,
             io,
             playlist_task: None,
+            sidebar_task: None,
+            sidebar_pin_task: None,
+            sidebar_items: None,
             pending: HashMap::new(),
             pending_albums: HashMap::new(),
             pending_artists: HashMap::new(),
@@ -593,6 +607,115 @@ impl Library {
             library.load(Shelf::Local, cx);
         }
         library
+    }
+
+    pub fn sidebar_items(&self) -> Option<&[music::LibraryItem]> {
+        self.sidebar_items.as_deref()
+    }
+
+    pub fn sidebar_pin_pending(&self) -> bool {
+        self.sidebar_pin_task.is_some()
+    }
+
+    /// Changes the provider's own pin for `uri` and calls `done` with whether it stuck. A second
+    /// change replaces the one in flight, so the last one wins and only its `done` runs.
+    pub fn set_sidebar_pinned(
+        &mut self,
+        uri: String,
+        pinned: bool,
+        done: impl FnOnce(bool, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .sidebar_items
+            .as_ref()
+            .and_then(|items| items.iter().find(|item| item.uri == uri))
+            .is_some_and(|item| item.pinned == pinned)
+        {
+            return;
+        }
+        let Some(client) = self.session.read(cx).client_of(Shelf::Streaming) else {
+            return;
+        };
+        // Keep a polling response from overwriting the result of this mutation.
+        self.sidebar_task = None;
+        let io = self.io.clone();
+        let order = music::LibraryOrder::default();
+        self.sidebar_pin_task = Some(cx.spawn(async move |this, cx| {
+            let result = join(io.spawn(async move {
+                let result = client.set_library_item_pinned(&uri, pinned).await?;
+                if result == music::LibraryPinResult::LimitReached {
+                    return Ok((result, None));
+                }
+                let items = client.library_items(order).await?;
+                anyhow::ensure!(
+                    items.as_ref().is_some_and(|items| items
+                        .iter()
+                        .any(|item| item.uri == uri && item.pinned == pinned)),
+                    "Spotify did not confirm the updated library pin"
+                );
+                Ok((result, items))
+            }))
+            .await;
+            this.update(cx, |this, cx| {
+                this.sidebar_pin_task = None;
+                match result {
+                    Ok((music::LibraryPinResult::Updated, items)) => {
+                        this.sidebar_items = items;
+                        done(true, cx);
+                    }
+                    Ok((music::LibraryPinResult::LimitReached, _)) => {
+                        Toasts::show(Outcome::Failed, "toast-library-pin-limit", cx);
+                        done(false, cx);
+                    }
+                    Err(error) => {
+                        log::warn!("library: cannot update the library pin: {error:#}");
+                        Toasts::show(Outcome::Failed, "toast-library-pin-failed", cx);
+                        done(false, cx);
+                    }
+                }
+                this.sync_sidebar(cx);
+                cx.notify();
+            })
+            .ok();
+        }));
+        cx.notify();
+    }
+
+    fn sync_sidebar(&mut self, cx: &mut Context<Self>) {
+        if self.sidebar_pin_pending() {
+            return;
+        }
+        self.sidebar_task = None;
+        let Some(client) = self.session.read(cx).client_of(Shelf::Streaming) else {
+            return;
+        };
+        let io = self.io.clone();
+        let order = music::LibraryOrder::default();
+        self.sidebar_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                let client = client.clone();
+                let loaded = join(io.spawn(async move { client.library_items(order).await })).await;
+                if this
+                    .update(cx, |this, cx| match loaded {
+                        Ok(items) if items != this.sidebar_items => {
+                            this.sidebar_items = items;
+                            cx.notify();
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::warn!("library: cannot synchronize sidebar library: {error:#}")
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_secs(60))
+                    .await;
+            }
+        }));
     }
 
     fn held(&self, shelf: Shelf) -> &Held {
@@ -1305,6 +1428,9 @@ impl Library {
     }
 
     pub fn refresh(&mut self, shelf: Shelf, cx: &mut Context<Self>) {
+        if shelf == Shelf::Streaming {
+            self.sync_sidebar(cx);
+        }
         self.load(shelf, cx);
     }
 

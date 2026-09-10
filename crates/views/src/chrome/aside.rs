@@ -876,37 +876,40 @@ impl Aside {
             })
     }
 
-    fn follow(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let theme = *cx.theme();
+    fn follow(&self, cx: &mut Context<Self>) -> Option<Div> {
         if self.tab != SideTab::Lyrics || self.pinned {
             return None;
         }
 
         Some(
-            div()
-                .absolute()
-                .when_else(self.titled, |this| this.bottom_3(), |this| this.bottom_16())
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                    div().flex().flex_none().block_mouse_except_scroll().child(
-                        Button::new("resume-pin")
-                            .ghost()
-                            .small()
-                            .icon("icons/undo-2.svg")
-                            .tooltip("lyrics-follow")
-                            .rounded_full()
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.popover)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.anchor_verse();
-                                cx.notify();
-                            })),
-                    ),
-                ),
+            self.raised(ui::perched(
+                Button::new("resume-pin")
+                    .icon("icons/undo-2.svg")
+                    .tooltip("lyrics-follow")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.anchor_verse();
+                        cx.notify();
+                    })),
+                cx,
+            )),
         )
+    }
+
+    /// The trip back to the top of the queue, once it has scrolled far enough to want one.
+    fn recall(&self, cx: &mut Context<Self>) -> Option<Div> {
+        if self.tab != SideTab::Queue {
+            return None;
+        }
+
+        Some(self.raised(ui::return_top("queue-return-top", &self.scrollbar, cx)?))
+    }
+
+    /// Lifts a floating control clear of the transport a stripped aside leaves underneath it.
+    fn raised(&self, perch: Div) -> Div {
+        match self.titled {
+            true => perch,
+            false => perch.bottom_16(),
+        }
     }
 
     fn verses(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1618,7 +1621,7 @@ impl Aside {
         uniform_list(
             "queue-rows",
             sections.len() + TAIL_ROWS,
-            cx.processor(move |_, range: Range<usize>, window, cx| {
+            cx.processor(move |_, range: Range<usize>, _window, cx| {
                 let (revision, slots) = {
                     let queue = queue.read(cx);
                     let slots = range
@@ -1640,7 +1643,7 @@ impl Aside {
                     .map(|(index, slot, found)| match (slot, found) {
                         (None, _) => div().into_any_element(),
                         (Some(Slot::Header(key)), _) => {
-                            let label = section_label(key, window, cx);
+                            let label = section_label(key, cx);
                             match (key, from.clone()) {
                                 ("queue-now-playing", Some((name, place))) => label
                                     .w_full()
@@ -1777,7 +1780,8 @@ impl Render for Aside {
                                 .child(self.scrollbar.clone()),
                         )
                     })
-                    .children(self.follow(cx)),
+                    .children(self.follow(cx))
+                    .children(self.recall(cx)),
             )
             .children(self.menu(cx))
     }

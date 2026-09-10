@@ -23,15 +23,17 @@ pub enum NavEntry {
     Library,
     History,
     Local,
+    Pins,
 }
 
 impl NavEntry {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Home,
         Self::Search,
         Self::Library,
         Self::History,
         Self::Local,
+        Self::Pins,
     ];
 
     pub fn id(self) -> &'static str {
@@ -41,6 +43,7 @@ impl NavEntry {
             Self::Library => "library",
             Self::History => "history",
             Self::Local => "local",
+            Self::Pins => "sidebar-pins",
         }
     }
 
@@ -51,6 +54,7 @@ impl NavEntry {
             Self::Library => "nav-library",
             Self::History => "nav-history",
             Self::Local => "nav-local",
+            Self::Pins => "nav-pinned",
         }
     }
 }

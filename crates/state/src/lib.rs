@@ -9,6 +9,7 @@ mod home;
 mod library;
 mod lyrics;
 mod mosaic;
+mod pins;
 mod playback;
 mod profile;
 mod queue;
@@ -32,6 +33,7 @@ pub use history::{History, HistoryState};
 pub use home::Home;
 pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf};
 pub use lyrics::{Lyrics, LyricsState};
+pub use pins::{PinSort, Pins};
 pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;
 pub use queue::{Named, Queue, Resume, Stub};
@@ -103,6 +105,7 @@ pub struct Sonora {
     pub library: Entity<Library>,
     pub history: Entity<History>,
     pub lyrics: Entity<Lyrics>,
+    pub pins: Entity<Pins>,
     pub playback: Entity<Playback>,
     pub queue: Entity<Queue>,
     pub settings: Entity<AppSettings>,
@@ -159,6 +162,7 @@ pub fn init(
     let cover = cx.new(|cx| Cover::new(session.clone(), playback.clone(), io.clone(), cx));
     let updates = cx.new(|cx| Updates::new(settings.clone(), io.clone(), cx));
     let usage = cx.new(|cx| Usage::new(session.clone(), database, io.clone(), cx));
+    let pins = cx.new(|cx| Pins::new(settings.clone(), library.clone(), session.clone(), cx));
     discord::attach(
         playback.clone(),
         settings.clone(),
@@ -174,6 +178,7 @@ pub fn init(
         library,
         history,
         lyrics,
+        pins,
         playback,
         queue,
         settings,

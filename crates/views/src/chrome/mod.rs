@@ -21,7 +21,7 @@ use gpui::prelude::*;
 use gpui::{App, Div, Entity, Global, Pixels, Window, div};
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use state::AppSettings;
-use ui::{ActiveTheme as _, MIN_CONTENT, Room, eyebrow, snapped};
+use ui::{ActiveTheme as _, MIN_CONTENT, Room, eyebrow};
 
 /// The window's own corner radius, or `None` when it shouldn't visibly round: server-side
 /// decorations put the compositor in charge of the frame, and `Rounding::Square` is the
@@ -39,12 +39,12 @@ pub(crate) fn window_radius(settings: &AppSettings) -> Option<Pixels> {
     }
 }
 
-pub(crate) fn section_label(key: &'static str, window: &Window, cx: &App) -> Div {
+pub(crate) fn section_label(key: &'static str, cx: &App) -> Div {
     div()
         .flex()
         .flex_none()
         .items_end()
-        .h(snapped(cx.theme().metrics.list_row, window))
+        .h(cx.theme().metrics.list_row)
         .px_2()
         .pb_1()
         .child(eyebrow(i18n::lookup(key, None), cx))
