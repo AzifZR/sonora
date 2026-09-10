@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient, activity};
-use gpui::{App, AppContext as _, Context, Entity, Global};
+use gpui::{App, AppContext as _, Context, Entity, Global, Task};
 
 use crate::{AppSettings, Playback, PlaybackState, Sonora};
 
@@ -17,6 +17,9 @@ const REFRESH_EVERY: Duration = Duration::from_secs(30);
 /// was told: a seek changes neither track nor state, so without this the
 /// progress bar would drift until the next refresh.
 const SEEK_RESEND_SECS: u64 = 5;
+/// A pause that lasts this long turns into browsing: the player has no stop,
+/// so a paused track would otherwise sit on Discord forever.
+const PAUSE_BROWSING_AFTER: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone)]
 enum Command {
@@ -69,6 +72,7 @@ pub struct DiscordRpc {
     sender: Sender<Command>,
     shown: Option<Shown>,
     sent_pos: u64,
+    pause_timeout: Option<Task<()>>,
 }
 
 impl DiscordRpc {
@@ -95,6 +99,7 @@ impl DiscordRpc {
             sender,
             shown: None,
             sent_pos: 0,
+            pause_timeout: None,
         }
     }
 
@@ -180,6 +185,15 @@ impl DiscordRpc {
         }
         self.shown = Some(key);
         self.sent_pos = live_pos;
+        // A fresh pause arms the browsing timeout; anything else cancels it.
+        // Replacing the task restarts the delay.
+        self.pause_timeout = match class == 1 {
+            true => Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(PAUSE_BROWSING_AFTER).await;
+                this.update(cx, |this, cx| this.rest(cx)).ok();
+            })),
+            false => None,
+        };
 
         let _ = self.sender.send(Command::Update {
             title: track.name.clone(),
@@ -190,6 +204,26 @@ impl DiscordRpc {
             playing: class == 0,
             loading: class == 2,
         });
+    }
+
+    /// Turns a long pause into browsing, unless playback moved on meanwhile.
+    fn rest(&mut self, cx: &mut Context<Self>) {
+        self.pause_timeout = None;
+        let paused = matches!(self.playback.read(cx).state(), PlaybackState::Paused)
+            && self.shown.as_ref().is_some_and(|shown| shown.class == 1);
+        if !paused {
+            return;
+        }
+        self.shown = Some(Shown {
+            id: None,
+            name: String::new(),
+            artists: String::new(),
+            album: String::new(),
+            dur_secs: 0,
+            class: 3,
+        });
+        self.sent_pos = 0;
+        let _ = self.sender.send(Command::Browsing);
     }
 }
 
