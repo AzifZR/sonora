@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Sonora speaks Chinese. Pick 中文简体 under Settings > General > Language, or leave the language on
+  System and it follows a Chinese desktop on its own.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added
