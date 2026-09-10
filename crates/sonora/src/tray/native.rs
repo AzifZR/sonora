@@ -14,7 +14,7 @@ const PNG: &[u8] = match cfg!(target_os = "macos") {
 const MENU_ON_CLICK: bool = cfg!(target_os = "macos");
 
 pub struct Icon {
-    _icon: TrayIcon,
+    icon: TrayIcon,
     caption: IconMenuItem,
     toggle: MenuItem,
     previous: MenuItem,
@@ -98,7 +98,7 @@ impl Icon {
         }));
 
         Some(Self {
-            _icon: icon,
+            icon,
             caption,
             toggle,
             previous,
@@ -109,6 +109,11 @@ impl Icon {
     }
 
     pub fn show(&mut self, shown: &Shown) {
+        // the status notifier hosts read the caption off the tooltip themselves; here it has to
+        // be pushed, or hovering the icon only ever says Sonora
+        if let Err(error) = self.icon.set_tooltip(Some(&shown.caption)) {
+            log::warn!("tray: cannot set the tooltip: {error:#}");
+        }
         self.caption.set_text(&shown.caption);
         self.caption.set_icon(cover(shown.artwork.as_ref()));
         self.toggle.set_text(&shown.toggle);
