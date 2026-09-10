@@ -125,3 +125,18 @@ fn stem(icon: &str) -> &str {
     let name = icon.rsplit('/').next().unwrap_or(icon);
     name.strip_suffix(KIND).unwrap_or(name)
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn pin_is_available_in_every_pack_through_fallback() {
+        for pack in super::packs() {
+            let path = super::shown(pack, "icons/pin.svg");
+            assert!(
+                super::asset(&path).is_some(),
+                "pin missing from {}",
+                pack.id
+            );
+        }
+    }
+}

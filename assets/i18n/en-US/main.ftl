@@ -671,3 +671,16 @@ tags-isrc = ISRC
 tags-comment = Comment
 toast-tags-saved = Saved the tags for { $name }
 toast-tags-failed = The tags could not be saved
+
+nav-library-recents = Recents
+kind-audiobook = Audiobook
+kind-podcast = Podcast
+kind-folder = Folder
+
+nav-library-added = Recently Added
+nav-library-alphabetical = Alphabetical
+nav-library-creator = Creator
+
+nav-pin = Pin
+toast-library-pin-limit = Spotify’s pin limit has been reached. Unpin another item first.
+toast-library-pin-failed = Could not update the pin in Spotify.

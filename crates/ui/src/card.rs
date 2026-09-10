@@ -60,6 +60,7 @@ pub struct Card {
     underline: bool,
     playing: bool,
     chosen: bool,
+    compact: bool,
     action: Option<AnyElement>,
     drag_start: Option<DragStart>,
     menu: Option<Summon>,
@@ -95,10 +96,17 @@ impl Card {
             underline: false,
             playing: false,
             chosen: false,
+            compact: false,
             action: None,
             drag_start: None,
             menu: None,
         }
+    }
+
+    /// A dense library row using the same artwork, hover and transport controls.
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
+        self
     }
 
     pub fn skeleton(id: impl Into<ElementId>) -> Self {
@@ -303,16 +311,27 @@ impl RenderOnce for Card {
             underline,
             playing,
             chosen,
+            compact,
             action,
             drag_start,
             menu,
         } = self;
 
         let theme = *cx.theme();
-        let inset = theme.metrics.pad;
-        let height = snapped(theme.metrics.list_row, window);
+        let inset = theme.metrics.pad * if compact { 0.75 } else { 1. };
+        let height = snapped(
+            theme.metrics.list_row
+                - if compact {
+                    theme.metrics.pad / 2.
+                } else {
+                    Pixels::ZERO
+                },
+            window,
+        );
         let listed = art.is_none() && tile.is_none();
-        let art_radius = art_radius.or_else(|| tile.map(|_| theme.radius));
+        let art_radius = art_radius
+            .or_else(|| compact.then_some(theme.radius / 4.))
+            .or_else(|| tile.map(|_| theme.radius));
         let art = art.or(tile).unwrap_or(snapped(height - inset * 2., window));
         let hovered = match (hovered, fill) {
             (Some(style), _) => Some(style),
@@ -433,6 +452,7 @@ impl RenderOnce for Card {
             }
         };
 
+        let size = size.or_else(|| compact.then_some(Text::Small));
         let title = div()
             .id("card-title")
             .min_w_0()
@@ -466,7 +486,7 @@ impl RenderOnce for Card {
             false => div()
                 .min_w_0()
                 .truncate()
-                .text_size(theme.text(Text::Small))
+                .text_size(theme.text(if compact { Text::Tiny } else { Text::Small }))
                 .text_color(theme.muted_foreground)
                 .child(meta),
         });
@@ -477,9 +497,21 @@ impl RenderOnce for Card {
             .when_else(
                 tile.is_some(),
                 |this| this.flex_col().gap_2().w(art),
-                |this| this.items_center().gap_3().px(inset),
+                |this| {
+                    this.items_center()
+                        .gap(if compact {
+                            theme.metrics.pad
+                        } else {
+                            theme.metrics.pad * 1.5
+                        })
+                        .px(theme.metrics.pad)
+                },
             )
-            .rounded(theme.radius)
+            .rounded(if compact {
+                theme.radius / 2.
+            } else {
+                theme.radius
+            })
             .when(listed, |this| {
                 this.flex_none().h(height).py(inset).w_full().min_w_0()
             })

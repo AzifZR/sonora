@@ -172,6 +172,7 @@ pub struct ThemeOverrides {
     pub secondary_hover: Option<String>,
     pub secondary_active: Option<String>,
     pub primary: Option<String>,
+    pub pinned: Option<String>,
     pub primary_foreground: Option<String>,
     pub primary_hover: Option<String>,
     pub danger: Option<String>,
@@ -208,6 +209,7 @@ pub struct Theme {
     pub secondary_hover: Hsla,
     pub secondary_active: Hsla,
     pub primary: Hsla,
+    pub pinned: Hsla,
     pub primary_foreground: Hsla,
     pub primary_hover: Hsla,
     pub danger: Hsla,
@@ -258,6 +260,7 @@ impl Theme {
             secondary_hover: rgb(0x232323).into(),
             secondary_active: rgb(0x303030).into(),
             primary: rgb(0xfafafa).into(),
+            pinned: rgb(0x1ed760).into(),
             primary_foreground: rgb(0x171717).into(),
             primary_hover: rgb(0xe5e5e5).into(),
             danger: rgb(0x7f1d1d).into(),
@@ -299,6 +302,7 @@ impl Theme {
             secondary_hover: rgb(0xe5e5e5).into(),
             secondary_active: rgb(0xd4d4d4).into(),
             primary: rgb(0x171717).into(),
+            pinned: rgb(0x1ed760).into(),
             primary_foreground: rgb(0xfafafa).into(),
             primary_hover: rgb(0x262626).into(),
             danger: rgb(0xb91c1c).into(),
@@ -340,6 +344,7 @@ impl Theme {
             secondary_hover: rgb(0x17304d).into(),
             secondary_active: rgb(0x1e3b5d).into(),
             primary: rgb(0x38bdf8).into(),
+            pinned: rgb(0x1ed760).into(),
             primary_foreground: rgb(0x07111f).into(),
             primary_hover: rgb(0x7dd3fc).into(),
             danger: rgb(0x991b1b).into(),
@@ -381,6 +386,7 @@ impl Theme {
             secondary_hover: rgb(0x203328).into(),
             secondary_active: rgb(0x2a4334).into(),
             primary: rgb(0x86efac).into(),
+            pinned: rgb(0x1ed760).into(),
             primary_foreground: rgb(0x0b1410).into(),
             primary_hover: rgb(0xbbf7d0).into(),
             danger: rgb(0x991b1b).into(),
@@ -613,6 +619,7 @@ impl Theme {
             secondary_hover,
             secondary_active,
             primary,
+            pinned,
             primary_foreground,
             primary_hover,
             danger,
@@ -656,6 +663,7 @@ impl Theme {
         apply_color!(secondary_hover);
         apply_color!(secondary_active);
         apply_color!(primary);
+        apply_color!(pinned);
         apply_color!(primary_foreground);
         apply_color!(primary_hover);
         apply_color!(danger);

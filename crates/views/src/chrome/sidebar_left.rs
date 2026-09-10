@@ -1,20 +1,24 @@
 use ui::{
     ActiveTheme as _, Button, Card, DraggedPin, Edge, Panel, Pin, Pinnable as _, Popup, SNUG,
-    Scrollbar, Scroller, Shield, Side, Tabs, Text, drop_gap, drop_marker,
+    Scrollbar, Shield, Side, Tabs, Text, drop_gap, drop_marker,
 };
 
+use crate::shared::pins::Pinned as _;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, DragMoveEvent, ElementId, Entity, Hsla, MouseButton, MouseDownEvent,
-    Pixels, Point, Render, ScrollHandle,
+    AnyElement, App, Context, DragMoveEvent, ElementId, Entity, Hsla, ListAlignment, ListState,
+    MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollWheelEvent, list, svg,
 };
 use gpui::{Window, div, px};
 use router::{
     Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
 };
-use state::{AppSettings, Origin, Playback, PlaybackState, Session, Sonora};
+use state::{
+    AppSettings, Library, LibraryState, Origin, Playback, PlaybackState, Session, Shelf, Sonora,
+};
 
-use crate::shared::menus::{ItemMenu, pin_menu};
+use crate::shared::menus::{ItemMenu, item_menu, pin_menu};
+use music::{LibraryItem, LibraryItemKind, LibraryOrder};
 
 const NAV: [(Option<NavEntry>, &str, Destination); 6] = [
     (Some(NavEntry::Home), "icons/house.svg", Destination::Home),
@@ -82,6 +86,14 @@ pub(crate) struct SidebarLeft {
     track_menu: ItemMenu,
     context_menu: Option<(Pin, Point<Pixels>)>,
     scrollbar: Entity<Scrollbar>,
+    scroll: ListState,
+    row_height: Pixels,
+    scroll_width: Option<Pixels>,
+    library: Entity<Library>,
+    library_context_menu: Option<(LibraryItem, Point<Pixels>)>,
+    library_search: Entity<ui::Input>,
+    searching_library: bool,
+    library_popovers: ui::Popovers,
 }
 
 impl SidebarLeft {
@@ -89,9 +101,15 @@ impl SidebarLeft {
         let settings = Sonora::global(cx).settings.clone();
         let session = Sonora::global(cx).session.clone();
         let playback = Sonora::global(cx).playback.clone();
+        let library = Sonora::global(cx).library.clone();
+        cx.observe(&library, |_, _, cx| cx.notify()).detach();
+        cx.observe(&playback, |_, _, cx| cx.notify()).detach();
+        let library_search = cx.new(|cx| ui::Input::new("common-search", cx).compact().clearable());
+        cx.observe(&library_search, |_, _, cx| cx.notify()).detach();
         let me = cx.entity_id();
         let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
-        let scrollbar = cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me));
+        let scroll = ListState::new(1, ListAlignment::Top, cx.theme().metrics.list_row);
+        let scrollbar = cx.new(|_| Scrollbar::list(scroll.clone()).watching(me));
         let width = px(settings.read(cx).sidebar_width()).clamp(MIN_WIDTH, MAX_WIDTH);
         let open = settings.read(cx).sidebar_open();
         let trail = router::trail(cx);
@@ -128,6 +146,14 @@ impl SidebarLeft {
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
             scrollbar,
+            scroll,
+            row_height: cx.theme().metrics.list_row,
+            scroll_width: None,
+            library,
+            library_context_menu: None,
+            library_search,
+            searching_library: false,
+            library_popovers: ui::Popovers::default(),
         }
     }
 
@@ -145,12 +171,51 @@ impl SidebarLeft {
     fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
         self.track_menu.reset(cx);
         self.context_menu = None;
+        self.library_context_menu = None;
         cx.notify();
     }
 
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let (pin, position) = self.context_menu.clone()?;
-        let menu = pin_menu(&pin, &self.track_menu, self.playback.clone(), cx);
+        let (menu, position) = if let Some((item, position)) = &self.library_context_menu {
+            let pin = item_pin(item);
+            let mut menu = match &pin {
+                Some(pin) => item_menu(pin, &self.track_menu, self.playback.clone(), cx),
+                None => ui::Menu::new("sidebar-library-context"),
+            };
+            let library = self.library.read(cx);
+            if let Some(current) = library
+                .sidebar_items()
+                .and_then(|items| items.iter().find(|current| current.uri == item.uri))
+            {
+                let pinned = current.pinned;
+                let pending = library.sidebar_pin_pending();
+                let uri = current.uri.clone();
+                let library = self.library.clone();
+                if pin.is_some() {
+                    menu = menu.item(ui::MenuItem::separator("library-pin-separator"));
+                }
+                menu = menu.item(
+                    ui::MenuItem::new(
+                        "library-pin",
+                        i18n::lookup(if pinned { "nav-unpin" } else { "nav-pin" }, None),
+                    )
+                    .icon("icons/pin.svg")
+                    .when(pending, ui::MenuItem::disabled)
+                    .on_click(move |_, _, cx| {
+                        library.update(cx, |library, cx| {
+                            library.set_sidebar_pinned(uri.clone(), !pinned, cx)
+                        });
+                    }),
+                );
+            }
+            (menu, *position)
+        } else {
+            let (pin, position) = self.context_menu.clone()?;
+            (
+                pin_menu(&pin, &self.track_menu, self.playback.clone(), cx),
+                position,
+            )
+        };
 
         Some(
             Popup::new(position, menu)
@@ -275,12 +340,13 @@ impl SidebarLeft {
                 true => theme.foreground,
                 false => theme.muted_foreground,
             })
-            .meta(i18n::lookup(pin.kind.key(), None))
+            .meta(library_caption(pin.kind.key(), "", true, cx))
             .when(active, |card| card.bg(accent))
             .hover(move |style| style.bg(accent))
             .press(move |_, _, cx| navigate(destination.clone(), cx))
             .menu(cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                 this.track_menu.reset(cx);
+                this.library_context_menu = None;
                 this.context_menu = Some((opened.clone(), event.position));
                 cx.notify();
             }))
@@ -320,33 +386,197 @@ impl SidebarLeft {
             .into_any_element()
     }
 
-    fn persist(&self, cx: &mut Context<Self>) {
-        let width = self.width / px(1.);
-        let open = self.open;
-        self.settings
-            .update(cx, |settings, cx| settings.set_sidebar(width, open, cx));
+    fn library_order(&self, cx: &App) -> Vec<LibraryItem> {
+        let library = self.library.read(cx);
+        let slugs = self.session.read(cx).active_slugs();
+        let local_pins = self.settings.read(cx).pinned(&slugs);
+        let mut order = library
+            .sidebar_items()
+            .map(<[LibraryItem]>::to_vec)
+            .unwrap_or_else(|| fallback_library(library.state(Shelf::Streaming)));
+        order.retain(|item| {
+            item.kind != LibraryItemKind::LikedSongs
+                && item_pin(item).is_none_or(|pin| !local_pins.iter().any(|local| local.same(&pin)))
+        });
+        let query = self.library_search.read(cx).text().to_lowercase();
+        if !query.is_empty() {
+            order.retain(|item| {
+                format!("{} {}", item.name, item.subtitle)
+                    .to_lowercase()
+                    .contains(&query)
+            });
+        }
+        order
     }
-}
 
-impl Render for SidebarLeft {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn library_toolbar(&self, empty: bool, cx: &mut Context<Self>) -> AnyElement {
+        let library = self.library.read(cx);
+        let loading = matches!(library.state(Shelf::Streaming), LibraryState::Loading);
+        let empty_key = if loading {
+            "play-loading"
+        } else if library.part_failed(Shelf::Streaming, state::LibraryPart::Playlists)
+            || matches!(library.state(Shelf::Streaming), LibraryState::Failed(_))
+        {
+            "library-part-not-loaded"
+        } else {
+            "library-no-matches"
+        };
+        let theme = *cx.theme();
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w_full()
+            .min_w_0()
+            .min_h_0()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .w_full()
+                    .min_w_0()
+                    .flex_none()
+                    .h(theme.metrics.control_small)
+                    .px(theme.metrics.pad)
+                    .child(
+                        Button::new("sidebar-library-search")
+                            .ghost()
+                            .small()
+                            .icon("icons/search.svg")
+                            .tooltip("common-search")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.searching_library = !this.searching_library;
+                                if this.searching_library {
+                                    this.library_search
+                                        .update(cx, |input, cx| input.focus(window, cx));
+                                } else {
+                                    this.library_search
+                                        .update(cx, |input, cx| input.set_text("", cx));
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .when(self.searching_library, |row| {
+                        row.child(div().flex_1().min_w_0().child(self.library_search.clone()))
+                    })
+                    .when(!self.searching_library, |row| {
+                        let selected = self.library.read(cx).sidebar_order();
+                        let library = self.library.clone();
+                        row.child(
+                            ui::Popover::new(
+                                "sidebar-library-order",
+                                self.library_popovers.clone(),
+                            )
+                            .commands()
+                            .button(
+                                Button::new("sidebar-library-sort")
+                                    .ghost()
+                                    .small()
+                                    .label(i18n::lookup(order_key(selected), None))
+                                    .trailing("icons/list.svg")
+                                    .text_size(theme.text(Text::Tiny))
+                                    .tint(theme.muted_foreground),
+                            )
+                            .menu(
+                                ui::Menu::new("sidebar-library-order-menu")
+                                    .right_0()
+                                    .top(theme.metrics.control_small)
+                                    .items(LibraryOrder::ALL.into_iter().map(move |order| {
+                                        let library = library.clone();
+                                        ui::MenuItem::new(
+                                            order_key(order),
+                                            i18n::lookup(order_key(order), None),
+                                        )
+                                        .selected(order == selected)
+                                        .on_click(
+                                            move |_, _, cx| {
+                                                library.update(cx, |library, cx| {
+                                                    library.set_sidebar_order(order, cx)
+                                                });
+                                            },
+                                        )
+                                    })),
+                            ),
+                        )
+                    }),
+            )
+            .when(empty, |view| {
+                view.child(
+                    div()
+                        .px_3()
+                        .py_2()
+                        .text_size(theme.text(Text::Small))
+                        .text_color(theme.muted_foreground)
+                        .child(i18n::lookup(empty_key, None)),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn library_card(&self, item: LibraryItem, cx: &mut Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        div()
+            .w_full()
+            .px(theme.metrics.pad)
+            .child({
+                let context_item = item.clone();
+                let origin = item_origin(&item);
+                let destination = item_destination(&item);
+                let active = destination.as_ref() == Some(&self.trail.read(cx).current());
+                let playing = matches!(
+                    origin
+                        .as_ref()
+                        .and_then(|origin| self.playback.read(cx).playing_from(origin)),
+                    Some(PlaybackState::Playing)
+                );
+                Card::new(
+                    gpui::SharedString::from(format!("sidebar-library-{}", item.uri)),
+                    item.name.clone(),
+                )
+                .compact()
+                .cover(item.cover.clone())
+                .fallback(item_icon(item.kind))
+                .when(item.kind == LibraryItemKind::Artist, Card::circle)
+                .meta(library_caption(
+                    item_key(item.kind),
+                    &item.subtitle,
+                    item.pinned,
+                    cx,
+                ))
+                .chosen(active)
+                .when(active, |card| card.bg(theme.sidebar_accent))
+                .when_some(origin, |card, origin| {
+                    card.play(
+                        playing,
+                        cx.listener(move |this, _, _, cx| {
+                            this.playback
+                                .update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
+                        }),
+                    )
+                })
+                .press(move |_, _, cx| match &destination {
+                    Some(destination) => navigate(destination.clone(), cx),
+                    None => cx.open_url(&spotify_url(&item.uri)),
+                })
+                .menu(cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    this.track_menu.reset(cx);
+                    this.context_menu = None;
+                    this.library_context_menu = Some((context_item.clone(), event.position));
+                    cx.notify();
+                }))
+                .into_any_element()
+            })
+            .into_any_element()
+    }
+
+    fn navigation(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = *cx.theme();
         let sidebar_accent = theme.sidebar_accent;
         let foreground = theme.foreground;
         let muted = theme.muted_foreground;
-        let sidebar_bg = theme.sidebar;
-        let sidebar_border = theme.sidebar_border;
-
         let current = self.trail.read(cx).current();
-        self.follow(&current);
         let authenticated = self.session.read(cx).authenticated();
-        self.adapt(window, cx);
-
-        if !cx.has_active_drag() {
-            self.dropping = false;
-            self.drop_gap = None;
-        }
-
         let shown = |entry: NavEntry, cx: &App| self.settings.read(cx).nav_shown(entry.id());
 
         let mut rows: Vec<AnyElement> = Vec::new();
@@ -480,6 +710,91 @@ impl Render for SidebarLeft {
 
         rows.extend(self.pins(window, cx));
 
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap_1()
+            .w_full()
+            .p_3()
+            .children(rows)
+            .into_any_element()
+    }
+
+    fn persist(&self, cx: &mut Context<Self>) {
+        let width = self.width / px(1.);
+        let open = self.open;
+        self.settings
+            .update(cx, |settings, cx| settings.set_sidebar(width, open, cx));
+    }
+}
+
+impl Render for SidebarLeft {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let sidebar_bg = theme.sidebar;
+        let sidebar_border = theme.sidebar_border;
+
+        let current = self.trail.read(cx).current();
+        self.follow(&current);
+        let authenticated = self.session.read(cx).authenticated();
+        self.adapt(window, cx);
+
+        if !cx.has_active_drag() {
+            self.dropping = false;
+            self.drop_gap = None;
+        }
+
+        let order = if authenticated {
+            self.library_order(cx)
+        } else {
+            Vec::new()
+        };
+        let count = 1 + usize::from(authenticated) + order.len();
+        let card_height = theme.metrics.list_row - theme.metrics.pad / 2.;
+        let old_count = self.scroll.item_count();
+        if count != old_count {
+            self.scroll.splice(
+                count.min(old_count)..old_count,
+                count.saturating_sub(old_count),
+            );
+            // Off-screen cards still contribute to the scroll range.
+            self.scroll.clone().with_uniform_item_height(card_height);
+        }
+        // Navigation can expand and the empty-state message can change height.
+        // Remeasure only these two rows; library cards retain their cached heights.
+        self.scroll.remeasure_items(0..count.min(2));
+        if self.row_height != theme.metrics.list_row {
+            self.row_height = theme.metrics.list_row;
+            self.scroll.remeasure();
+        }
+        // GPUI clears height hints when it measures a new list width. Restore
+        // the compact-card estimate after layout, without building those cards.
+        let sidebar = cx.entity().downgrade();
+        window.on_next_frame(move |_, cx| {
+            sidebar
+                .update(cx, |this, cx| {
+                    let width = this.scroll.viewport_bounds().size.width;
+                    if this.scroll_width != Some(width) {
+                        this.scroll_width = Some(width);
+                        this.scroll.clone().with_uniform_item_height(card_height);
+                        cx.notify();
+                    }
+                })
+                .ok();
+        });
+        self.scrollbar.read(cx).sync();
+        let gliding = self.scrollbar.clone();
+        let content = list(
+            self.scroll.clone(),
+            cx.processor(move |this, index, window, cx| match index {
+                0 => this.navigation(window, cx),
+                1 => this.library_toolbar(order.is_empty(), cx),
+                _ => this.library_card(order[index - 2].clone(), cx),
+            }),
+        )
+        .size_full();
+
         let overlaid = self.overlays();
         let panel = Panel::new("sidebar-left", Side::Left, self.width)
             .limits(MIN_WIDTH, MAX_WIDTH)
@@ -515,18 +830,21 @@ impl Render for SidebarLeft {
                 this.occlude().absolute().left_0().top_0().bottom_0()
             })
             .child(
-                Scroller::new("sidebar-left-rows", &self.scrollbar)
-                    .flex_1()
+                div()
+                    .relative()
+                    .size_full()
                     .min_h_0()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .w_full()
-                            .p_3()
-                            .children(rows),
-                    ),
+                    .child(content)
+                    .on_scroll_wheel(move |event: &ScrollWheelEvent, window, cx| {
+                        gliding.update(cx, |bar, _| {
+                            if event.delta.precise() {
+                                bar.stirred();
+                            } else {
+                                bar.nudge(window);
+                            }
+                        });
+                    })
+                    .child(self.scrollbar.clone()),
             )
             .children(self.menu(cx));
 
@@ -554,6 +872,132 @@ impl Render for SidebarLeft {
                 .into_any_element(),
         }
     }
+}
+
+fn library_caption(kind: &str, subtitle: &str, pinned: bool, cx: &App) -> impl IntoElement {
+    let theme = *cx.theme();
+    let kind = i18n::lookup(kind, None);
+    let label = if subtitle.is_empty() {
+        kind.to_string()
+    } else {
+        format!("{kind} · {subtitle}")
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(theme.metrics.pad / 4.)
+        .min_w_0()
+        .when(pinned, |row| {
+            row.child(
+                svg()
+                    .path(icons::path("icons/pin.svg"))
+                    .flex_none()
+                    .size(theme.text(Text::Tiny))
+                    .text_color(theme.pinned),
+            )
+        })
+        .child(div().min_w_0().truncate().child(label))
+}
+
+fn order_key(order: LibraryOrder) -> &'static str {
+    match order {
+        LibraryOrder::Recents => "nav-library-recents",
+        LibraryOrder::RecentlyAdded => "nav-library-added",
+        LibraryOrder::Alphabetical => "nav-library-alphabetical",
+        LibraryOrder::Creator => "nav-library-creator",
+    }
+}
+
+fn item_pin(item: &LibraryItem) -> Option<Pin> {
+    let kind = match item.kind {
+        LibraryItemKind::Playlist => ui::PinKind::Playlist,
+        LibraryItemKind::Album => ui::PinKind::Album,
+        LibraryItemKind::Artist => ui::PinKind::Artist,
+        _ => return None,
+    };
+    let tail = item.uri.strip_prefix("spotify:").unwrap_or(&item.uri);
+    let (_, id) = tail.split_once(':')?;
+    Some(Pin::new(kind, id, item.name.clone()).cover(item.cover.clone()))
+}
+
+fn item_destination(item: &LibraryItem) -> Option<Destination> {
+    if item.kind == LibraryItemKind::LikedSongs {
+        return Some(Destination::Library(LibraryTab::Songs));
+    }
+    item_pin(item).as_ref().map(Destination::from)
+}
+
+fn item_origin(item: &LibraryItem) -> Option<Origin> {
+    if item.kind == LibraryItemKind::LikedSongs {
+        return Some(Origin::saved());
+    }
+    item_pin(item).as_ref().map(Origin::from)
+}
+
+fn item_key(kind: LibraryItemKind) -> &'static str {
+    match kind {
+        LibraryItemKind::Playlist | LibraryItemKind::LikedSongs => "kind-playlist",
+        LibraryItemKind::Album => "kind-album",
+        LibraryItemKind::Artist => "kind-artist",
+        LibraryItemKind::Audiobook => "kind-audiobook",
+        LibraryItemKind::Show => "kind-podcast",
+        LibraryItemKind::Folder => "kind-folder",
+    }
+}
+
+fn item_icon(kind: LibraryItemKind) -> &'static str {
+    match kind {
+        LibraryItemKind::Artist => "icons/user.svg",
+        LibraryItemKind::Album => "icons/disc-3.svg",
+        LibraryItemKind::LikedSongs => "icons/heart-filled.svg",
+        _ => "icons/list.svg",
+    }
+}
+
+fn spotify_url(uri: &str) -> String {
+    match uri
+        .strip_prefix("spotify:")
+        .and_then(|tail| tail.split_once(':'))
+    {
+        Some((kind @ ("show" | "album" | "artist" | "playlist"), id)) => {
+            format!("https://open.spotify.com/{kind}/{id}")
+        }
+        _ => uri.to_owned(),
+    }
+}
+
+fn fallback_library(shelf: &LibraryState) -> Vec<LibraryItem> {
+    let playlists = shelf
+        .playlists()
+        .iter()
+        .filter_map(|item| Some((item.pin()?, item.owner.clone())));
+    let albums = shelf
+        .albums()
+        .iter()
+        .filter_map(|item| Some((item.pin()?, item.artists.clone())));
+    let artists = shelf
+        .artists()
+        .iter()
+        .filter_map(|item| Some((item.pin()?, String::new())));
+    playlists
+        .chain(albums)
+        .chain(artists)
+        .map(|(pin, subtitle)| {
+            let (kind, prefix) = match pin.kind {
+                ui::PinKind::Album => (LibraryItemKind::Album, "album"),
+                ui::PinKind::Artist => (LibraryItemKind::Artist, "artist"),
+                _ => (LibraryItemKind::Playlist, "playlist"),
+            };
+            LibraryItem {
+                uri: format!("{prefix}:{}", pin.id),
+                name: pin.title,
+                subtitle,
+                cover: pin.cover,
+                kind,
+                pinned: false,
+            }
+        })
+        .collect()
 }
 
 fn hint(cx: &App) -> AnyElement {
