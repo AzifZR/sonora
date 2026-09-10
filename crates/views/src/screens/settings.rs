@@ -15,7 +15,8 @@ use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
 use state::{
-    AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sleep, Sonora,
+    AppSettings, DiscordName, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sleep,
+    Sonora,
 };
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
@@ -43,6 +44,7 @@ const TYPEFACE_GUESS: usize = 24;
 const TYPEFACE_BATCH: usize = 3;
 const STARTUP: &str = "startup";
 const ENTRIES: &str = "entries";
+const DISCORD_NAME: &str = "discord-name";
 const MOTION: &str = "motion";
 const PACE: &str = "pace";
 const SAVER: &str = "saver";
@@ -255,9 +257,11 @@ impl SettingsView {
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
             ],
-            SettingsTab::Privacy => vec![Row::Item(
-                self.lyrics_for_local_files_row(cx).into_any_element(),
-            )],
+            SettingsTab::Privacy => vec![
+                self.title("settings-group-lyrics", cx),
+                Row::Item(self.lyrics_for_local_files_row(cx).into_any_element()),
+            ],
+            SettingsTab::Integrations => self.discord_rows(cx),
             SettingsTab::About => vec![
                 Row::Item(self.version_row(cx).into_any_element()),
                 Row::Item(self.updates_row(cx).into_any_element()),
@@ -1437,6 +1441,111 @@ impl SettingsView {
             muted,
             small,
             actions.into_any_element(),
+        )
+    }
+
+    fn discord_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
+        let mut rows = vec![
+            self.title("settings-group-discord", cx),
+            Row::Item(self.discord_row(cx).into_any_element()),
+        ];
+        if self.settings.read(cx).discord_presence() {
+            rows.push(Row::Item(self.discord_name_row(cx).into_any_element()));
+            rows.push(Row::Item(self.discord_badge_row(cx).into_any_element()));
+            rows.push(Row::Item(self.discord_anonymous_row(cx).into_any_element()));
+        }
+        rows
+    }
+
+    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_presence();
+
+        self.row(
+            t!("settings-discord"),
+            t!("settings-discord-detail"),
+            muted,
+            small,
+            Switch::new("discord", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_presence(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_name_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let chosen = self.settings.read(cx).discord_name();
+
+        let picker = Picker::new(
+            DISCORD_NAME,
+            &self.popovers,
+            i18n::lookup(chosen.key(), None),
+        )
+        .width(Picker::NARROW)
+        .items(DiscordName::ALL.map(|name| {
+            MenuItem::new(name.id(), i18n::lookup(name.key(), None))
+                .selected(name == chosen)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_name(name, cx));
+                    cx.notify();
+                }))
+        }));
+
+        self.row(
+            t!("settings-discord-name"),
+            t!("settings-discord-name-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    fn discord_badge_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_badge();
+
+        self.row(
+            t!("settings-discord-badge"),
+            t!("settings-discord-badge-detail"),
+            muted,
+            small,
+            Switch::new("discord-badge", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_badge(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_anonymous_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_without_details();
+
+        self.row(
+            t!("settings-discord-anonymous"),
+            t!("settings-discord-anonymous-detail"),
+            muted,
+            small,
+            Switch::new("discord-anonymous", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_discord_without_details(!on, cx)
+                    });
+                }))
+                .into_any_element(),
         )
     }
 

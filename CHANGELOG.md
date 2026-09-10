@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sonora can put what you are playing on your Discord profile. Turn on Show on Discord under
+  Settings > Integrations. The status is called Sonora by default, and can name the service the
+  track came from or just say Music instead; it can carry a badge of that service, and it can hide
+  the details and say only that music is playing. Cover art reaches Discord only from Spotify and
+  YouTube Music, since Discord fetches the image itself and cannot read a local file or a
+  self-hosted server.
+
 - Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
   on System and it follows a Turkish desktop on its own.
 - Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on

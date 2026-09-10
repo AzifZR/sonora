@@ -248,6 +248,10 @@ impl MusicProvider for YouTubeProvider {
         "youtube"
     }
 
+    fn public_art(&self) -> bool {
+        true
+    }
+
     fn sign_in_options(&self) -> Vec<SignIn> {
         vec![SignIn::Anonymous, SignIn::Secret]
     }

@@ -379,6 +379,17 @@ pub trait MusicProvider: Send + Sync {
     fn location(&self) -> Option<String> {
         None
     }
+    /// What a status calls this provider after "listening to". A service answers with its own
+    /// name; one that is only the user's own files says what the files are instead.
+    fn listening_to(&self) -> &'static str {
+        self.name()
+    }
+    /// Whether the artwork urls this provider hands out can be given to another service. A path
+    /// on disk means nothing elsewhere, and a self-hosted url carries the credentials that fetch
+    /// it, so the default is no.
+    fn public_art(&self) -> bool {
+        false
+    }
     async fn restore(&self) -> Result<Option<ProviderSession>>;
     async fn sign_in(
         &self,

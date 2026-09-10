@@ -55,11 +55,12 @@ const LIBRARY_TABS: [(&str, LibraryTab); 4] = [
     ("nav-playlists", LibraryTab::Playlists),
 ];
 
-const SETTINGS_TABS: [(&str, SettingsTab); 5] = [
+const SETTINGS_TABS: [(&str, SettingsTab); 6] = [
     ("settings-tab-general", SettingsTab::General),
     ("settings-tab-appearance", SettingsTab::Appearance),
     ("settings-tab-playback", SettingsTab::Playback),
     ("settings-tab-privacy", SettingsTab::Privacy),
+    ("settings-tab-integrations", SettingsTab::Integrations),
     ("settings-tab-about", SettingsTab::About),
 ];
 
