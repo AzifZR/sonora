@@ -8,6 +8,7 @@ use crate::theme::ActiveTheme as _;
 
 enum Face {
     Label(SharedString),
+    Plain(SharedString),
     Icon(&'static str),
 }
 
@@ -56,6 +57,15 @@ impl Picker {
     pub fn icon(key: &'static str, group: &Popovers, icon: &'static str) -> Self {
         Self {
             face: Face::Icon(icon),
+            ..Self::new(key, group, "")
+        }
+    }
+
+    /// A labelled trigger without the chevron, for a popover that holds a control rather than a
+    /// list of choices.
+    pub fn plain(key: &'static str, group: &Popovers, label: impl Into<SharedString>) -> Self {
+        Self {
+            face: Face::Plain(label.into()),
             ..Self::new(key, group, "")
         }
     }
@@ -152,6 +162,9 @@ impl RenderOnce for Picker {
             Face::Label(current) => Button::new(SharedString::from(format!("{key}-picker")))
                 .label(current)
                 .trailing("icons/chevron-down.svg")
+                .outline(),
+            Face::Plain(label) => Button::new(SharedString::from(format!("{key}-picker")))
+                .label(label)
                 .outline(),
             Face::Icon(icon) => Button::new(SharedString::from(format!("{key}-picker")))
                 .icon(icon)

@@ -7,8 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
+  on System and it follows a Turkish desktop on its own.
 - Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on
   System and it follows a Chinese desktop on its own.
+
+### Changed
+
+- The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
+  the slider; the moon button leaves the player bar.
 
 ## [0.33.0] - 2026-09-09
 
@@ -55,6 +64,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Play from any Subsonic or OpenSubsonic server: Navidrome, Airsonic, Gonic and more. Sign in under
   Settings > Accounts with the server address, a username and a password. Your Library then lists
   the whole server, songs included, with a Favorites only filter for what you starred.
+
+- Sonora's own window corners can be rounded from Appearance, with the radius picked the same
+  way as the UI corner radius: Square, Subtle, Rounded or Round. On Windows this maps onto DWM's
+  own rounded presets; on Linux and FreeBSD it applies with client-side decorations, where the
+  compositor otherwise leaves the window square.
+- Window controls can be drawn as traffic-light dots from Appearance, on Windows and Linux. They
+  follow the existing controls-side setting, same as the standard controls.
 
 ### Changed
 

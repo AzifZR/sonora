@@ -220,7 +220,14 @@ struct Appearance {
     transparency: f32,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     server_side_decorations: bool,
+    /// The window's own corner rounding, independent of `rounding` (the UI element radius).
+    /// On Windows this maps onto DWM's two fixed presets; on Linux/FreeBSD it only has an
+    /// effect with client-side decorations, since server-side ones are the compositor's call.
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    window_rounding: String,
     window_controls: bool,
+    #[cfg(not(target_os = "macos"))]
+    traffic_light_controls: bool,
     controls_on_left: bool,
     reduce_motion: String,
     motion_pace: String,
@@ -429,7 +436,11 @@ impl Default for Appearance {
             transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            window_rounding: Rounding::Square.id().to_owned(),
             window_controls: true,
+            #[cfg(not(target_os = "macos"))]
+            traffic_light_controls: false,
             controls_on_left: false,
             reduce_motion: Stillness::default().id().to_owned(),
             motion_pace: Pace::default().id().to_owned(),
@@ -706,8 +717,18 @@ impl AppSettings {
         }
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    pub fn window_rounding(&self) -> Rounding {
+        Rounding::from_id(&self.values.appearance.window_rounding)
+    }
+
     pub fn window_controls(&self) -> bool {
         self.values.appearance.window_controls
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn traffic_light_controls(&self) -> bool {
+        self.values.appearance.traffic_light_controls
     }
 
     pub fn controls_on_left(&self) -> bool {
@@ -1099,8 +1120,20 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    pub fn set_window_rounding(&mut self, rounding: Rounding, cx: &mut Context<Self>) {
+        self.values.appearance.window_rounding = rounding.id().to_owned();
+        self.schedule_save(cx);
+    }
+
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {
         self.values.appearance.window_controls = shown;
+        self.schedule_save(cx);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_traffic_light_controls(&mut self, traffic_light: bool, cx: &mut Context<Self>) {
+        self.values.appearance.traffic_light_controls = traffic_light;
         self.schedule_save(cx);
     }
 

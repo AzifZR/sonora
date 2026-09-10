@@ -89,6 +89,8 @@ fn main() {
             Arc::new(music::netease::NetEase::new()),
         ];
         state::init(cx, io, database, providers, local_provider, lyrics);
+        #[cfg(target_os = "windows")]
+        state::install_rounded_window_hook(set_corner_preference, cx);
         let start = opened_start.unwrap_or_else(|| {
             let startup = Sonora::global(cx).settings.read(cx).startup().to_owned();
             Screen::from_id(&startup)
@@ -225,6 +227,11 @@ fn open_window(cx: &mut App) {
         },
         |window, cx| {
             window.set_rem_size(cx.theme().font_size);
+            #[cfg(target_os = "windows")]
+            set_corner_preference(
+                window,
+                Sonora::global(cx).settings.read(cx).window_rounding(),
+            );
             state::attach_remote(platform_handle(window), cx);
             state::remember_window(window, cx);
             cx.new(|cx| Root::new(session, library, playback, queue, window, cx))
@@ -233,20 +240,29 @@ fn open_window(cx: &mut App) {
     .expect("failed to open window");
 }
 
+// DWM only offers two rounded presets (no arbitrary radius), so the four `Rounding` choices
+// collapse onto them: `Square` turns rounding off, `Subtle` gets the small radius, and
+// `Rounded`/`Round` both get the normal one, since DWM has nothing rounder than that.
 #[cfg(target_os = "windows")]
-fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
+fn set_corner_preference(window: &gpui::Window, rounding: ui::Rounding) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+        DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DWMWCP_ROUND, DWMWCP_ROUNDSMALL, DwmSetWindowAttribute,
     };
 
-    let RawWindowHandle::Win32(handle) = HasWindowHandle::window_handle(window).ok()?.as_raw()
+    let Ok(RawWindowHandle::Win32(handle)) =
+        HasWindowHandle::window_handle(window).map(|handle| handle.as_raw())
     else {
-        return None;
+        return;
     };
     let handle = handle.hwnd.get() as *mut std::ffi::c_void;
+    let preference: DWM_WINDOW_CORNER_PREFERENCE = match rounding {
+        ui::Rounding::Square => DWMWCP_DONOTROUND,
+        ui::Rounding::Subtle => DWMWCP_ROUNDSMALL,
+        ui::Rounding::Rounded | ui::Rounding::Round => DWMWCP_ROUND,
+    };
     unsafe {
-        let preference = DWMWCP_ROUND;
         DwmSetWindowAttribute(
             handle,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
@@ -254,6 +270,17 @@ fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
             size_of_val(&preference) as u32,
         );
     }
+}
+
+#[cfg(target_os = "windows")]
+fn platform_handle(window: &gpui::Window) -> Option<*mut std::ffi::c_void> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let RawWindowHandle::Win32(handle) = HasWindowHandle::window_handle(window).ok()?.as_raw()
+    else {
+        return None;
+    };
+    let handle = handle.hwnd.get() as *mut std::ffi::c_void;
     hide_system_caption(handle);
     clamp_maximize(handle);
     Some(handle)
