@@ -1,8 +1,10 @@
 use tokio::sync::mpsc::UnboundedSender;
-use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{
+    Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem,
+};
 use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-use super::{Event, Shown};
+use super::{Art, Event, Shown};
 
 const TOOLTIP: &str = "Sonora";
 const PNG: &[u8] = match cfg!(target_os = "macos") {
@@ -13,7 +15,7 @@ const MENU_ON_CLICK: bool = cfg!(target_os = "macos");
 
 pub struct Icon {
     _icon: TrayIcon,
-    caption: MenuItem,
+    caption: IconMenuItem,
     toggle: MenuItem,
     previous: MenuItem,
     next: MenuItem,
@@ -39,7 +41,7 @@ impl Icon {
             }
         };
 
-        let caption = MenuItem::with_id("caption", "", false, None);
+        let caption = IconMenuItem::with_id("caption", "", false, None, None);
         let toggle = MenuItem::with_id("toggle", "", true, None);
         let previous = MenuItem::with_id("previous", "", true, None);
         let next = MenuItem::with_id("next", "", true, None);
@@ -108,11 +110,24 @@ impl Icon {
 
     pub fn show(&mut self, shown: &Shown) {
         self.caption.set_text(&shown.caption);
+        self.caption.set_icon(cover(shown.artwork.as_ref()));
         self.toggle.set_text(&shown.toggle);
         self.previous.set_text(&shown.previous);
         self.next.set_text(&shown.next);
         self.show.set_text(&shown.show);
         self.quit.set_text(&shown.quit);
+    }
+}
+
+/// The cover as a menu icon. A cover that cannot be built is simply left off the row.
+fn cover(art: Option<&Art>) -> Option<MenuIcon> {
+    let art = art?;
+    match MenuIcon::from_rgba(art.data.clone(), art.width, art.height) {
+        Ok(icon) => Some(icon),
+        Err(error) => {
+            log::warn!("tray: cannot build the cover icon: {error:#}");
+            None
+        }
     }
 }
 

@@ -36,6 +36,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The tray menu draws the cover of the playing track beside its name.
 - The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
   the slider; the moon button leaves the player bar.
 
