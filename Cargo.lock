@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3b7f7f85a7e5f68090000ed7622545829afd484d210358702ae4cb97dd0c320"
 dependencies = [
  "enumn",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -1795,6 +1795,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "discord-rich-presence"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90c55d69cab17c19677ce3a5f8face993a9e6eaf847fecac3547f3a3ff4a2494"
+dependencies = [
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_repr",
+ "thiserror 2.0.19",
+ "uuid 0.8.2",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2697,7 +2712,7 @@ dependencies = [
  "url",
  "usvg",
  "util_macros",
- "uuid",
+ "uuid 1.24.0",
  "waker-fn",
  "web-time",
  "windows 0.61.3",
@@ -2761,7 +2776,7 @@ dependencies = [
  "smol",
  "strum",
  "url",
- "uuid",
+ "uuid 1.24.0",
  "wayland-backend",
  "wayland-client",
  "wayland-cursor",
@@ -2817,7 +2832,7 @@ dependencies = [
  "semver",
  "smallvec",
  "strum",
- "uuid",
+ "uuid 1.24.0",
  "zed-font-kit",
 ]
 
@@ -2910,7 +2925,7 @@ dependencies = [
  "rand 0.9.5",
  "raw-window-handle",
  "smallvec",
- "uuid",
+ "uuid 1.24.0",
  "windows 0.61.3",
  "windows-core 0.61.2",
  "windows-numerics 0.2.0",
@@ -3998,7 +4013,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "url",
- "uuid",
+ "uuid 1.24.0",
  "vergen-gitcl",
 ]
 
@@ -4016,7 +4031,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.19",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -4240,7 +4255,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
  "time",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -4393,7 +4408,7 @@ dependencies = [
  "portable-atomic",
  "smallvec",
  "tagptr",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -7377,6 +7392,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dirs",
+ "discord-rich-presence",
  "fastrand",
  "futures",
  "gpui",
@@ -8685,6 +8701,15 @@ dependencies = [
  "perf",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom 0.2.17",
 ]
 
 [[package]]
@@ -10027,7 +10052,7 @@ dependencies = [
  "serde_repr",
  "tracing",
  "uds_windows",
- "uuid",
+ "uuid 1.24.0",
  "windows-sys 0.61.2",
  "winnow 1.0.4",
  "zbus_macros",

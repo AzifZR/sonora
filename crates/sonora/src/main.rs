@@ -131,6 +131,7 @@ fn main() {
         }
         actions::register(lingers, cx);
         memory::watch(cx);
+        state::attach_discord(cx);
 
         open_window(cx);
         let session = Sonora::global(cx).session.clone();

@@ -2,6 +2,7 @@ mod artist;
 mod catalog;
 mod cover;
 mod detail;
+mod discord;
 mod genre;
 mod history;
 mod home;
@@ -34,6 +35,7 @@ pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;
 pub use queue::{Named, Queue, Resume, Stub};
 pub use remote::{Remote, attach as attach_remote};
+pub use discord::attach as attach_discord;
 pub use search::{AlbumHit, ArtistHit, Hit, Kind, PlaylistHit, Search};
 pub use session::{Failure, ProviderInfo, Session, SessionEvent, SessionState};
 pub use settings::{
