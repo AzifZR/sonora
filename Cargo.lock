@@ -7238,6 +7238,7 @@ dependencies = [
  "dirs",
  "embed",
  "env_logger",
+ "futures",
  "gpui",
  "gpui_platform",
  "i18n",
