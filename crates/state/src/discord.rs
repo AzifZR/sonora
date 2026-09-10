@@ -13,6 +13,10 @@ const DISCORD_APP_ID: &str = "1547582803313561642";
 const RECONNECT_COOLDOWN: Duration = Duration::from_secs(5);
 /// Re-apply the current activity this often so a dropped frame never sticks.
 const REFRESH_EVERY: Duration = Duration::from_secs(30);
+/// Resend while playing when the position jumped this far past what Discord
+/// was told: a seek changes neither track nor state, so without this the
+/// progress bar would drift until the next refresh.
+const SEEK_RESEND_SECS: u64 = 5;
 
 #[derive(Clone)]
 enum Command {
@@ -30,7 +34,8 @@ enum Command {
 
 /// What Discord currently shows. Position is deliberately excluded: the progress
 /// bar moves on its own from the timestamps, so only content, duration, or
-/// state changes need a new frame.
+/// state changes need a new frame. Seeks are caught separately by comparing
+/// the live position against the last sent one.
 #[derive(PartialEq, Eq)]
 struct Shown {
     id: Option<String>,
@@ -60,6 +65,7 @@ pub struct DiscordRpc {
     playback: Entity<Playback>,
     sender: Sender<Command>,
     shown: Option<Shown>,
+    sent_pos: u64,
 }
 
 impl DiscordRpc {
@@ -78,6 +84,7 @@ impl DiscordRpc {
             playback,
             sender,
             shown: None,
+            sent_pos: 0,
         }
     }
 
@@ -104,6 +111,7 @@ impl DiscordRpc {
                 return;
             }
             self.shown = Some(key);
+            self.sent_pos = 0;
             let _ = self.sender.send(Command::Clear);
             return;
         }
@@ -120,6 +128,7 @@ impl DiscordRpc {
             true => String::from("Unknown Artist"),
         };
 
+        let live_pos = playback.live_position().as_secs();
         let key = Shown {
             id: track.id.clone(),
             name: track.name.clone(),
@@ -128,16 +137,20 @@ impl DiscordRpc {
             dur_secs: track.duration.as_secs(),
             class,
         };
-        if self.shown.as_ref() == Some(&key) {
+        // A seek jumps the position without changing track or state; resend so
+        // Discord follows it instead of drifting until the next refresh.
+        let seeked = class == 0 && live_pos.abs_diff(self.sent_pos) >= SEEK_RESEND_SECS;
+        if self.shown.as_ref() == Some(&key) && !seeked {
             return;
         }
         self.shown = Some(key);
+        self.sent_pos = live_pos;
 
         let _ = self.sender.send(Command::Update {
             title: track.name.clone(),
             artist,
             album: track.album.clone(),
-            pos_secs: playback.live_position().as_secs(),
+            pos_secs: live_pos,
             dur_secs: track.duration.as_secs(),
             playing: class == 0,
             loading: class == 2,
@@ -150,7 +163,7 @@ fn rpc_worker(receiver: Receiver<Command>) {
     let mut connected = false;
     let mut last_attempt = Instant::now() - REFRESH_EVERY;
     let mut pending: Option<Command> = None;
-    let mut applied: Option<Command> = None;
+    let mut applied: Option<(Command, Instant)> = None;
 
     loop {
         if pending.is_none() {
@@ -159,9 +172,26 @@ fn rpc_worker(receiver: Receiver<Command>) {
                 Err(RecvTimeoutError::Disconnected) => break,
                 Err(RecvTimeoutError::Timeout) => {
                     // Periodic refresh: re-apply the current activity so a
-                    // frame Discord dropped never sticks around.
-                    if connected && let Some(Command::Update { .. }) = &applied {
-                        pending = applied.clone();
+                    // frame Discord dropped never sticks around. Fold the time
+                    // since the frame was built back into the position, so the
+                    // progress bar continues instead of jumping backwards.
+                    if connected {
+                        if let Some((
+                            Command::Update {
+                                playing: true,
+                                pos_secs,
+                                dur_secs,
+                                ..
+                            },
+                            stamped,
+                        )) = &mut applied
+                        {
+                            *pos_secs = (*pos_secs + stamped.elapsed().as_secs()).min(*dur_secs);
+                            *stamped = Instant::now();
+                            pending = applied.clone().map(|(cmd, _)| cmd);
+                        } else if let Some((cmd, _)) = &applied {
+                            pending = Some(cmd.clone());
+                        }
                     }
                 }
             }
@@ -188,7 +218,7 @@ fn rpc_worker(receiver: Receiver<Command>) {
 
         if let Some(cmd) = pending.take() {
             if apply(&mut client, &cmd) {
-                applied = Some(cmd);
+                applied = Some((cmd, Instant::now()));
             } else {
                 log::debug!("discord-rpc: lost Discord connection, will retry");
                 let _ = client.close();
