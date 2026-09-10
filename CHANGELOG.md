@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
   on System and it follows a Turkish desktop on its own.
+- Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on
+  System and it follows a Chinese desktop on its own.
 
 ### Changed
 
