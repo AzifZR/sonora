@@ -625,6 +625,7 @@ toast-sign-in-to-play = { $name } only streams to a signed-in listener
 toast-track-unplayable = { $name } could not be played
 toast-library-add-failed = { $name } could not be added to your library
 toast-library-remove-failed = { $name } could not be removed from your library
+toast-home-failed = Home could not be loaded
 
 # lyrics
 lyrics-title = Lyrics

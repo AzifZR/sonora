@@ -594,6 +594,7 @@ toast-sign-in-to-play = { $name } hanya dapat diputar untuk pendengar yang sudah
 toast-track-unplayable = { $name } tidak dapat diputar
 toast-library-add-failed = { $name } tidak dapat ditambahkan ke koleksi kamu
 toast-library-remove-failed = { $name } tidak dapat dihapus dari koleksi kamu
+toast-home-failed = Beranda tidak dapat dimuat
 
 # lyrics
 lyrics-title = Lirik

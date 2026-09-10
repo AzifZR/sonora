@@ -1,13 +1,19 @@
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::{App, Context, Entity, Task};
 use music::{GenreItem, GenreSection, Track};
 
-use crate::{Io, Library, LibraryPart, LibraryState, Session, SessionEvent, Shelf, join};
+use crate::{
+    Io, Library, LibraryPart, LibraryState, Outcome, Session, SessionEvent, Shelf, Toasts, join,
+};
 
 const GROUP_SIZE: usize = 10;
 const LIMIT: usize = GROUP_SIZE * 3;
+/// Minimum gap between feed attempts triggered from the outside (library
+/// updates). Explicit triggers like sign-in always go through immediately.
+const FEED_RETRY_COOLDOWN: Duration = Duration::from_secs(60);
 
 pub struct Home {
     library: Entity<Library>,
@@ -18,6 +24,7 @@ pub struct Home {
     quick_picks_seed: u64,
     sections: Rc<Vec<GenreSection>>,
     feeding: bool,
+    fed_at: Option<Instant>,
     task: Option<Task<()>>,
     naming: Option<Task<()>>,
 }
@@ -43,7 +50,8 @@ impl Home {
                 this.feeding = false;
                 cx.notify();
             }
-            SessionEvent::Reconnected | SessionEvent::LocalChanged => {}
+            SessionEvent::Reconnected => this.feed(cx),
+            SessionEvent::LocalChanged => {}
         })
         .detach();
 
@@ -56,6 +64,13 @@ impl Home {
                     this.quick_picks = Rc::new(Vec::new());
                 }
                 _ => return,
+            }
+            // The feed may have failed while the library was still loading;
+            // retry once it is ready instead of leaving Home empty. Cooldown
+            // keeps chatty library updates from hammering the provider.
+            if this.sections.is_empty() && !this.feeding && this.retry_due() {
+                this.feed(cx);
+                return;
             }
             cx.notify();
         })
@@ -70,6 +85,7 @@ impl Home {
             quick_picks_seed,
             sections: Rc::new(Vec::new()),
             feeding: false,
+            fed_at: None,
             task: None,
             naming: None,
         };
@@ -94,6 +110,7 @@ impl Home {
         };
 
         self.feeding = true;
+        self.fed_at = Some(Instant::now());
         let io = self.io.clone();
         self.task = Some(cx.spawn(async move |this, cx| {
             let loaded = join(io.spawn(async move { client.home().await })).await;
@@ -113,12 +130,23 @@ impl Home {
                         this.sections = Rc::new(pruned(&feed.sections));
                         this.name_playlists(feed.sections, cx);
                     }
-                    Err(error) => log::warn!("home: cannot load the feed: {error:#}"),
+                    Err(error) => {
+                        log::warn!("home: cannot load the feed: {error:#}");
+                        Toasts::show(Outcome::Failed, "toast-home-failed", cx);
+                    }
                 }
                 cx.notify();
             })
             .ok();
         }));
+    }
+
+    /// Whether enough time passed since the last feed attempt for an
+    /// event-driven retry. Explicit triggers (start, sign-in, reconnect)
+    /// always go through `feed` directly.
+    fn retry_due(&self) -> bool {
+        self.fed_at
+            .is_none_or(|at| at.elapsed() > FEED_RETRY_COOLDOWN)
     }
 
     fn name_playlists(&mut self, sections: Vec<GenreSection>, cx: &mut Context<Self>) {
