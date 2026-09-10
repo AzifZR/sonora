@@ -103,7 +103,11 @@ impl Home {
                 match loaded {
                     Ok(feed) => {
                         this.listen_again = Rc::new(feed.listen_again);
-                        if let Some(quick_picks) = feed.quick_picks {
+                        // Never let an empty feed blank picks the library
+                        // already provided; an empty shelf means "no data".
+                        if let Some(quick_picks) = feed.quick_picks
+                            && !quick_picks.is_empty()
+                        {
                             this.quick_picks = Rc::new(quick_picks);
                         }
                         this.sections = Rc::new(pruned(&feed.sections));

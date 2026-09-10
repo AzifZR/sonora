@@ -24,20 +24,24 @@ pub(crate) async fn home(api: &YtMusic) -> Result<HomeFeed> {
             .execute("browse", Client::Music, json!({ "continuation": token }))
             .await
         {
-            Ok(continued) => tracks(&continued, QUICK_PICKS)
-                .into_iter()
-                .take(QUICK_PICKS_LIMIT)
-                .collect(),
+            Ok(continued) => Some(
+                tracks(&continued, QUICK_PICKS)
+                    .into_iter()
+                    .take(QUICK_PICKS_LIMIT)
+                    .collect(),
+            ),
             Err(error) => {
                 log::warn!("youtube: cannot load Quick picks: {error:#}");
-                Vec::new()
+                None
             }
         },
-        None => Vec::new(),
+        // No continuation token: the shelf is missing, so report no data and
+        // let the app keep whatever it already shows instead of blanking it.
+        None => None,
     };
     Ok(HomeFeed {
         listen_again,
-        quick_picks: Some(quick_picks),
+        quick_picks,
         sections: sections(&answer),
     })
 }
