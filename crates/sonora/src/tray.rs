@@ -19,6 +19,8 @@ use native::Icon;
 #[cfg(target_os = "linux")]
 use sni::Icon;
 
+const CAPTION_LIMIT: usize = 26;
+
 /// The longest side of the cover handed to the menu. macOS draws it 18pt tall whatever it
 /// measures, Windows and the status notifier hosts draw it at its own size.
 const COVER: u32 = 32;
@@ -232,7 +234,13 @@ fn shown(artwork: Option<Art>, cx: &App) -> Shown {
         PlaybackState::Playing | PlaybackState::Loading
     );
     let caption = match playback.track() {
-        Some(track) => format!("{} – {}", track.artists, track.name),
+        Some(track) => {
+            let full = match track.artists.is_empty() {
+                true => track.name.clone(),
+                false => format!("{} – {}", track.artists, track.name),
+            };
+            clip(&full, CAPTION_LIMIT)
+        }
         None => t!("player-nothing-playing").to_string(),
     };
     let song = playback.track().is_some_and(|track| track.id.is_some());
@@ -250,5 +258,24 @@ fn shown(artwork: Option<Art>, cx: &App) -> Shown {
         show: t!("tray-show").to_string(),
         quit: t!("app-quit").to_string(),
         playing,
+    }
+}
+
+/// Truncates `text` to at most `limit` characters, appending an ellipsis if shortened.
+fn clip(text: &str, limit: usize) -> String {
+    match text.char_indices().nth(limit) {
+        Some(_) => {
+            let cut = limit.saturating_sub(1);
+            let offset = text
+                .char_indices()
+                .nth(cut)
+                .map(|(i, _)| i)
+                .unwrap_or(text.len());
+            let trimmed = text[..offset].trim_end_matches(|c: char| {
+                c.is_whitespace() || c == '-' || c == '–' || c == '—' || c == ',' || c == '('
+            });
+            format!("{trimmed}…")
+        }
+        None => text.to_string(),
     }
 }
