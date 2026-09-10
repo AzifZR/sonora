@@ -134,6 +134,8 @@ impl SubmenuState {
         self.menu_bounds.set(Some(bounds));
     }
 
+    /// Whether the submenu opens to the left of its menu. Decided once from the panel width
+    /// measured last time it was open, or a guess before that; `measure_reach` corrects it.
     fn flipped(&self, viewport_width: Pixels) -> bool {
         if let Some(flip) = self.flip.get() {
             return flip;
@@ -146,18 +148,21 @@ impl SubmenuState {
             .get()
             .map(|bounds| bounds.size.width)
             .unwrap_or(SUBMENU_FALLBACK_WIDTH);
-        let flip = menu.right() + width + WINDOW_MARGIN > viewport_width;
+        let flip = flips(menu, width, viewport_width);
         self.flip.set(Some(flip));
         flip
     }
 
+    /// Re-decides the side once the submenu's real width is known, so a wrong guess flips it
+    /// and a submenu too wide for either side lands on the roomier one.
     fn measure_reach(&self, bounds: Bounds<Pixels>, window: &Window, cx: &mut App) {
-        if self.flip.get() == Some(true)
-            || bounds.right() + WINDOW_MARGIN <= window.viewport_size().width
-        {
+        let Some(menu) = self.menu_bounds.get() else {
+            return;
+        };
+        let flip = flips(menu, bounds.size.width, window.viewport_size().width);
+        if self.flip.replace(Some(flip)) == Some(flip) {
             return;
         }
-        self.flip.set(Some(true));
         cx.refresh_windows();
     }
 
@@ -477,6 +482,8 @@ impl RenderOnce for Menu {
                 .min_w_0()
                 .items_center()
                 .justify_between()
+                // The gap is part of the row's own width, so a menu widens rather than letting
+                // a trailing mark crowd the label.
                 .gap_3()
                 .px_3()
                 .when_else(detailed, |this| this.py_2(), |this| this.py_1())
@@ -559,7 +566,7 @@ impl RenderOnce for Menu {
                         false => this,
                         true => this.child({
                             let flip_left = submenu.state.flipped(viewport_width);
-                            div()
+                            let panel = div()
                                 .absolute()
                                 .top(SUBMENU_TOP)
                                 .w(px(0.))
@@ -597,7 +604,8 @@ impl RenderOnce for Menu {
                                                 })
                                                 .child(submenu.menu.inline().relative()),
                                         ),
-                                )
+                                );
+                            deferred(panel).with_priority(priority + 1)
                         }),
                     }
                 })
@@ -666,6 +674,10 @@ impl RenderOnce for Menu {
                 .min_w_0()
                 .min_h_0()
                 .gap_1()
+                .on_children_prepainted({
+                    let panel = panel.clone();
+                    move |bounds, _, _| panel.observe(bounds)
+                })
                 .child(div().w_full().py_1().child(header))
                 .child(body)
                 .into_any_element(),
@@ -809,6 +821,18 @@ fn arm(close: Close, cx: &mut App) {
 
     let armed = cx.global::<Escape>().0.clone();
     *armed.borrow_mut() = Some(close);
+}
+
+/// Picks the side a submenu of `width` opens on: the right when it fits, else the left when
+/// that fits, else whichever side has more room and lets it overlap the menu.
+fn flips(menu: Bounds<Pixels>, width: Pixels, viewport_width: Pixels) -> bool {
+    let right = viewport_width - menu.right() - WINDOW_MARGIN;
+    let left = menu.left() - WINDOW_MARGIN;
+    match (right >= width, left >= width) {
+        (true, _) => false,
+        (false, true) => true,
+        (false, false) => left > right,
+    }
 }
 
 fn grown(bounds: Bounds<Pixels>, x: Pixels, y: Pixels) -> Bounds<Pixels> {

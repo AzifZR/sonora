@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
   on System and it follows a Turkish desktop on its own.
+- Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on
+  System and it follows a Chinese desktop on its own.
 
 - The sidebar keeps one Pinned section for everything you pin, whatever provider it came from, so
   a streamed album can sit between two local playlists. The order is the one you drag, and it
@@ -36,6 +38,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
   the slider; the moon button leaves the player bar.
+
+### Fixed
+
+- A submenu that has no room beside its menu opens over it instead of under its rows, on whichever
+  side has more room. The Add to playlist list in a narrow window no longer shows the context menu's
+  items through it.
 
 ## [0.33.0] - 2026-09-09
 
