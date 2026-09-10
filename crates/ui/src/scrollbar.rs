@@ -213,23 +213,38 @@ impl Scrollbar {
 
     pub fn aim(&mut self, to: Pixels, window: &mut Window) {
         let across = self.scroll.offset().x;
-        self.glide.aim(&self.scroll, point(across, to), window);
+        match &self.list {
+            Some(list) => self.glide.aim(list, point(Pixels::ZERO, to), window),
+            None => self.glide.aim(&self.scroll, point(across, to), window),
+        }
         self.following = true;
     }
 
     pub fn place(&mut self, at: Pixels) {
         let across = self.scroll.offset().x;
-        self.glide.jump(&self.scroll, point(across, at));
-        self.seen = self.scroll.offset().y;
+        match &self.list {
+            Some(list) => self.glide.jump(list, point(Pixels::ZERO, at)),
+            None => self.glide.jump(&self.scroll, point(across, at)),
+        }
+        self.seen = match &self.list {
+            Some(list) => list.scroll_px_offset_for_scrollbar().y,
+            None => self.scroll.offset().y,
+        };
         self.following = true;
     }
 
     pub fn goal(&self) -> Pixels {
-        self.glide.goal(&self.scroll).y
+        match &self.list {
+            Some(list) => self.glide.goal(list).y,
+            None => self.glide.goal(&self.scroll).y,
+        }
     }
 
     pub fn presentation(&self) -> gpui::Point<Pixels> {
-        self.glide.presentation(&self.scroll)
+        match &self.list {
+            Some(list) => self.glide.presentation(list),
+            None => self.glide.presentation(&self.scroll),
+        }
     }
 
     pub fn sync(&self) {

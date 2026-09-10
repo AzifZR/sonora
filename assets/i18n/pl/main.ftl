@@ -705,3 +705,9 @@ nav-library-creator = Twórca
 nav-pin = Przypnij
 toast-library-pin-limit = Osiągnięto limit przypięć Spotify. Najpierw odepnij inny element.
 toast-library-pin-failed = Nie udało się zmienić przypięcia w Spotify.
+
+nav-pin-spotify = Przypnij w Spotify
+nav-unpin-spotify = Odepnij w Spotify
+
+nav-sidebar-library = Biblioteka w panelu bocznym
+nav-return-top = Wróć na górę

@@ -62,6 +62,7 @@ MAP = {
     "pause": ("pause", "pause-linear", "pause-line"),
     "pause-filled": ("pause-solid", "pause-bold", "pause-fill"),
     "pencil": ("edit-pencil", "pen-linear", "pencil-line"),
+    "pin": ("pin", "pin-linear", "pushpin-line"),
     "play": ("play", "play-linear", "play-line"),
     "play-filled": ("play-solid", "play-bold", "play-fill"),
     "play-off": (None, None, None),

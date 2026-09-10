@@ -129,8 +129,9 @@ fn stem(icon: &str) -> &str {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn pin_is_available_in_every_pack_through_fallback() {
+    fn every_pack_has_its_own_pin() {
         for pack in super::packs() {
+            assert!(pack.icon("pin").is_some(), "{} borrows its pin", pack.id);
             let path = super::shown(pack, "icons/pin.svg");
             assert!(
                 super::asset(&path).is_some(),
