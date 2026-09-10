@@ -27,6 +27,7 @@ use ui::{
     Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind, ThemeOverrides,
 };
 
+use crate::pins::PinSort;
 use crate::queue::{Resume, gap_target};
 use crate::{Repeat, Sonora};
 
@@ -201,7 +202,6 @@ struct Values {
     local_folders: Vec<PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     hidden_nav: Vec<String>,
-    sidebar_only_pinned: bool,
     appearance: Appearance,
 }
 
@@ -259,7 +259,6 @@ impl Default for Values {
             local_folder: None,
             local_folders: Vec::new(),
             hidden_nav: Vec::new(),
-            sidebar_only_pinned: true,
             appearance: Appearance::default(),
         }
     }
@@ -284,7 +283,10 @@ struct StateValues {
     sorting: HashMap<String, Option<Sorting>>,
     views: HashMap<String, Mode>,
     pinned: Vec<Held>,
-    sidebar_pin_order: Vec<String>,
+    sidebar_pinned_open: bool,
+    sidebar_full_library: bool,
+    sidebar_pin_sort: String,
+    sidebar_pin_reversed: bool,
     resume: Option<Resume>,
     window: Option<Frame>,
     system_theme: String,
@@ -307,7 +309,10 @@ impl Default for StateValues {
             sorting: HashMap::new(),
             views: HashMap::new(),
             pinned: Vec::new(),
-            sidebar_pin_order: Vec::new(),
+            sidebar_pinned_open: false,
+            sidebar_full_library: false,
+            sidebar_pin_sort: String::new(),
+            sidebar_pin_reversed: false,
             resume: None,
             window: None,
             system_theme: ThemeKind::Dark.id().to_owned(),
@@ -1015,22 +1020,68 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
-    pub fn sidebar_pin_order(&self) -> &[String] {
-        &self.state.sidebar_pin_order
+    /// Whether the sidebar's pinned section is expanded. Collapsed on a first run.
+    pub fn sidebar_pinned_open(&self) -> bool {
+        self.state.sidebar_pinned_open
     }
 
-    pub fn set_sidebar_pin_order(&mut self, order: Vec<String>, cx: &mut Context<Self>) {
-        self.state.sidebar_pin_order = order;
+    pub fn set_sidebar_pinned_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.state.sidebar_pinned_open = open;
         self.schedule_state_save(cx);
     }
 
-    pub fn sidebar_only_pinned(&self) -> bool {
-        self.values.sidebar_only_pinned
+    /// Whether the sidebar lists the rest of the library under the pins.
+    pub fn sidebar_full_library(&self) -> bool {
+        self.state.sidebar_full_library
     }
 
-    pub fn set_sidebar_only_pinned(&mut self, only_pinned: bool, cx: &mut Context<Self>) {
-        self.values.sidebar_only_pinned = only_pinned;
-        self.schedule_save(cx);
+    pub fn set_sidebar_full_library(&mut self, full: bool, cx: &mut Context<Self>) {
+        self.state.sidebar_full_library = full;
+        self.schedule_state_save(cx);
+    }
+
+    pub fn sidebar_pin_sort(&self) -> Option<PinSort> {
+        PinSort::from_id(&self.state.sidebar_pin_sort)
+    }
+
+    pub fn sidebar_pin_reversed(&self) -> bool {
+        self.state.sidebar_pin_reversed
+    }
+
+    pub fn set_sidebar_pin_sort(
+        &mut self,
+        sort: Option<PinSort>,
+        reversed: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.sidebar_pin_sort = sort.map(PinSort::id).unwrap_or_default().to_owned();
+        self.state.sidebar_pin_reversed = reversed;
+        self.schedule_state_save(cx);
+    }
+
+    /// Rewrites the pins of `slugs` into `order`, leaving another provider's pins in their slots.
+    /// Nothing happens unless `order` holds exactly the pins already there.
+    pub fn rearrange(&mut self, order: &[Pin], slugs: &[&str], cx: &mut Context<Self>) {
+        let slots: Vec<usize> = shown(&self.state.pinned, slugs)
+            .map(|(index, _)| index)
+            .collect();
+        let moved: Vec<Held> = order
+            .iter()
+            .filter_map(|pin| {
+                self.state
+                    .pinned
+                    .iter()
+                    .find(|held| held.pin.same(pin))
+                    .cloned()
+            })
+            .collect();
+        if moved.len() != slots.len() {
+            return;
+        }
+        for (slot, held) in slots.into_iter().zip(moved) {
+            self.state.pinned[slot] = held;
+        }
+        self.schedule_state_save(cx);
     }
 
     pub fn nav_shown(&self, entry: &str) -> bool {
@@ -1418,18 +1469,13 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_filter_defaults_on_and_order_roundtrips() {
-        let values: Values = serde_json::from_str("{}").unwrap();
-        assert!(values.sidebar_only_pinned);
-        let values: Values = serde_json::from_str(r#"{"sidebar_only_pinned":false}"#).unwrap();
-        assert!(!values.sidebar_only_pinned);
-        let state = StateValues {
-            sidebar_pin_order: vec!["spotify:playlist:b".into(), "spotify:playlist:a".into()],
-            ..StateValues::default()
-        };
-        let saved = serde_json::to_string(&state).unwrap();
-        let loaded: StateValues = serde_json::from_str(&saved).unwrap();
-        assert_eq!(loaded.sidebar_pin_order, state.sidebar_pin_order);
+    fn the_pinned_section_starts_closed_in_the_dragged_order() {
+        let state = StateValues::default();
+        assert!(!state.sidebar_pinned_open);
+        assert!(!state.sidebar_full_library);
+        assert!(!state.sidebar_pin_reversed);
+        assert!(PinSort::from_id(&state.sidebar_pin_sort).is_none());
+        assert!(PinSort::from_id("nonsense").is_none());
     }
 
     #[test]

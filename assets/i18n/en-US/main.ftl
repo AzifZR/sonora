@@ -672,21 +672,11 @@ tags-comment = Comment
 toast-tags-saved = Saved the tags for { $name }
 toast-tags-failed = The tags could not be saved
 
-nav-library-recents = Recents
-kind-audiobook = Audiobook
-kind-podcast = Podcast
-kind-folder = Folder
-
-nav-library-added = Recently Added
-nav-library-alphabetical = Alphabetical
-nav-library-creator = Creator
-
 nav-pin = Pin
 toast-library-pin-limit = Spotify’s pin limit has been reached. Unpin another item first.
 toast-library-pin-failed = Could not update the pin in Spotify.
-
-
-nav-sidebar-library = Sidebar library
-nav-return-top = Return to top
-
-nav-show-only-pinned = Show only pinned
+nav-nothing-pinned = Nothing here
+nav-pins-alphabetical = Alphabetical
+nav-pins-kind = By type
+nav-show-full-library = Show full library
+nav-return-top = Back to top

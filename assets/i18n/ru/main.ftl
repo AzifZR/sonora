@@ -605,21 +605,11 @@ tags-comment = Комментарий
 toast-tags-saved = Теги «{ $name }» сохранены
 toast-tags-failed = Не удалось сохранить теги
 
-nav-library-recents = Недавние
-kind-audiobook = Аудиокнига
-kind-podcast = Подкаст
-kind-folder = Папка
-
-nav-library-added = Недавно добавленные
-nav-library-alphabetical = По алфавиту
-nav-library-creator = Автор
-
 nav-pin = Закрепить
 toast-library-pin-limit = Достигнут лимит закреплений Spotify. Сначала открепите другой элемент.
 toast-library-pin-failed = Не удалось изменить закрепление в Spotify.
-
-
-nav-sidebar-library = Библиотека в боковой панели
-nav-return-top = Вернуться наверх
-
-nav-show-only-pinned = Только закреплённые
+nav-nothing-pinned = Здесь пусто
+nav-pins-alphabetical = По алфавиту
+nav-pins-kind = По типу
+nav-show-full-library = Показывать всю медиатеку
+nav-return-top = Наверх

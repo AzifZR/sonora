@@ -693,21 +693,11 @@ tags-comment = Komentarz
 toast-tags-saved = Zapisano tagi „{ $name }”
 toast-tags-failed = Nie udało się zapisać tagów
 
-nav-library-recents = Ostatnie
-kind-audiobook = Audiobook
-kind-podcast = Podcast
-kind-folder = Folder
-
-nav-library-added = Ostatnio dodane
-nav-library-alphabetical = Alfabetycznie
-nav-library-creator = Twórca
-
 nav-pin = Przypnij
 toast-library-pin-limit = Osiągnięto limit przypięć Spotify. Najpierw odepnij inny element.
 toast-library-pin-failed = Nie udało się zmienić przypięcia w Spotify.
-
-
-nav-sidebar-library = Biblioteka w panelu bocznym
-nav-return-top = Wróć na górę
-
-nav-show-only-pinned = Pokaż tylko przypięte
+nav-nothing-pinned = Tu jest pusto
+nav-pins-alphabetical = Alfabetycznie
+nav-pins-kind = Według typu
+nav-show-full-library = Pokaż całą bibliotekę
+nav-return-top = Do góry

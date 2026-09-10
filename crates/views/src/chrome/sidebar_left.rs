@@ -1,26 +1,23 @@
 use ui::{
-    ActiveTheme as _, Button, Card, DraggedPin, Edge, Panel, Pin, Pinnable as _, Popup, SNUG,
-    Scrollbar, Shield, Side, Spot, Tabs, Text, drop_gap, drop_marker,
+    ActiveTheme as _, Button, Card, DraggedPin, Edge, MenuItem, Panel, Picker, Pin, Pinnable as _,
+    Popup, SNUG, Scroller, Shield, Side, Spot, Tabs, Text, Vacancy, drop_gap, drop_marker,
 };
 
-use crate::shared::pins::Pinned as _;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, DragMoveEvent, ElementId, Entity, Hsla, ListAlignment, ListState,
-    MouseButton, MouseDownEvent, Pixels, Point, Render, ScrollWheelEvent, list, svg,
+    AnyElement, App, Context, DragMoveEvent, ElementId, Entity, Hsla, MouseButton, MouseDownEvent,
+    Pixels, Point, Render, ScrollHandle, svg,
 };
 use gpui::{Window, div, px};
 use router::{
     Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
 };
-use state::{
-    AppSettings, Library, LibraryState, Origin, Playback, PlaybackState, Session, Shelf, Sonora,
-};
+use state::{AppSettings, Origin, PinSort, Pins, Playback, PlaybackState, Session, Sonora};
 
-use crate::shared::menus::{ItemMenu, item_menu, pin_action, pin_menu};
-use music::{LibraryItem, LibraryItemKind, LibraryOrder};
+use crate::shared::menus::{ItemMenu, item_menu};
 
-const SPOTIFY_PINS: &str = "sidebar-spotify-pins";
+/// The one drag list the pinned section keeps, so a pin dropped anywhere in it lands in order.
+const PINS: &str = "sidebar-pins";
 
 const NAV: [(Option<NavEntry>, &str, Destination); 6] = [
     (Some(NavEntry::Home), "icons/house.svg", Destination::Home),
@@ -69,6 +66,9 @@ const SETTINGS_TABS: [(&str, SettingsTab); 5] = [
 const MIN_WIDTH: Pixels = px(160.);
 const MAX_WIDTH: Pixels = px(400.);
 const HINT_HEIGHT: Pixels = px(42.);
+const VACANCY_HEIGHT: Pixels = px(88.);
+/// How far the pin mark on a library row falls back from the accent.
+const PIN_MARK: f32 = 0.7;
 
 pub(crate) struct SidebarLeft {
     settings: Entity<AppSettings>,
@@ -82,19 +82,15 @@ pub(crate) struct SidebarLeft {
     library_open: bool,
     local_open: bool,
     settings_open: bool,
+    pinned_open: bool,
     dropping: bool,
     drop_gap: Option<usize>,
-    library_drop_gap: Option<usize>,
     playback: Entity<Playback>,
+    pins: Entity<Pins>,
     track_menu: ItemMenu,
     context_menu: Option<(Pin, Point<Pixels>)>,
-    scrollbar: Entity<Scrollbar>,
-    scroll: ListState,
-    row_height: Pixels,
-    scroll_width: Option<Pixels>,
-    library: Entity<Library>,
-    library_context_menu: Option<(LibraryItem, Point<Pixels>)>,
-    library_popovers: ui::Popovers,
+    scrollbar: Entity<ui::Scrollbar>,
+    popovers: ui::Popovers,
 }
 
 impl SidebarLeft {
@@ -102,15 +98,15 @@ impl SidebarLeft {
         let settings = Sonora::global(cx).settings.clone();
         let session = Sonora::global(cx).session.clone();
         let playback = Sonora::global(cx).playback.clone();
-        let library = Sonora::global(cx).library.clone();
-        cx.observe(&library, |_, _, cx| cx.notify()).detach();
+        let pins = Sonora::global(cx).pins.clone();
+        cx.observe(&pins, |_, _, cx| cx.notify()).detach();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         let me = cx.entity_id();
-        let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
-        let scroll = ListState::new(1, ListAlignment::Top, cx.theme().metrics.list_row);
-        let scrollbar = cx.new(|_| Scrollbar::list(scroll.clone()).watching(me));
+        let playlist_scrollbar = cx.new(|_| ui::Scrollbar::inset().watching(me));
+        let scrollbar = cx.new(|_| ui::Scrollbar::new(ScrollHandle::new()).watching(me));
         let width = px(settings.read(cx).sidebar_width()).clamp(MIN_WIDTH, MAX_WIDTH);
         let open = settings.read(cx).sidebar_open();
+        let pinned_open = settings.read(cx).sidebar_pinned_open();
         let trail = router::trail(cx);
 
         cx.observe(&session, |_, _, cx| cx.notify()).detach();
@@ -139,19 +135,15 @@ impl SidebarLeft {
             library_open,
             local_open,
             settings_open,
+            pinned_open,
             dropping: false,
             drop_gap: None,
-            library_drop_gap: None,
             playback,
+            pins,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
             scrollbar,
-            scroll,
-            row_height: cx.theme().metrics.list_row,
-            scroll_width: None,
-            library,
-            library_context_menu: None,
-            library_popovers: ui::Popovers::default(),
+            popovers: ui::Popovers::default(),
         }
     }
 
@@ -169,54 +161,12 @@ impl SidebarLeft {
     fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
         self.track_menu.reset(cx);
         self.context_menu = None;
-        self.library_context_menu = None;
         cx.notify();
     }
 
     fn menu(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let (menu, position) = if let Some((item, position)) = &self.library_context_menu {
-            let pin = item_pin(item);
-            let mut menu = match &pin {
-                Some(pin) => item_menu(pin, &self.track_menu, self.playback.clone(), cx),
-                None => ui::Menu::new("sidebar-library-context"),
-            };
-            if let Some(pin) = &pin {
-                menu = menu
-                    .item(ui::MenuItem::separator("library-pin-separator"))
-                    .item(pin_action(pin, cx));
-            } else {
-                let library = self.library.read(cx);
-                if let Some(current) = library
-                    .sidebar_items()
-                    .and_then(|items| items.iter().find(|current| current.uri == item.uri))
-                {
-                    let pinned = current.pinned;
-                    let pending = library.sidebar_pin_pending();
-                    let uri = current.uri.clone();
-                    let library = self.library.clone();
-                    menu = menu.item(
-                        ui::MenuItem::new(
-                            "library-pin",
-                            i18n::lookup(if pinned { "nav-unpin" } else { "nav-pin" }, None),
-                        )
-                        .icon("icons/pin.svg")
-                        .when(pending, ui::MenuItem::disabled)
-                        .on_click(move |_, _, cx| {
-                            library.update(cx, |library, cx| {
-                                library.set_sidebar_pinned(uri.clone(), !pinned, |_| {}, cx);
-                            });
-                        }),
-                    );
-                }
-            }
-            (menu, *position)
-        } else {
-            let (pin, position) = self.context_menu.clone()?;
-            (
-                pin_menu(&pin, &self.track_menu, self.playback.clone(), cx),
-                position,
-            )
-        };
+        let (pin, position) = self.context_menu.clone()?;
+        let menu = item_menu(&pin, &self.track_menu, self.playback.clone(), cx);
 
         Some(
             Popup::new(position, menu)
@@ -286,12 +236,166 @@ impl SidebarLeft {
         }
     }
 
+    /// The pinned section: its header, and its entries once it is expanded.
+    fn pins(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if !self.settings.read(cx).nav_shown(NavEntry::Pins.id()) {
+            return Vec::new();
+        }
+
+        let mut rows = vec![self.pins_header(cx)];
+        if !self.pinned_open {
+            return rows;
+        }
+
+        let pinned = self.pins.read(cx).entries(cx);
+        let count = pinned.len();
+        let rest = match self.settings.read(cx).sidebar_full_library() {
+            true => self.pins.read(cx).library(cx),
+            false => Vec::new(),
+        };
+        if pinned.is_empty() && rest.is_empty() {
+            rows.push(match self.dropping {
+                true => hint(cx),
+                false => vacancy(),
+            });
+            return rows;
+        }
+
+        rows.extend(
+            pinned
+                .into_iter()
+                .chain(rest)
+                .enumerate()
+                .map(|(index, pin)| self.pin_row(index, pin, count, cx)),
+        );
+        rows
+    }
+
+    fn pins_header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        let open = self.pinned_open;
+
+        div()
+            .id("sidebar-pins-header")
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .min_w_0()
+            .h(theme.metrics.control_small)
+            .px_2()
+            .mt(theme.metrics.pad)
+            .mb(px(2.))
+            .child(
+                div()
+                    .id("sidebar-pins-toggle")
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap_1()
+                    .cursor_pointer()
+                    .child(
+                        svg()
+                            .path(icons::path(chevron(open)))
+                            .flex_none()
+                            .size(theme.text(Text::Small))
+                            .text_color(theme.muted_foreground),
+                    )
+                    .child(
+                        ui::eyebrow(i18n::lookup("nav-pinned", None), cx)
+                            .min_w_0()
+                            .truncate(),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.pinned_open = !this.pinned_open;
+                        let open = this.pinned_open;
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_sidebar_pinned_open(open, cx)
+                        });
+                        cx.notify();
+                    })),
+            )
+            .when(open, |header| header.child(self.sort_picker(cx)))
+            // Dragging over the header aims at the top of the list, which is otherwise
+            // out of reach above the first entry.
+            .on_drag_move(
+                cx.listener(|this, event: &DragMoveEvent<DraggedPin>, _, cx| {
+                    if !event.bounds.contains(&event.event.position) || this.drop_gap == Some(0) {
+                        return;
+                    }
+                    this.drop_gap = Some(0);
+                    cx.notify();
+                }),
+            )
+            .into_any_element()
+    }
+
+    fn sort_picker(&self, cx: &App) -> AnyElement {
+        let chosen = self.pins.read(cx).sort(cx);
+        let reversed = self.pins.read(cx).reversed(cx);
+        let full = self.settings.read(cx).sidebar_full_library();
+        let arrow = match reversed {
+            true => "icons/chevron-down.svg",
+            false => "icons/chevron-up.svg",
+        };
+        let pins = self.pins.clone();
+
+        Picker::icon(
+            "sidebar-pins-sort",
+            &self.popovers,
+            "icons/arrow-up-down.svg",
+        )
+        .tooltip("tool-sort")
+        .sticky()
+        .width(Picker::NARROW)
+        .tint(match self.pins.read(cx).sorted(cx) {
+            true => cx.theme().primary,
+            false => cx.theme().muted_foreground,
+        })
+        .items(PinSort::ALL.into_iter().map(move |sort| {
+            let pins = pins.clone();
+
+            MenuItem::new(sort.id(), i18n::lookup(sort.key(), None))
+                .selected(Some(sort) == chosen)
+                .when(Some(sort) == chosen, |item| item.icon(arrow))
+                .on_click(move |_, _, cx| {
+                    pins.update(cx, |pins, cx| pins.choose(sort, cx));
+                })
+        }))
+        .item(MenuItem::separator("sidebar-pins-scope"))
+        .item(
+            MenuItem::new(
+                "sidebar-full-library",
+                i18n::lookup("nav-show-full-library", None),
+            )
+            .checked(full)
+            .on_click({
+                let settings = self.settings.clone();
+                move |_, _, cx| {
+                    settings.update(cx, |settings, cx| {
+                        settings.set_sidebar_full_library(!full, cx)
+                    });
+                }
+            }),
+        )
+        .into_any_element()
+    }
+
+    /// One entry. The first `count` of them are the pins, which carry the drop slots; the rest
+    /// is the library underneath, which can be dragged up into the pins but holds no slot.
     fn pin_row(&self, index: usize, pin: Pin, count: usize, cx: &mut Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        let accent = theme.sidebar_accent;
         let destination = Destination::from(&pin);
         let active = destination == self.trail.read(cx).current();
         let opened = pin.clone();
+        let held = index < count;
+        // Only worth marking when the library sits alongside, since otherwise every row is a pin.
+        let marked = held && self.settings.read(cx).sidebar_full_library();
         let edge = match self.drop_gap {
-            Some(gap) if gap == index => Some(Edge::Above),
+            Some(gap) if held && gap == index => Some(Edge::Above),
             Some(gap) if gap == count && index + 1 == count => Some(Edge::Below),
             _ => None,
         };
@@ -302,7 +406,7 @@ impl SidebarLeft {
             Some(PlaybackState::Playing)
         );
 
-        let card = sidebar_card(("pinned", index), pin.label(), active, cx)
+        let card = Card::new(("pinned", index), pin.label())
             .cover(pin.cover.clone())
             .fallback(pin.kind.icon())
             .when(pin.kind.round(), Card::circle)
@@ -313,32 +417,33 @@ impl SidebarLeft {
                         .update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
                 }),
             )
-            .meta(library_caption(pin.kind.key(), "", true, cx))
+            .tint(match active {
+                true => theme.foreground,
+                false => theme.muted_foreground,
+            })
+            .meta(caption(pin.kind.key(), marked, cx))
+            .when(active, |card| card.bg(accent))
+            .hover(move |style| style.bg(accent))
             .press(move |_, _, cx| navigate(destination.clone(), cx))
             .menu(cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                 this.track_menu.reset(cx);
-                this.library_context_menu = this
-                    .library
-                    .read(cx)
-                    .sidebar_items()
-                    .and_then(|items| {
-                        items
-                            .iter()
-                            .find(|item| item_pin(item).is_some_and(|pin| pin.same(&opened)))
-                    })
-                    .cloned()
-                    .map(|item| (item, event.position));
                 this.context_menu = Some((opened.clone(), event.position));
                 cx.notify();
             }))
-            .pin(pin)
+            .when_else(
+                held,
+                |card| card.pin_from(pin.clone(), Spot::new(PINS, index)),
+                |card| card.pin(pin.clone()),
+            )
             .on_drag_move(
                 cx.listener(move |this, event: &DragMoveEvent<DraggedPin>, _, cx| {
                     let Some(gap) = drop_gap(event.bounds, event.event.position, index) else {
                         return;
                     };
-                    // Keep the actual gap even for a no-op drop: None means append.
-                    let gap = Some(gap);
+                    let gap = Some(match held {
+                        true => gap,
+                        false => count,
+                    });
                     if this.drop_gap != gap {
                         this.drop_gap = gap;
                         cx.notify();
@@ -357,247 +462,7 @@ impl SidebarLeft {
             .into_any_element()
     }
 
-    fn local_pins(&self, cx: &App) -> Vec<Pin> {
-        let slugs = self.session.read(cx).active_slugs();
-        self.settings
-            .read(cx)
-            .pinned(&slugs)
-            .into_iter()
-            .filter(|pin| {
-                !self.library.read(cx).sidebar_items().is_some_and(|items| {
-                    items.iter().any(|item| {
-                        item.pinned && item_pin(item).is_some_and(|remote| remote.same(pin))
-                    })
-                })
-            })
-            .collect()
-    }
-
-    fn library_order(&self, local_pins: &[Pin], cx: &App) -> Vec<LibraryItem> {
-        let library = self.library.read(cx);
-        let items = library
-            .sidebar_items()
-            .map(<[LibraryItem]>::to_vec)
-            .unwrap_or_else(|| fallback_library(library.state(Shelf::Streaming)));
-        let settings = self.settings.read(cx);
-        let mut items = without_local_pins(items, local_pins, settings.sidebar_only_pinned());
-        order_library_pins(&mut items, settings.sidebar_pin_order());
-        items
-    }
-
-    fn library_toolbar(&self, empty: bool, cx: &mut Context<Self>) -> AnyElement {
-        let library = self.library.read(cx);
-        let loading = matches!(library.state(Shelf::Streaming), LibraryState::Loading);
-        let empty_key = if loading {
-            "play-loading"
-        } else if library.part_failed(Shelf::Streaming, state::LibraryPart::Playlists)
-            || matches!(library.state(Shelf::Streaming), LibraryState::Failed(_))
-        {
-            "library-part-not-loaded"
-        } else {
-            "library-no-matches"
-        };
-        let theme = *cx.theme();
-        div()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .w_full()
-            .min_w_0()
-            .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w_full()
-                    .min_w_0()
-                    .flex_none()
-                    .h(theme.metrics.control_small)
-                    .px_3()
-                    .gap(theme.metrics.pad / 2.)
-                    .child(
-                        div().flex_1().min_w_0().overflow_hidden().child(
-                            ui::eyebrow(i18n::lookup("nav-pinned", None), cx)
-                                .w_full()
-                                .truncate(),
-                        ),
-                    )
-                    .when(self.session.read(cx).authenticated(), |row| {
-                        let only_pinned = self.settings.read(cx).sidebar_only_pinned();
-                        let settings = self.settings.clone();
-                        let selected = self.library.read(cx).sidebar_order();
-                        let library = self.library.clone();
-                        row.child(
-                            ui::Popover::new(
-                                "sidebar-library-order",
-                                self.library_popovers.clone(),
-                            )
-                            .max_w(gpui::relative(0.55))
-                            .min_w_0()
-                            .flex_none()
-                            .commands()
-                            .button(
-                                Button::new("sidebar-library-sort")
-                                    .ghost()
-                                    .small()
-                                    .max_w(gpui::relative(1.))
-                                    .min_w_0()
-                                    .label(i18n::lookup(order_key(selected), None))
-                                    .trailing("icons/list.svg")
-                                    .text_right()
-                                    .text_size(theme.text(Text::Tiny))
-                                    .tint(theme.muted_foreground),
-                            )
-                            .menu(
-                                ui::Menu::new("sidebar-library-order-menu")
-                                    .right_0()
-                                    .top(theme.metrics.control_small)
-                                    .items(LibraryOrder::ALL.into_iter().map(move |order| {
-                                        let library = library.clone();
-                                        ui::MenuItem::new(
-                                            order_key(order),
-                                            i18n::lookup(order_key(order), None),
-                                        )
-                                        .selected(order == selected)
-                                        .on_click(
-                                            move |_, _, cx| {
-                                                library.update(cx, |library, cx| {
-                                                    library.set_sidebar_order(order, cx)
-                                                });
-                                            },
-                                        )
-                                    }))
-                                    .item(ui::MenuItem::separator("sidebar-filter-separator"))
-                                    .item(
-                                        ui::MenuItem::new(
-                                            "sidebar-only-pinned",
-                                            i18n::lookup("nav-show-only-pinned", None),
-                                        )
-                                        .checked(only_pinned)
-                                        .on_click(
-                                            move |_, _, cx| {
-                                                settings.update(cx, |settings, cx| {
-                                                    settings
-                                                        .set_sidebar_only_pinned(!only_pinned, cx)
-                                                });
-                                            },
-                                        ),
-                                    ),
-                            ),
-                        )
-                    }),
-            )
-            .when(empty && self.dropping, |view| view.child(hint(cx)))
-            .when(empty && !self.dropping, |view| {
-                view.child(
-                    div()
-                        .px_3()
-                        .py_2()
-                        .text_size(theme.text(Text::Small))
-                        .text_color(theme.muted_foreground)
-                        .child(i18n::lookup(empty_key, None)),
-                )
-            })
-            .into_any_element()
-    }
-
-    fn library_card(
-        &self,
-        index: usize,
-        count: usize,
-        item: LibraryItem,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let draggable = item.pinned.then(|| item_pin(&item)).flatten();
-        let edge = match self.library_drop_gap {
-            Some(gap) if gap == index => Some(Edge::Above),
-            Some(gap) if gap == index + 1 && index + 1 == count => Some(Edge::Below),
-            _ => None,
-        };
-        let context_item = item.clone();
-        let origin = item_origin(&item);
-        let destination = item_destination(&item);
-        let active = destination.as_ref() == Some(&self.trail.read(cx).current());
-        let playing = matches!(
-            origin
-                .as_ref()
-                .and_then(|origin| self.playback.read(cx).playing_from(origin)),
-            Some(PlaybackState::Playing)
-        );
-        let card = sidebar_card(
-            gpui::SharedString::from(format!("sidebar-library-{}", item.uri)),
-            item.name.clone().into(),
-            active,
-            cx,
-        )
-        .cover(item.cover.clone())
-        .fallback(item_icon(item.kind))
-        .when(item.kind == LibraryItemKind::Artist, Card::circle)
-        .meta(library_caption(
-            item_key(item.kind),
-            &item.subtitle,
-            item.pinned,
-            cx,
-        ))
-        .when_some(origin, |card, origin| {
-            card.play(
-                playing,
-                cx.listener(move |this, _, _, cx| {
-                    this.playback
-                        .update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
-                }),
-            )
-        })
-        .press(move |_, _, cx| match &destination {
-            Some(destination) => navigate(destination.clone(), cx),
-            None => cx.open_url(&spotify_url(&item.uri)),
-        })
-        .menu(cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-            this.track_menu.reset(cx);
-            this.context_menu = None;
-            this.library_context_menu = Some((context_item.clone(), event.position));
-            cx.notify();
-        }))
-        .when_some(draggable, |card, pin| {
-            card.pin_from(pin, Spot::new(SPOTIFY_PINS, index))
-                .on_drag_move(
-                    cx.listener(move |this, event: &DragMoveEvent<DraggedPin>, _, cx| {
-                        if event.drag(cx).spot(SPOTIFY_PINS).is_none() {
-                            return;
-                        }
-                        let gap = drop_gap(event.bounds, event.event.position, index);
-                        if this.library_drop_gap != gap {
-                            this.library_drop_gap = gap;
-                            cx.notify();
-                        }
-                    }),
-                )
-                .on_drop(cx.listener(move |this, dragged: &DraggedPin, _, cx| {
-                    if dragged.spot(SPOTIFY_PINS).is_none() {
-                        return;
-                    }
-                    cx.stop_propagation();
-                    let local = this.local_pins(cx);
-                    let items = this.library_order(&local, cx);
-                    if let Some(gap) = this.library_drop_gap.take() {
-                        if let Some(order) = moved_library_pins(&items, &dragged.pin, gap) {
-                            this.settings.update(cx, |settings, cx| {
-                                settings.set_sidebar_pin_order(order, cx)
-                            });
-                        }
-                    }
-                    cx.notify();
-                }))
-        });
-        div()
-            .relative()
-            .child(card)
-            .when_some(edge, |row, edge| row.child(drop_marker(edge, cx)))
-            .into_any_element()
-    }
-
-    fn navigation(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn navigation(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = *cx.theme();
         let sidebar_accent = theme.sidebar_accent;
         let foreground = theme.foreground;
@@ -735,50 +600,7 @@ impl SidebarLeft {
             );
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .gap_1()
-            .w_full()
-            .p_3()
-            .children(rows)
-            .into_any_element()
-    }
-
-    fn return_to_top(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
-        let viewport = self.scroll.viewport_bounds().size.height;
-        let threshold = (cx.theme().metrics.list_row * 3.).min(viewport / 2.);
-        if viewport <= Pixels::ZERO || -self.scroll.scroll_px_offset_for_scrollbar().y < threshold {
-            return None;
-        }
-        let theme = *cx.theme();
-        Some(
-            div()
-                .absolute()
-                .bottom_3()
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                    div().flex().flex_none().block_mouse_except_scroll().child(
-                        Button::new("sidebar-return-top")
-                            .ghost()
-                            .small()
-                            .icon("icons/undo-2.svg")
-                            .tooltip("nav-return-top")
-                            .rounded_full()
-                            .border_1()
-                            .border_color(theme.border)
-                            .bg(theme.popover)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.scrollbar
-                                    .update(cx, |bar, _| bar.aim(Pixels::ZERO, window));
-                                cx.notify();
-                            })),
-                    ),
-                ),
-        )
+        rows
     }
 
     fn persist(&self, cx: &mut Context<Self>) {
@@ -797,85 +619,15 @@ impl Render for SidebarLeft {
 
         let current = self.trail.read(cx).current();
         self.follow(&current);
-        let authenticated = self.session.read(cx).authenticated();
         self.adapt(window, cx);
 
         if !cx.has_active_drag() {
             self.dropping = false;
             self.drop_gap = None;
-            self.library_drop_gap = None;
         }
 
-        let library_enabled = self.settings.read(cx).nav_shown(NavEntry::LibraryList.id());
-        let local_pins = if library_enabled {
-            self.local_pins(cx)
-        } else {
-            Vec::new()
-        };
-        let local_count = local_pins.len();
-        let order = if authenticated && library_enabled {
-            self.library_order(&local_pins, cx)
-        } else {
-            Vec::new()
-        };
-        let show_library = library_enabled && (authenticated || local_count > 0 || self.dropping);
-        let count = 1 + usize::from(show_library) + local_count + order.len();
-        let card_height = theme.metrics.list_row + window.rem_size() * 0.25;
-        let old_count = self.scroll.item_count();
-        if count != old_count {
-            self.scroll.splice(
-                count.min(old_count)..old_count,
-                count.saturating_sub(old_count),
-            );
-            // Off-screen cards still contribute to the scroll range.
-            self.scroll.clone().with_uniform_item_height(card_height);
-        }
-        // Navigation can expand and the empty-state message can change height.
-        // Remeasure only these two rows; library cards retain their cached heights.
-        self.scroll.remeasure_items(0..count.min(2));
-        if self.row_height != theme.metrics.list_row {
-            self.row_height = theme.metrics.list_row;
-            self.scroll.remeasure();
-        }
-        // GPUI clears height hints when it measures a new list width. Restore
-        // the card estimate after layout, without building those cards.
-        let sidebar = cx.entity().downgrade();
-        window.on_next_frame(move |_, cx| {
-            sidebar
-                .update(cx, |this, cx| {
-                    let width = this.scroll.viewport_bounds().size.width;
-                    if this.scroll_width != Some(width) {
-                        this.scroll_width = Some(width);
-                        this.scroll.clone().with_uniform_item_height(card_height);
-                        cx.notify();
-                    }
-                })
-                .ok();
-        });
-        self.scrollbar.read(cx).sync();
-        let gliding = self.scrollbar.clone();
-        let content = list(
-            self.scroll.clone(),
-            cx.processor(move |this, index, _, cx| match index {
-                0 => this.navigation(cx),
-                1 => this.library_toolbar(local_count == 0 && order.is_empty(), cx),
-                _ => {
-                    let row = index - 2;
-                    let card = if row < local_count {
-                        this.pin_row(row, local_pins[row].clone(), local_count, cx)
-                    } else {
-                        this.library_card(
-                            row - local_count,
-                            order.len(),
-                            order[row - local_count].clone(),
-                            cx,
-                        )
-                    };
-                    div().w_full().px_3().pb_1().child(card).into_any_element()
-                }
-            }),
-        )
-        .size_full();
+        let mut rows = self.navigation(cx);
+        rows.extend(self.pins(cx));
 
         let overlaid = self.overlays();
         let panel = Panel::new("sidebar-left", Side::Left, self.width)
@@ -888,42 +640,24 @@ impl Render for SidebarLeft {
                 cx.notify();
             }))
             .on_drag_move(cx.listener(|this, _: &DragMoveEvent<DraggedPin>, _, cx| {
-                let settled = this.drop_gap.take().is_some() || !this.dropping;
-                this.dropping = true;
-                if settled {
-                    cx.notify();
-                }
-            }))
-            .on_drop(cx.listener(|this, dragged: &DraggedPin, _, cx| {
-                if dragged.spot(SPOTIFY_PINS).is_some() {
-                    this.library_drop_gap = None;
-                    cx.notify();
+                if this.dropping {
                     return;
                 }
+                this.dropping = true;
+                // A drag has nowhere to land while the section is closed, so open it.
+                if !this.pinned_open {
+                    this.pinned_open = true;
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_sidebar_pinned_open(true, cx)
+                    });
+                }
+                cx.notify();
+            }))
+            .on_drop(cx.listener(|this, dragged: &DraggedPin, _, cx| {
                 let gap = this.drop_gap.take();
                 this.dropping = false;
                 let pin = dragged.pin.clone();
-                if let Some(slug) = this.session.read(cx).slug_for(&pin.id) {
-                    let slugs = this.session.read(cx).active_slugs();
-                    let stored = this.settings.read(cx).pinned(&slugs);
-                    let visible = this.local_pins(cx);
-                    // Resolve the visible gap through its neighbouring pin before
-                    // passing it to settings, which counts hidden duplicates too.
-                    let gap = gap.map(|gap| {
-                        visible
-                            .get(gap)
-                            .and_then(|next| stored.iter().position(|pin| pin.same(next)))
-                            .or_else(|| {
-                                visible
-                                    .last()
-                                    .and_then(|last| stored.iter().position(|pin| pin.same(last)))
-                                    .map(|index| index + 1)
-                            })
-                            .unwrap_or(stored.len())
-                    });
-                    this.settings
-                        .update(cx, |settings, cx| settings.pin(slug, pin, gap, &slugs, cx));
-                }
+                this.pins.update(cx, |pins, cx| pins.place(pin, gap, cx));
                 cx.notify();
             }))
             .when(!self.is_open(), |this| this.hidden())
@@ -935,20 +669,25 @@ impl Render for SidebarLeft {
             .child(
                 div()
                     .relative()
-                    .size_full()
+                    .flex_1()
                     .min_h_0()
-                    .child(content)
-                    .on_scroll_wheel(move |event: &ScrollWheelEvent, window, cx| {
-                        gliding.update(cx, |bar, _| {
-                            if event.delta.precise() {
-                                bar.stirred();
-                            } else {
-                                bar.nudge(window);
-                            }
-                        });
-                    })
-                    .child(self.scrollbar.clone())
-                    .children(self.return_to_top(cx)),
+                    .child(
+                        Scroller::new("sidebar-left-rows", &self.scrollbar)
+                            .size_full()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .w_full()
+                                    .p_3()
+                                    // Leave the last row somewhere to go, clear of the
+                                    // button that floats over the bottom.
+                                    .pb(ui::perch_room(cx))
+                                    .children(rows),
+                            ),
+                    )
+                    .children(ui::return_top("sidebar-return-top", &self.scrollbar, cx)),
             )
             .children(self.menu(cx));
 
@@ -978,187 +717,25 @@ impl Render for SidebarLeft {
     }
 }
 
-fn library_caption(kind: &str, subtitle: &str, pinned: bool, cx: &App) -> impl IntoElement {
+/// The kind of an entry, behind a dimmed pin when it is one of the pinned ones.
+fn caption(kind: &'static str, marked: bool, cx: &App) -> impl IntoElement {
     let theme = *cx.theme();
-    let kind = i18n::lookup(kind, None);
-    let label = if subtitle.is_empty() {
-        kind.to_string()
-    } else {
-        format!("{kind} · {subtitle}")
-    };
+
     div()
         .flex()
         .items_center()
         .gap(theme.metrics.pad / 4.)
         .min_w_0()
-        .when(pinned, |row| {
+        .when(marked, |row| {
             row.child(
                 svg()
                     .path(icons::path("icons/pin.svg"))
                     .flex_none()
                     .size(theme.text(Text::Tiny))
-                    .text_color(theme.primary),
+                    .text_color(theme.primary.opacity(PIN_MARK)),
             )
         })
-        .child(div().min_w_0().truncate().child(label))
-}
-
-fn order_key(order: LibraryOrder) -> &'static str {
-    match order {
-        LibraryOrder::Recents => "nav-library-recents",
-        LibraryOrder::RecentlyAdded => "nav-library-added",
-        LibraryOrder::Alphabetical => "nav-library-alphabetical",
-        LibraryOrder::Creator => "nav-library-creator",
-    }
-}
-
-fn sidebar_card(
-    id: impl Into<ElementId>,
-    title: gpui::SharedString,
-    active: bool,
-    cx: &App,
-) -> Card {
-    let theme = *cx.theme();
-    let accent = theme.sidebar_accent;
-    Card::new(id, title)
-        .tint(if active {
-            theme.foreground
-        } else {
-            theme.muted_foreground
-        })
-        .when(active, |card| card.bg(accent))
-        .hover(move |style| style.bg(accent))
-}
-
-fn order_library_pins(items: &mut [LibraryItem], order: &[String]) {
-    let mut pinned: Vec<_> = items.iter().filter(|item| item.pinned).cloned().collect();
-    pinned.sort_by_key(|item| {
-        order
-            .iter()
-            .position(|uri| uri == &item.uri)
-            .unwrap_or(usize::MAX)
-    });
-    let mut pinned = pinned.into_iter();
-    for item in items.iter_mut().filter(|item| item.pinned) {
-        *item = pinned.next().unwrap();
-    }
-}
-
-fn moved_library_pins(items: &[LibraryItem], pin: &Pin, gap: usize) -> Option<Vec<String>> {
-    let from = items.iter().position(|item| {
-        item.pinned && item_pin(item).is_some_and(|candidate| candidate.same(pin))
-    })?;
-    let mut order: Vec<_> = items.iter().map(|item| item.uri.clone()).collect();
-    let moved = order.remove(from);
-    let target = gap.min(items.len()).saturating_sub(usize::from(from < gap));
-    order.insert(target, moved);
-    order.retain(|uri| items.iter().any(|item| item.pinned && &item.uri == uri));
-    Some(order)
-}
-
-fn without_local_pins(
-    mut items: Vec<LibraryItem>,
-    local_pins: &[Pin],
-    only_pinned: bool,
-) -> Vec<LibraryItem> {
-    items.retain(|item| {
-        (!only_pinned || item.pinned)
-            && item.kind != LibraryItemKind::LikedSongs
-            && item_pin(item).is_none_or(|pin| !local_pins.iter().any(|local| local.same(&pin)))
-    });
-    items
-}
-
-fn item_pin(item: &LibraryItem) -> Option<Pin> {
-    let kind = match item.kind {
-        LibraryItemKind::Playlist => ui::PinKind::Playlist,
-        LibraryItemKind::Album => ui::PinKind::Album,
-        LibraryItemKind::Artist => ui::PinKind::Artist,
-        _ => return None,
-    };
-    let tail = item.uri.strip_prefix("spotify:").unwrap_or(&item.uri);
-    let (_, id) = tail.split_once(':')?;
-    Some(Pin::new(kind, id, item.name.clone()).cover(item.cover.clone()))
-}
-
-fn item_destination(item: &LibraryItem) -> Option<Destination> {
-    if item.kind == LibraryItemKind::LikedSongs {
-        return Some(Destination::Library(LibraryTab::Songs));
-    }
-    item_pin(item).as_ref().map(Destination::from)
-}
-
-fn item_origin(item: &LibraryItem) -> Option<Origin> {
-    if item.kind == LibraryItemKind::LikedSongs {
-        return Some(Origin::saved());
-    }
-    item_pin(item).as_ref().map(Origin::from)
-}
-
-fn item_key(kind: LibraryItemKind) -> &'static str {
-    match kind {
-        LibraryItemKind::Playlist | LibraryItemKind::LikedSongs => "kind-playlist",
-        LibraryItemKind::Album => "kind-album",
-        LibraryItemKind::Artist => "kind-artist",
-        LibraryItemKind::Audiobook => "kind-audiobook",
-        LibraryItemKind::Show => "kind-podcast",
-        LibraryItemKind::Folder => "kind-folder",
-    }
-}
-
-fn item_icon(kind: LibraryItemKind) -> &'static str {
-    match kind {
-        LibraryItemKind::Artist => "icons/user.svg",
-        LibraryItemKind::Album => "icons/disc-3.svg",
-        LibraryItemKind::LikedSongs => "icons/heart-filled.svg",
-        _ => "icons/list.svg",
-    }
-}
-
-fn spotify_url(uri: &str) -> String {
-    match uri
-        .strip_prefix("spotify:")
-        .and_then(|tail| tail.split_once(':'))
-    {
-        Some((kind @ ("show" | "album" | "artist" | "playlist"), id)) => {
-            format!("https://open.spotify.com/{kind}/{id}")
-        }
-        _ => uri.to_owned(),
-    }
-}
-
-fn fallback_library(shelf: &LibraryState) -> Vec<LibraryItem> {
-    let playlists = shelf
-        .playlists()
-        .iter()
-        .filter_map(|item| Some((item.pin()?, item.owner.clone())));
-    let albums = shelf
-        .albums()
-        .iter()
-        .filter_map(|item| Some((item.pin()?, item.artists.clone())));
-    let artists = shelf
-        .artists()
-        .iter()
-        .filter_map(|item| Some((item.pin()?, String::new())));
-    playlists
-        .chain(albums)
-        .chain(artists)
-        .map(|(pin, subtitle)| {
-            let (kind, prefix) = match pin.kind {
-                ui::PinKind::Album => (LibraryItemKind::Album, "album"),
-                ui::PinKind::Artist => (LibraryItemKind::Artist, "artist"),
-                _ => (LibraryItemKind::Playlist, "playlist"),
-            };
-            LibraryItem {
-                uri: format!("{prefix}:{}", pin.id),
-                name: pin.title,
-                subtitle,
-                cover: pin.cover,
-                kind,
-                pinned: false,
-            }
-        })
-        .collect()
+        .child(div().min_w_0().truncate().child(i18n::lookup(kind, None)))
 }
 
 fn hint(cx: &App) -> AnyElement {
@@ -1167,11 +744,14 @@ fn hint(cx: &App) -> AnyElement {
     div()
         .flex()
         .flex_none()
+        .min_w_0()
         .items_center()
         .justify_center()
-        .h(HINT_HEIGHT)
+        // A narrow sidebar wraps the line, so the box grows rather than the text spilling out.
+        .min_h(HINT_HEIGHT)
         .mx_2()
         .px_2()
+        .py_1()
         .rounded(theme.radius)
         .border_1()
         .border_dashed()
@@ -1179,7 +759,17 @@ fn hint(cx: &App) -> AnyElement {
         .text_size(theme.text(Text::Small))
         .text_color(theme.muted_foreground)
         .text_center()
-        .child(i18n::lookup("nav-pin-hint", None))
+        .child(div().min_w_0().child(i18n::lookup("nav-pin-hint", None)))
+        .into_any_element()
+}
+
+fn vacancy() -> AnyElement {
+    Vacancy::new(i18n::lookup("nav-nothing-pinned", None))
+        .icon("icons/pin.svg")
+        .compact()
+        .flex_none()
+        .h(VACANCY_HEIGHT)
+        .px_2()
         .into_any_element()
 }
 
@@ -1214,97 +804,6 @@ mod tests {
     use router::{Destination, LibraryTab, SettingsTab};
 
     use super::expanded;
-
-    #[test]
-    fn spotify_pin_order_moves_both_directions_and_survives_refresh() {
-        let make = |id: &str, pinned| music::LibraryItem {
-            uri: format!("spotify:playlist:{id}"),
-            name: id.into(),
-            subtitle: String::new(),
-            cover: None,
-            kind: music::LibraryItemKind::Playlist,
-            pinned,
-        };
-        let mut items = vec![
-            make("a", true),
-            make("b", true),
-            make("c", true),
-            make("other", false),
-        ];
-        let a = super::item_pin(&items[0]).unwrap();
-        let order = super::moved_library_pins(&items, &a, 3).unwrap();
-        super::order_library_pins(&mut items, &order);
-        assert_eq!(
-            items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
-            ["b", "c", "a", "other"]
-        );
-        let order = super::moved_library_pins(&items, &a, 0).unwrap();
-        let mut refreshed = vec![
-            make("c", true),
-            make("other", false),
-            make("b", true),
-            make("a", true),
-            make("new", true),
-        ];
-        super::order_library_pins(&mut refreshed, &order);
-        assert_eq!(
-            refreshed
-                .iter()
-                .map(|i| i.name.as_str())
-                .collect::<Vec<_>>(),
-            ["a", "other", "b", "c", "new"]
-        );
-        assert!(
-            super::moved_library_pins(&refreshed, &super::item_pin(&refreshed[1]).unwrap(), 0)
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn merged_library_keeps_local_pins_once_and_preserves_spotify_order() {
-        use music::{LibraryItem, LibraryItemKind};
-        use ui::{Pin, PinKind};
-        let item = |id: &str, kind, pinned| LibraryItem {
-            uri: format!(
-                "spotify:{}:{id}",
-                if kind == LibraryItemKind::Artist {
-                    "artist"
-                } else {
-                    "playlist"
-                }
-            ),
-            name: id.to_owned(),
-            subtitle: String::new(),
-            cover: None,
-            kind,
-            pinned,
-        };
-        let local = vec![
-            Pin::new(PinKind::Artist, "shared", "Local artist"),
-            Pin::new(PinKind::Song, "song", "Local song"),
-        ];
-        let rows = super::without_local_pins(
-            vec![
-                item("shared", LibraryItemKind::Artist, true),
-                item("first", LibraryItemKind::Playlist, true),
-                item("liked", LibraryItemKind::LikedSongs, true),
-                item("shared", LibraryItemKind::Playlist, false),
-                item("last", LibraryItemKind::Artist, false),
-            ],
-            &local,
-            false,
-        );
-        assert_eq!(
-            rows.iter()
-                .map(|item| item.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["first", "shared", "last"]
-        );
-        assert!(rows[0].pinned);
-        let pinned = super::without_local_pins(rows, &local, true);
-        assert_eq!(pinned.len(), 1);
-        assert_eq!(pinned[0].name, "first");
-    }
 
     #[test]
     fn a_section_expands_only_where_it_leads() {

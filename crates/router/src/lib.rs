@@ -23,7 +23,7 @@ pub enum NavEntry {
     Library,
     History,
     Local,
-    LibraryList,
+    Pins,
 }
 
 impl NavEntry {
@@ -33,7 +33,7 @@ impl NavEntry {
         Self::Library,
         Self::History,
         Self::Local,
-        Self::LibraryList,
+        Self::Pins,
     ];
 
     pub fn id(self) -> &'static str {
@@ -43,7 +43,7 @@ impl NavEntry {
             Self::Library => "library",
             Self::History => "history",
             Self::Local => "local",
-            Self::LibraryList => "sidebar-library",
+            Self::Pins => "sidebar-pins",
         }
     }
 
@@ -54,7 +54,7 @@ impl NavEntry {
             Self::Library => "nav-library",
             Self::History => "nav-history",
             Self::Local => "nav-local",
-            Self::LibraryList => "nav-sidebar-library",
+            Self::Pins => "nav-pinned",
         }
     }
 }
