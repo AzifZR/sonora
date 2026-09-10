@@ -254,6 +254,16 @@ impl Scrollbar {
         }
     }
 
+    /// How far down the region is scrolled, whichever kind of scrolling it does.
+    pub fn offset(&self) -> Pixels {
+        self.target().offset()
+    }
+
+    /// The height of the part on screen.
+    pub fn viewport(&self) -> Pixels {
+        self.target().viewport()
+    }
+
     pub fn scroll(&self) -> &ScrollHandle {
         &self.scroll
     }
