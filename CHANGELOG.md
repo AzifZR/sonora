@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
   the slider; the moon button leaves the player bar.
 
+### Fixed
+
+- A submenu that has no room beside its menu opens over it instead of under its rows, on whichever
+  side has more room. The Add to playlist list in a narrow window no longer shows the context menu's
+  items through it.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added
