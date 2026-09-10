@@ -218,10 +218,6 @@ player-previous = 上一首
 player-next = 下一首
 player-fullscreen = 全屏
 player-fullscreen-leave = 退出全屏
-player-sleep = 睡眠定时器
-player-sleep-off = 关
-player-sleep-end-of-track = 曲目结束时
-player-sleep-minutes = { $count } 分钟
 fullscreen-artwork = 封面
 
 # filters

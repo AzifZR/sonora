@@ -21,7 +21,7 @@ pub enum Language {
 }
 
 impl Language {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::English,
         Self::German,
         Self::Spanish,
