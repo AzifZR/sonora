@@ -193,7 +193,10 @@ impl Scrollbar {
     /// no smoothing, but it is still theirs, and anything following the view has
     /// to know to stop.
     pub fn stirred(&mut self) {
-        if self.glide.stop_spring(&self.scroll) {
+        if let Some(list) = &self.list {
+            self.glide.jump(list, list.scroll_px_offset_for_scrollbar());
+            self.following = false;
+        } else if self.glide.stop_spring(&self.scroll) {
             self.following = false;
         }
         self.nudges = self.nudges.wrapping_add(1);
@@ -202,32 +205,63 @@ impl Scrollbar {
     pub fn nudge(&mut self, window: &mut Window) {
         self.following = false;
         self.nudges = self.nudges.wrapping_add(1);
-        self.glide.nudge(&self.scroll, window);
+        match &self.list {
+            Some(list) => self.glide.nudge(list, window),
+            None => self.glide.nudge(&self.scroll, window),
+        }
     }
 
     pub fn aim(&mut self, to: Pixels, window: &mut Window) {
         let across = self.scroll.offset().x;
-        self.glide.aim(&self.scroll, point(across, to), window);
+        match &self.list {
+            Some(list) => self.glide.aim(list, point(Pixels::ZERO, to), window),
+            None => self.glide.aim(&self.scroll, point(across, to), window),
+        }
         self.following = true;
     }
 
     pub fn place(&mut self, at: Pixels) {
         let across = self.scroll.offset().x;
-        self.glide.jump(&self.scroll, point(across, at));
-        self.seen = self.scroll.offset().y;
+        match &self.list {
+            Some(list) => self.glide.jump(list, point(Pixels::ZERO, at)),
+            None => self.glide.jump(&self.scroll, point(across, at)),
+        }
+        self.seen = match &self.list {
+            Some(list) => list.scroll_px_offset_for_scrollbar().y,
+            None => self.scroll.offset().y,
+        };
         self.following = true;
     }
 
     pub fn goal(&self) -> Pixels {
-        self.glide.goal(&self.scroll).y
+        match &self.list {
+            Some(list) => self.glide.goal(list).y,
+            None => self.glide.goal(&self.scroll).y,
+        }
     }
 
     pub fn presentation(&self) -> gpui::Point<Pixels> {
-        self.glide.presentation(&self.scroll)
+        match &self.list {
+            Some(list) => self.glide.presentation(list),
+            None => self.glide.presentation(&self.scroll),
+        }
     }
 
     pub fn sync(&self) {
-        self.glide.sync(&self.scroll);
+        match &self.list {
+            Some(list) => self.glide.sync(list),
+            None => self.glide.sync(&self.scroll),
+        }
+    }
+
+    /// How far down the region is scrolled, whichever kind of scrolling it does.
+    pub fn offset(&self) -> Pixels {
+        self.target().offset()
+    }
+
+    /// The height of the part on screen.
+    pub fn viewport(&self) -> Pixels {
+        self.target().viewport()
     }
 
     pub fn scroll(&self) -> &ScrollHandle {
@@ -280,7 +314,10 @@ impl Scrollbar {
     }
 
     fn moved(&mut self, offset: Pixels, cx: &mut Context<Self>) {
-        if self.glide.stop_spring(&self.scroll) {
+        if let Some(list) = &self.list {
+            self.glide.jump(list, list.scroll_px_offset_for_scrollbar());
+            self.following = false;
+        } else if self.glide.stop_spring(&self.scroll) {
             self.following = false;
         }
         self.nudges = self.nudges.wrapping_add(1);
@@ -355,6 +392,7 @@ impl Render for Scrollbar {
                     let local = event.position.y - jump.top() - this.track_inset - thumb / 2.;
                     let fraction = (local / travel).clamp(0., 1.);
                     let offset = hidden * fraction;
+                    this.stirred();
                     jump.set_offset(offset);
                     this.moved(offset, cx);
                 }),
@@ -374,6 +412,7 @@ impl Render for Scrollbar {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                            this.stirred();
                             started.drag_started();
                             this.wake(cx);
                             cx.stop_propagation();

@@ -414,3 +414,49 @@ pub struct LyricsHit {
     pub duration: Option<Duration>,
     pub writers: Vec<String>,
 }
+
+/// A provider's mixed library row, in the order returned by its library service.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LibraryItem {
+    pub uri: String,
+    pub name: String,
+    pub subtitle: String,
+    pub cover: Option<String>,
+    pub kind: LibraryItemKind,
+    pub pinned: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryItemKind {
+    Playlist,
+    Album,
+    Artist,
+    LikedSongs,
+    Audiobook,
+    Show,
+    Folder,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryPinResult {
+    Updated,
+    LimitReached,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LibraryOrder {
+    #[default]
+    Recents,
+    RecentlyAdded,
+    Alphabetical,
+    Creator,
+}
+
+impl LibraryOrder {
+    pub const ALL: [Self; 4] = [
+        Self::Recents,
+        Self::RecentlyAdded,
+        Self::Alphabetical,
+        Self::Creator,
+    ];
+}

@@ -7,6 +7,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Sonora can put what you are playing on your Discord profile. Turn on Show on Discord under
+  Settings > Integrations. The status is called Sonora by default, and can name the service the
+  track came from or just say Music instead; it can carry a badge of that service, and it can hide
+  the details and say only that music is playing. Cover art reaches Discord only from Spotify and
+  YouTube Music, since Discord fetches the image itself and cannot read a local file or a
+  self-hosted server.
+
+- Sonora speaks Turkish. Pick Türkçe under Settings > General > Language, or leave the language
+  on System and it follows a Turkish desktop on its own.
+- Sonora speaks Chinese. Pick 简体中文 under Settings > General > Language, or leave the language on
+  System and it follows a Chinese desktop on its own.
+
+- The sidebar keeps one Pinned section for everything you pin, whatever provider it came from, so
+  a streamed album can sit between two local playlists. The order is the one you drag, and it
+  holds even where the provider cannot reorder its own pins. Click the heading to fold the
+  section away; it starts folded.
+
+- Pin sits in the context menu of every album, artist, playlist and song, not only the ones
+  already in the sidebar.
+
+- Pinning something from Spotify pins it in Spotify too, and anything pinned there turns up in
+  Sonora on its own.
+
+- The button beside Pinned sorts the section alphabetically or by type. Picking the same order
+  again turns it around, and once more hands the list back to the order you dragged.
+
+- Show full library, in that same menu, lists the rest of your albums, artists and playlists
+  under the pins, with a mark on the pinned ones.
+
+- A Back to top button appears in the sidebar and in the queue once either is scrolled, and
+  glides back rather than jumping.
+
+### Changed
+
+- The tray menu draws the cover of the playing track beside its name, and clicking that row
+  opens the song page.
+- Hovering the tray icon names the playing track, the way it already did on Linux.
+- The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
+  the slider; the moon button leaves the player bar.
+
+### Fixed
+
+- A submenu that has no room beside its menu opens over it instead of under its rows, on whichever
+  side has more room. The Add to playlist list in a narrow window no longer shows the context menu's
+  items through it.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added
@@ -52,6 +100,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Play from any Subsonic or OpenSubsonic server: Navidrome, Airsonic, Gonic and more. Sign in under
   Settings > Accounts with the server address, a username and a password. Your Library then lists
   the whole server, songs included, with a Favorites only filter for what you starred.
+
+- Sonora's own window corners can be rounded from Appearance, with the radius picked the same
+  way as the UI corner radius: Square, Subtle, Rounded or Round. On Windows this maps onto DWM's
+  own rounded presets; on Linux and FreeBSD it applies with client-side decorations, where the
+  compositor otherwise leaves the window square.
+- Window controls can be drawn as traffic-light dots from Appearance, on Windows and Linux. They
+  follow the existing controls-side setting, same as the standard controls.
 
 ### Changed
 

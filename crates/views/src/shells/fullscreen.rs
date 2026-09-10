@@ -280,10 +280,8 @@ impl FullscreenView {
         let track = self.playback.read(cx).track().cloned();
         let album = track.as_ref().and_then(|track| track.album_id.clone());
         let small = track.as_ref().and_then(|track| track.cover.clone());
-        let large = self
-            .cover
-            .read(cx)
-            .large()
+        let cover_large = self.cover.read(cx).large();
+        let large = cover_large
             .filter(|url| Some(*url) != small.as_deref())
             .map(SharedString::from);
 
@@ -292,7 +290,12 @@ impl FullscreenView {
             self.revision += 1;
         }
         let revision = self.revision;
-        let waiting = large.is_none();
+        let local = track
+            .as_ref()
+            .and_then(|track| track.id.as_deref())
+            .is_some_and(music::is_local_id)
+            || small.as_ref().is_some_and(|url| url.starts_with("file://"));
+        let waiting = !local && album.is_some() && cover_large.is_none();
         let artwork_bounds = self.artwork_bounds.clone();
 
         div()
