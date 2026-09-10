@@ -6,13 +6,15 @@ use i18n::t;
 use music::Track;
 use tokio::sync::watch;
 
-use crate::{AppSettings, Cover, Io, Playback, Session};
+use crate::{AppSettings, Cover, DiscordName, Io, Playback, Session};
 
 const APPLICATION_ID: &str = "1547350467904806923";
 const RETRY_DELAY: Duration = Duration::from_secs(3);
 const SWITCH_DEBOUNCE: Duration = Duration::from_secs(1);
 const MAX_START_DRIFT_SECONDS: u64 = 2;
 const MAX_TEXT_UTF16_UNITS: usize = 128;
+/// What the status says when it names the music rather than a service.
+const MUSIC: &str = "Music";
 
 struct Attached {
     _discord: Entity<Discord>,
@@ -41,43 +43,24 @@ enum Shown {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Presence {
-    provider: Option<Provider>,
+    source: Option<Source>,
     details: String,
     state: Option<String>,
     image: Option<String>,
     image_text: Option<String>,
-    started_at: i64,
+    started_at: Option<i64>,
     ends_at: Option<i64>,
 }
 
+/// The provider a track came from, as the presence shows it. `badge` is the provider slug, which
+/// doubles as the key of the image uploaded to the Discord application, and is left out when the
+/// badge is turned off. `listening` is what the status calls itself and follows the setting;
+/// `name` is the badge tooltip and is always the provider's own name.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Provider {
-    Spotify,
-    YouTube,
-}
-
-impl Provider {
-    fn from_slug(slug: &str) -> Option<Self> {
-        match slug {
-            "spotify" => Some(Self::Spotify),
-            "youtube" => Some(Self::YouTube),
-            _ => None,
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Spotify => "Spotify",
-            Self::YouTube => "YouTube Music",
-        }
-    }
-
-    fn icon(self) -> &'static str {
-        match self {
-            Self::Spotify => "https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png",
-            Self::YouTube => "https://music.youtube.com/img/favicon_144.png",
-        }
-    }
+struct Source {
+    badge: Option<&'static str>,
+    listening: Option<&'static str>,
+    name: &'static str,
 }
 
 #[derive(Default)]
@@ -167,10 +150,12 @@ impl Discord {
 
     fn shown(&mut self, cx: &App) -> Shown {
         let playback = self.playback.read(cx);
-        let Some(track) = playback.track().filter(|_| playback.wants_playing()) else {
+        let Some(track) = playback.track() else {
             self.timing.reset();
             return Shown::Off;
         };
+        // a paused status stays up, but without the timestamps, so nothing keeps counting
+        let playing = playback.wants_playing();
 
         let since = self.timing.listening_since();
         let settings = self.settings.read(cx);
@@ -178,43 +163,55 @@ impl Discord {
             return Shown::Off;
         }
 
-        let provider = track
-            .id
-            .as_deref()
-            .and_then(|id| self.session.read(cx).slug_for(id))
-            .and_then(Provider::from_slug);
-        let named = provider.filter(|_| settings.discord_as_provider());
+        let session = self.session.read(cx);
+        let provider = track.id.as_deref().and_then(|id| session.provider_for(id));
+        let named = provider.map(|provider| Source {
+            badge: settings.discord_badge().then(|| provider.slug()),
+            listening: match settings.discord_name() {
+                DiscordName::Sonora => None,
+                DiscordName::Provider => Some(provider.listening_to()),
+                DiscordName::Music => Some(MUSIC),
+            },
+            name: provider.name(),
+        });
         if settings.discord_without_details() {
             return Shown::On(Presence {
-                provider: named,
+                source: named,
                 details: anonymous_details(),
                 state: None,
                 image: None,
                 image_text: None,
-                started_at: since,
+                started_at: playing.then_some(since),
                 ends_at: None,
             });
         }
 
-        let started_at = self
-            .timing
-            .track_started_at(track, playback.live_position());
+        let started_at = playing.then(|| {
+            self.timing
+                .track_started_at(track, playback.live_position())
+        });
         let duration = track.duration.as_secs() as i64;
+        let public_art = provider.is_some_and(|provider| provider.public_art());
         Shown::On(Presence {
-            provider: named,
+            source: named,
             details: fit_text(&track.name).unwrap_or_else(anonymous_details),
             state: fit_text(&track.artists),
-            image: self.artwork(track, provider, cx),
+            image: self.artwork(track, public_art, cx),
             image_text: fit_text(&track.album),
             started_at,
-            ends_at: (duration > 0).then(|| started_at.saturating_add(duration)),
+            ends_at: started_at
+                .filter(|_| duration > 0)
+                .map(|started_at| started_at.saturating_add(duration)),
         })
     }
 
-    /// Cover art for the track, but only for a provider whose art is a public URL. A local
-    /// file means nothing to Discord, and a private server's URL is nobody else's business.
-    fn artwork(&self, track: &Track, provider: Option<Provider>, cx: &App) -> Option<String> {
-        provider?;
+    /// Cover art for the track, but only from a provider whose art is public. Discord fetches
+    /// the image through its own proxy, so a path on disk is unreachable and a self-hosted url
+    /// would hand over the credentials that fetch it.
+    fn artwork(&self, track: &Track, public_art: bool, cx: &App) -> Option<String> {
+        if !public_art {
+            return None;
+        }
         let album = track.album_id.as_deref()?;
         self.cover
             .read(cx)
@@ -357,8 +354,8 @@ fn activity(shown: &Shown) -> Option<activity::Activity<'_>> {
     let mut activity = activity::Activity::new()
         .activity_type(activity::ActivityType::Listening)
         .details(presence.details.as_str());
-    if let Some(provider) = presence.provider {
-        activity = activity.name(provider.name());
+    if let Some(listening) = presence.source.and_then(|source| source.listening) {
+        activity = activity.name(listening);
     }
     if let Some(state) = presence.state.as_deref() {
         activity = activity.state(state);
@@ -367,7 +364,11 @@ fn activity(shown: &Shown) -> Option<activity::Activity<'_>> {
         activity = activity.assets(assets);
     }
 
-    let mut timestamps = activity::Timestamps::new().start(presence.started_at);
+    let Some(started_at) = presence.started_at else {
+        return Some(activity);
+    };
+
+    let mut timestamps = activity::Timestamps::new().start(started_at);
     if let Some(ends_at) = presence.ends_at {
         timestamps = timestamps.end(ends_at);
     }
@@ -378,7 +379,10 @@ fn activity(shown: &Shown) -> Option<activity::Activity<'_>> {
 fn assets(presence: &Presence) -> Option<activity::Assets<'_>> {
     let image = presence.image.as_deref();
     let text = presence.image_text.as_deref();
-    if image.is_none() && text.is_none() && presence.provider.is_none() {
+    let badge = presence
+        .source
+        .and_then(|source| source.badge.map(|key| (key, source.name)));
+    if image.is_none() && text.is_none() && badge.is_none() {
         return None;
     }
 
@@ -389,10 +393,8 @@ fn assets(presence: &Presence) -> Option<activity::Assets<'_>> {
     if let Some(text) = text {
         assets = assets.large_text(text);
     }
-    if let Some(provider) = presence.provider {
-        assets = assets
-            .small_image(provider.icon())
-            .small_text(provider.name());
+    if let Some((key, name)) = badge {
+        assets = assets.small_image(key).small_text(name);
     }
     Some(assets)
 }

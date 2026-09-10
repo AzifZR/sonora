@@ -31,6 +31,41 @@ use crate::queue::{Resume, gap_target};
 use crate::{Repeat, Sonora};
 
 /// Which panel the right sidebar shows.
+/// What the Discord status calls itself. `Provider` asks the provider the track came from, so
+/// local files say Local Music rather than the provider's own name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiscordName {
+    #[default]
+    Sonora,
+    Provider,
+    Music,
+}
+
+impl DiscordName {
+    pub const ALL: [Self; 3] = [Self::Sonora, Self::Provider, Self::Music];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Sonora => "sonora",
+            Self::Provider => "provider",
+            Self::Music => "music",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Sonora => "settings-discord-name-sonora",
+            Self::Provider => "settings-discord-name-provider",
+            Self::Music => "settings-discord-name-music",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|name| name.id() == id)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SideTab {
@@ -182,7 +217,8 @@ struct Values {
     gapless: bool,
     sleep_timer: bool,
     discord_presence: bool,
-    discord_as_provider: bool,
+    discord_name: DiscordName,
+    discord_badge: bool,
     discord_without_details: bool,
     lyrics_for_local_files: bool,
     karaoke_lyrics: bool,
@@ -246,7 +282,8 @@ impl Default for Values {
             gapless: true,
             sleep_timer: false,
             discord_presence: false,
-            discord_as_provider: false,
+            discord_name: DiscordName::Sonora,
+            discord_badge: false,
             discord_without_details: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
@@ -567,9 +604,14 @@ impl AppSettings {
         self.values.discord_presence
     }
 
-    /// Whether the Discord status names the provider the track comes from rather than Sonora.
-    pub fn discord_as_provider(&self) -> bool {
-        self.values.discord_as_provider
+    /// What the Discord status names itself after "listening to".
+    pub fn discord_name(&self) -> DiscordName {
+        self.values.discord_name
+    }
+
+    /// Whether the Discord status carries the badge of the provider the track came from.
+    pub fn discord_badge(&self) -> bool {
+        self.values.discord_badge
     }
 
     /// Whether the Discord status leaves the track out and only says that music is playing.
@@ -819,8 +861,13 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
-    pub fn set_discord_as_provider(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        self.values.discord_as_provider = enabled;
+    pub fn set_discord_name(&mut self, name: DiscordName, cx: &mut Context<Self>) {
+        self.values.discord_name = name;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_badge(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_badge = enabled;
         self.schedule_save(cx);
     }
 

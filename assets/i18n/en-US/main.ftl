@@ -503,9 +503,14 @@ settings-close-to-tray = Keep playing when closed
 settings-close-to-tray-detail = Keep Sonora in the system tray and continue playing after its window closes
 settings-discord = Show on Discord
 settings-discord-detail = Put the track you are playing on your Discord profile
-settings-discord-provider = Name the provider
-settings-discord-provider-detail = Say Spotify or YouTube Music in the status instead of Sonora
-settings-discord-anonymous = Leave the track out
+settings-discord-name = Status name
+settings-discord-name-detail = What the status is called, after the Listening to your friends see
+settings-discord-name-sonora = Sonora
+settings-discord-name-provider = Provider
+settings-discord-name-music = Music
+settings-discord-badge = Show the provider badge
+settings-discord-badge-detail = Mark the status with a small icon of the service the track came from
+settings-discord-anonymous = Hide details
 settings-discord-anonymous-detail = Say only that music is playing, without the title, artist or artwork
 # the Discord status when the track is left out of it
 discord-listening = Listening to music

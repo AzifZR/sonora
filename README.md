@@ -166,18 +166,18 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 | Language | Translated | Coverage |
 | --- | --- | --- |
-| English (`en-US`) | 560/560 | 100% |
-| Deutsch (`de`) | 535/560 | 96% |
-| Español (`es`) | 535/560 | 96% |
-| Français (`fr`) | 496/560 | 89% |
-| Italiano (`it`) | 493/560 | 88% |
-| Bahasa Indonesia (`id`) | 523/560 | 93% |
-| 日本語 (`ja`) | 506/560 | 90% |
-| Русский (`ru`) | 519/560 | 93% |
-| Українська (`uk`) | 519/560 | 93% |
-| Polski (`pl`) | 548/560 | 98% |
-| Português (Brasil) (`pt-BR`) | 512/560 | 91% |
-| Türkçe (`tr`) | 547/560 | 98% |
+| English (`en-US`) | 565/565 | 100% |
+| Deutsch (`de`) | 535/565 | 95% |
+| Español (`es`) | 535/565 | 95% |
+| Français (`fr`) | 496/565 | 88% |
+| Italiano (`it`) | 493/565 | 87% |
+| Bahasa Indonesia (`id`) | 523/565 | 93% |
+| 日本語 (`ja`) | 506/565 | 90% |
+| Русский (`ru`) | 519/565 | 92% |
+| Українська (`uk`) | 519/565 | 92% |
+| Polski (`pl`) | 548/565 | 97% |
+| Português (Brasil) (`pt-BR`) | 512/565 | 91% |
+| Türkçe (`tr`) | 547/565 | 97% |
 
 <!-- i18n:end -->
 
