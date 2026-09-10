@@ -116,6 +116,7 @@ impl Icon {
         }
         self.caption.set_text(&shown.caption);
         self.caption.set_icon(cover(shown.artwork.as_ref()));
+        self.caption.set_enabled(shown.song);
         self.toggle.set_text(&shown.toggle);
         self.previous.set_text(&shown.previous);
         self.next.set_text(&shown.next);
@@ -138,6 +139,7 @@ fn cover(art: Option<&Art>) -> Option<MenuIcon> {
 
 fn translate(id: &MenuId) -> Option<Event> {
     Some(match id.0.as_str() {
+        "caption" => Event::Song,
         "toggle" => Event::Toggle,
         "previous" => Event::Previous,
         "next" => Event::Next,

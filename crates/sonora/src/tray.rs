@@ -10,6 +10,7 @@ use futures::AsyncReadExt as _;
 use gpui::http_client::{AsyncBody, HttpClient};
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
 use i18n::t;
+use router::Destination;
 use state::{PlaybackState, Sonora};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
@@ -25,6 +26,7 @@ const COVER: u32 = 32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
     Show,
+    Song,
     Toggle,
     Previous,
     Next,
@@ -43,6 +45,8 @@ pub struct Art {
 pub struct Shown {
     pub artwork: Option<Art>,
     pub caption: String,
+    /// Whether the caption opens anything, so a row that leads nowhere stays inert.
+    pub song: bool,
     pub toggle: String,
     pub previous: String,
     pub next: String,
@@ -91,6 +95,10 @@ impl Tray {
                 }
                 cx.update(|cx| match event {
                     Event::Show => show(cx),
+                    Event::Song => {
+                        show(cx);
+                        open(cx);
+                    }
                     Event::Quit => cx.quit(),
                     Event::Toggle | Event::Previous | Event::Next => {
                         let playback = Sonora::global(cx).playback.clone();
@@ -165,6 +173,16 @@ impl Tray {
     }
 }
 
+/// Opens the song page of whatever is playing. A track without an id is not an error: the caption
+/// row is only enabled when there is one.
+fn open(cx: &mut App) {
+    let playing = Sonora::global(cx).playback.read(cx).track();
+    let Some(id) = playing.and_then(|track| track.id.clone()) else {
+        return;
+    };
+    router::navigate(Destination::Song(id.into()), cx);
+}
+
 /// Reads a cover, over http or from the disk, and scales it down to a menu row. An unreadable
 /// cover leaves the caption on its own rather than holding up the rest of the menu.
 async fn art(cover: String, http: Arc<dyn HttpClient>) -> Result<Art> {
@@ -217,9 +235,11 @@ fn shown(artwork: Option<Art>, cx: &App) -> Shown {
         Some(track) => format!("{} – {}", track.artists, track.name),
         None => t!("player-nothing-playing").to_string(),
     };
+    let song = playback.track().is_some_and(|track| track.id.is_some());
     Shown {
         artwork,
         caption,
+        song,
         toggle: match playing {
             true => t!("tray-pause"),
             false => t!("tray-play"),

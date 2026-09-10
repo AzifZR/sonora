@@ -130,7 +130,8 @@ impl ksni::Tray for Item {
             StandardItem {
                 label: shown.caption.clone(),
                 icon_data: cover(shown.artwork.as_ref()).unwrap_or_default(),
-                enabled: false,
+                enabled: shown.song,
+                activate: Box::new(|this: &mut Self| this.send(Event::Song)),
                 ..Default::default()
             }
             .into(),
