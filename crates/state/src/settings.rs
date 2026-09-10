@@ -191,6 +191,7 @@ struct Values {
     adaptive_menu: bool,
     check_updates: bool,
     close_to_tray: bool,
+    discord_rpc: bool,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -245,6 +246,7 @@ impl Default for Values {
             adaptive_menu: false,
             check_updates: cfg!(target_os = "windows"),
             close_to_tray: true,
+            discord_rpc: true,
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -541,6 +543,10 @@ impl AppSettings {
         self.values.gapless
     }
 
+    pub fn discord_rpc(&self) -> bool {
+        self.values.discord_rpc
+    }
+
     pub fn sleep_timer(&self) -> bool {
         self.values.sleep_timer
     }
@@ -764,6 +770,11 @@ impl AppSettings {
 
     pub fn set_gapless(&mut self, gapless: bool, cx: &mut Context<Self>) {
         self.values.gapless = gapless;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_rpc(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_rpc = enabled;
         self.schedule_save(cx);
     }
 

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient, activity};
 use gpui::{App, AppContext as _, Context, Entity, Global};
 
-use crate::{Playback, PlaybackState, Sonora};
+use crate::{AppSettings, Playback, PlaybackState, Sonora};
 
 // Sonora Discord Application ID
 const DISCORD_APP_ID: &str = "1547582803313561642";
@@ -29,6 +29,7 @@ enum Command {
         playing: bool,
         loading: bool,
     },
+    Browsing,
     Clear,
 }
 
@@ -57,19 +58,25 @@ pub fn attach(cx: &mut App) {
         return;
     }
     let playback = Sonora::global(cx).playback.clone();
-    let discord = cx.new(|cx| DiscordRpc::new(playback, cx));
+    let settings = Sonora::global(cx).settings.clone();
+    let discord = cx.new(|cx| DiscordRpc::new(playback, settings, cx));
     cx.set_global(Attached { _discord: discord });
 }
 
 pub struct DiscordRpc {
     playback: Entity<Playback>,
+    settings: Entity<AppSettings>,
     sender: Sender<Command>,
     shown: Option<Shown>,
     sent_pos: u64,
 }
 
 impl DiscordRpc {
-    fn new(playback: Entity<Playback>, cx: &mut Context<Self>) -> Self {
+    fn new(
+        playback: Entity<Playback>,
+        settings: Entity<AppSettings>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel();
 
         std::thread::Builder::new()
@@ -79,9 +86,12 @@ impl DiscordRpc {
 
         cx.observe(&playback, |this, _, cx| this.publish(cx))
             .detach();
+        cx.observe(&settings, |this, _, cx| this.publish(cx))
+            .detach();
 
         Self {
             playback,
+            settings,
             sender,
             shown: None,
             sent_pos: 0,
@@ -90,15 +100,22 @@ impl DiscordRpc {
 
     fn publish(&mut self, cx: &mut Context<Self>) {
         let playback = self.playback.read(cx);
+        let enabled = self.settings.read(cx).discord_rpc();
         let class = match playback.state() {
             PlaybackState::Playing => 0,
             PlaybackState::Paused => 1,
             PlaybackState::Loading => 2,
-            PlaybackState::Idle | PlaybackState::Failed(_) => 3,
+            PlaybackState::Idle => 3,
+            PlaybackState::Failed(_) => 4,
+        };
+        // A disabled integration clears the presence like a failure does.
+        let class = match enabled {
+            true => class,
+            false => 4,
         };
 
-        // Idle/Failed always clear, even when a track is still retained.
-        if class == 3 {
+        // Gone always clears, even when a track is still retained.
+        if class == 4 {
             let key = Shown {
                 id: None,
                 name: String::new(),
@@ -113,6 +130,24 @@ impl DiscordRpc {
             self.shown = Some(key);
             self.sent_pos = 0;
             let _ = self.sender.send(Command::Clear);
+            return;
+        }
+        // Idle shows a browsing activity instead of disappearing.
+        if class == 3 {
+            let key = Shown {
+                id: None,
+                name: String::new(),
+                artists: String::new(),
+                album: String::new(),
+                dur_secs: 0,
+                class,
+            };
+            if self.shown.as_ref() == Some(&key) {
+                return;
+            }
+            self.shown = Some(key);
+            self.sent_pos = 0;
+            let _ = self.sender.send(Command::Browsing);
             return;
         }
         let Some(track) = playback.track() else {
@@ -272,6 +307,17 @@ fn apply(client: &mut DiscordIpcClient, cmd: &Command) -> bool {
                 );
             }
             client.set_activity(act)
+        }
+        Command::Browsing => {
+            let assets = activity::Assets::new()
+                .large_image("sonora")
+                .large_text("Sonora");
+            client.set_activity(
+                activity::Activity::new()
+                    .details("Browsing Sonora")
+                    .assets(assets)
+                    .activity_type(activity::ActivityType::Listening),
+            )
         }
         Command::Clear => client.clear_activity(),
     };

@@ -200,6 +200,7 @@ impl SettingsView {
                 Row::Item(self.language_row(cx).into_any_element()),
                 self.title("settings-group-window", cx),
                 Row::Item(self.tray_row(cx).into_any_element()),
+                Row::Item(self.discord_row(cx).into_any_element()),
                 self.title("settings-group-accounts", cx),
                 Row::Item(self.accounts_row(cx).into_any_element()),
                 self.title("settings-group-library", cx),
@@ -1156,6 +1157,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_close_to_tray(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_rpc();
+
+        self.row(
+            t!("settings-discord"),
+            t!("settings-discord-detail"),
+            muted,
+            small,
+            Switch::new("discord-rpc", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_rpc(!on, cx));
                 }))
                 .into_any_element(),
         )
