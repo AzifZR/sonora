@@ -667,6 +667,10 @@ impl RenderOnce for Menu {
                 .min_w_0()
                 .min_h_0()
                 .gap_1()
+                .on_children_prepainted({
+                    let panel = panel.clone();
+                    move |bounds, _, _| panel.observe(bounds)
+                })
                 .child(div().w_full().py_1().child(header))
                 .child(body)
                 .into_any_element(),
