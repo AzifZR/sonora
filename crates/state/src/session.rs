@@ -68,10 +68,17 @@ pub enum SessionEvent {
     LocalChanged,
 }
 
+#[derive(Clone, Copy)]
+enum SecretInput {
+    Browser,
+    Manual,
+}
+
 pub struct ProviderInfo {
     pub slug: &'static str,
     pub name: &'static str,
     pub options: Vec<SignIn>,
+    pub web_sign_in: bool,
     pub stored: bool,
     pub active: bool,
     pub pending: bool,
@@ -218,11 +225,8 @@ impl Session {
             .map(|(index, provider)| ProviderInfo {
                 slug: provider.slug(),
                 name: provider.name(),
-                options: provider
-                    .sign_in_options()
-                    .into_iter()
-                    .filter(|method| self.offered(provider.as_ref(), method))
-                    .collect(),
+                options: provider.sign_in_options(),
+                web_sign_in: webview::supported() && provider.web_sign_in().is_some(),
                 stored: provider.stored(),
                 active: self.active == Some(index),
                 pending: self.awaiting == Some(index),
@@ -350,6 +354,20 @@ impl Session {
     }
 
     pub fn sign_in(&mut self, slug: &str, method: SignIn, cx: &mut Context<Self>) {
+        self.start_sign_in(slug, method, SecretInput::Browser, cx);
+    }
+
+    pub fn sign_in_with_cookies(&mut self, slug: &str, cx: &mut Context<Self>) {
+        self.start_sign_in(slug, SignIn::Secret, SecretInput::Manual, cx);
+    }
+
+    fn start_sign_in(
+        &mut self,
+        slug: &str,
+        method: SignIn,
+        secret_input: SecretInput,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_pending() {
             return;
         }
@@ -379,7 +397,7 @@ impl Session {
                         let secret = matches!(prompt, SignInPrompt::Secret);
                         this.state = SessionState::Authorizing(Some(prompt));
                         cx.notify();
-                        if secret {
+                        if secret && matches!(secret_input, SecretInput::Browser) {
                             this.open_window(cx);
                         }
                     }
@@ -435,15 +453,6 @@ impl Session {
         self.state = SessionState::SignedOut;
         cx.notify();
         cx.emit(SessionEvent::SignedOut);
-    }
-
-    /// Whether a sign-in method can run here. `SignIn::Secret` is a browser window, so it needs a
-    /// provider that describes one and a platform that can open it.
-    fn offered(&self, provider: &dyn MusicProvider, method: &SignIn) -> bool {
-        match method {
-            SignIn::Secret => webview::supported() && provider.web_sign_in().is_some(),
-            _ => true,
-        }
     }
 
     /// Opens the browser window for the secret prompt now showing. The window answers the prompt
