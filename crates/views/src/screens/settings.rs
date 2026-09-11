@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use crate::shared::local;
-use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
+use crate::shared::popups::{AccountPicker, SearchPopup, matches_query};
 use gpui::{
     AnyElement, App, Context, Entity, FontWeight, MouseUpEvent, Pixels, Render, SharedString, Task,
     Window, div, font, px,
@@ -142,7 +142,6 @@ pub struct SettingsView {
     sleep: ScrubberState,
     pending_sleep: Option<Option<Sleep>>,
     popovers: Popovers,
-    secret: Entity<Input>,
     server: Entity<Input>,
     username: Entity<Input>,
     password: Entity<Input>,
@@ -189,7 +188,6 @@ impl SettingsView {
             sleep: ScrubberState::new("sleep"),
             pending_sleep: None,
             popovers: Popovers::default(),
-            secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
             server: cx.new(|cx| Input::new("login-server-hint", cx)),
             username: cx.new(|cx| Input::new("login-username-hint", cx)),
             password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
@@ -1771,10 +1769,7 @@ impl SettingsView {
         let signed_out = matches!(session.state(), SessionState::SignedOut);
         let guest = !session.authenticated();
         let waiting = match session.state() {
-            SessionState::Authorizing(prompt) => !matches!(
-                prompt,
-                Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))
-            ),
+            SessionState::Authorizing(prompt) => !matches!(prompt, Some(SignInPrompt::Accounts(_))),
             _ => false,
         };
         let accounts: Vec<Account> = session
@@ -1940,20 +1935,9 @@ impl SettingsView {
     }
 
     fn abandon(&mut self, cx: &mut Context<Self>) {
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
         self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
-    }
-
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        let text = self.secret.read(cx).text().to_string();
-        if text.trim().is_empty() {
-            return;
-        }
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
-        self.session
-            .update(cx, |session, cx| session.submit_input(text, cx));
     }
 
     fn open_credentials(&mut self, slug: &'static str, cx: &mut Context<Self>) {
@@ -1995,12 +1979,6 @@ impl SettingsView {
                 cx,
             )
         });
-    }
-
-    fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        CookiePrompt::new(self.secret.clone())
-            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
-            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
     }
 
     fn credentials_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2053,7 +2031,7 @@ impl SettingsView {
             SignIn::Anonymous => (format!("connect-{slug}-guest"), t!("login-guest-use")),
             SignIn::Secret => (
                 format!("connect-{slug}-cookies"),
-                t!("login-connect-cookies"),
+                t!("login-sign-in", provider = provider),
             ),
             SignIn::Path(_) => (
                 format!("connect-{slug}-path"),
@@ -2347,10 +2325,6 @@ impl Render for SettingsView {
             }
             _ => None,
         };
-        let secret = matches!(
-            self.session.read(cx).state(),
-            SessionState::Authorizing(Some(SignInPrompt::Secret))
-        );
 
         div()
             .relative()
@@ -2380,9 +2354,6 @@ impl Render for SettingsView {
             )
             .when_some(accounts, |this, accounts| {
                 this.child(self.account_modal(accounts, cx).into_any_element())
-            })
-            .when(secret, |this| {
-                this.child(self.secret_prompt(cx).into_any_element())
             })
             .when(self.credentials_for.is_some(), |this| {
                 this.child(self.credentials_prompt(cx).into_any_element())

@@ -1,20 +1,18 @@
 use std::rc::Rc;
 
-use gpui::{App, Entity, IntoElement, RenderOnce, Window, px};
-use gpui::{div, prelude::*};
+use gpui::{App, Entity, IntoElement, RenderOnce, Window, div, prelude::*, px};
 use i18n::t;
 use ui::{ActiveTheme as _, Button, Input, Modal, Text};
 
 use crate::shared::steps::steps;
 
-type Submit = Rc<dyn Fn(&(), &mut Window, &mut App)>;
-type Cancel = Rc<dyn Fn(&(), &mut Window, &mut App)>;
+type Action = Rc<dyn Fn(&(), &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
 pub(crate) struct CookiePrompt {
     secret: Entity<Input>,
-    submit: Option<Submit>,
-    cancel: Option<Cancel>,
+    submit: Option<Action>,
+    cancel: Option<Action>,
 }
 
 impl CookiePrompt {

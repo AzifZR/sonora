@@ -57,6 +57,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The song count on an album or playlist page follows a language change. It used to keep the
   language the page was first opened in.
 
+- YouTube Music signs in through a window Sonora opens itself, on macOS, Windows and Linux. Sign
+  in with Google there and Sonora takes the cookies it needs; the window keeps nothing, so
+  browsing YouTube or Gmail in your regular browser no longer signs Sonora out. On Linux it needs
+  webkit2gtk, which most desktops already have.
+
+### Changed
+
+- Pasting a YouTube Music cookie header is gone. The sign-in window replaces it, and where Sonora
+  cannot open one only Guest mode is offered.
+
 ## [0.33.0] - 2026-09-09
 
 ### Added
