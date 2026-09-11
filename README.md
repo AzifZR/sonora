@@ -177,7 +177,7 @@ AI-assisted proofreading and translation of human-written text are permitted.
 | Українська (`uk`) | 527/573 | 92% |
 | Polski (`pl`) | 556/573 | 97% |
 | Português (Brasil) (`pt-BR`) | 512/573 | 89% |
-| 简体中文 (`zh-CN`) | 543/573 | 95% |
+| 简体中文 (`zh-CN`) | 573/573 | 100% |
 | Türkçe (`tr`) | 547/573 | 95% |
 
 <!-- i18n:end -->
