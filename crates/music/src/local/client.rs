@@ -21,13 +21,15 @@ const NOT_SUPPORTED: &str = "local playlists are not shared";
 pub struct LocalClient {
     scanned: RwLock<Scanned>,
     store: Store,
+    cache_dir: PathBuf,
 }
 
 impl LocalClient {
-    pub fn new(scanned: Scanned, database: Database) -> Self {
+    pub fn new(scanned: Scanned, database: Database, cache_dir: PathBuf) -> Self {
         Self {
             scanned: RwLock::new(scanned),
             store: Store::new(database),
+            cache_dir,
         }
     }
 
@@ -278,6 +280,12 @@ impl MusicApi for LocalClient {
             .find(|track| track.id.as_deref() == Some(track_id))
             .cloned()
             .ok_or_else(|| anyhow!("cannot find local track {track_id}"))
+    }
+
+    async fn track_from_path(&self, path: &Path) -> Result<Track> {
+        let (track, _) = wire::track_from_file(path, None, None, &self.cache_dir)
+            .ok_or_else(|| anyhow!("cannot read {} as an audio file", path.display()))?;
+        Ok(track)
     }
 
     async fn track_playcount(&self, _track_id: &str) -> Result<Option<u64>> {

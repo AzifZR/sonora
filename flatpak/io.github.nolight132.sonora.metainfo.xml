@@ -34,6 +34,20 @@
 
   <content_rating type="oars-1.1" />
 
+  <provides>
+    <mediatype>audio/mpeg</mediatype>
+    <mediatype>audio/flac</mediatype>
+    <mediatype>audio/mp4</mediatype>
+    <mediatype>audio/aac</mediatype>
+    <mediatype>audio/ogg</mediatype>
+    <mediatype>audio/opus</mediatype>
+    <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/webm</mediatype>
+    <mediatype>audio/x-matroska</mediatype>
+    <mediatype>audio/x-wavpack</mediatype>
+    <mediatype>audio/x-ape</mediatype>
+  </provides>
+
   <releases>
     <release version="@VERSION@" date="@DATE@" />
   </releases>

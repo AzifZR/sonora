@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use gpui::{Context, Entity, EventEmitter, Task};
+use i18n::t;
 use music::{
     MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, Shape, SignIn,
     SignInFailure, SignInProblem, SignInPrompt, UserProfile,
@@ -16,6 +17,8 @@ use crate::settings::AppSettings;
 use crate::{Io, join};
 
 const HEARTBEAT: Duration = Duration::from_secs(30);
+/// How often the sign-in window is asked whether the user is through.
+const WINDOW_POLL: Duration = Duration::from_millis(300);
 const BACKOFF: [Duration; 5] = [
     Duration::ZERO,
     Duration::from_secs(5),
@@ -65,10 +68,17 @@ pub enum SessionEvent {
     LocalChanged,
 }
 
+#[derive(Clone, Copy)]
+enum SecretInput {
+    Browser,
+    Manual,
+}
+
 pub struct ProviderInfo {
     pub slug: &'static str,
     pub name: &'static str,
     pub options: Vec<SignIn>,
+    pub web_sign_in: bool,
     pub stored: bool,
     pub active: bool,
     pub pending: bool,
@@ -93,6 +103,9 @@ pub struct Session {
     task: Option<Task<()>>,
     prompt_task: Option<Task<()>>,
     input: Option<UnboundedSender<String>>,
+    /// The browser window a `SignInPrompt::Secret` opened, while it is up.
+    window: Option<webview::Login>,
+    window_task: Option<Task<()>>,
     local_provider: Arc<dyn MusicProvider>,
     local_folders: Vec<PathBuf>,
     local_client: Option<Arc<dyn MusicApi>>,
@@ -138,6 +151,8 @@ impl Session {
             task: None,
             prompt_task: None,
             input: None,
+            window: None,
+            window_task: None,
             local_provider,
             local_folders,
             local_client: None,
@@ -211,6 +226,9 @@ impl Session {
                 slug: provider.slug(),
                 name: provider.name(),
                 options: provider.sign_in_options(),
+                // Asked in this order because answering `supported` costs a library load on
+                // Linux, and only a provider that signs in with cookies is worth it.
+                web_sign_in: provider.web_sign_in().is_some() && webview::supported(),
                 stored: provider.stored(),
                 active: self.active == Some(index),
                 pending: self.awaiting == Some(index),
@@ -343,6 +361,20 @@ impl Session {
     }
 
     pub fn sign_in(&mut self, slug: &str, method: SignIn, cx: &mut Context<Self>) {
+        self.start_sign_in(slug, method, SecretInput::Browser, cx);
+    }
+
+    pub fn sign_in_with_cookies(&mut self, slug: &str, cx: &mut Context<Self>) {
+        self.start_sign_in(slug, SignIn::Secret, SecretInput::Manual, cx);
+    }
+
+    fn start_sign_in(
+        &mut self,
+        slug: &str,
+        method: SignIn,
+        secret_input: SecretInput,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_pending() {
             return;
         }
@@ -369,8 +401,12 @@ impl Session {
             while let Some(prompt) = prompt_rx.recv().await {
                 this.update(cx, |this, cx| {
                     if matches!(this.state, SessionState::Authorizing(_)) {
+                        let secret = matches!(prompt, SignInPrompt::Secret);
                         this.state = SessionState::Authorizing(Some(prompt));
                         cx.notify();
+                        if secret && matches!(secret_input, SecretInput::Browser) {
+                            this.open_window(cx);
+                        }
                     }
                 })
                 .ok();
@@ -390,6 +426,7 @@ impl Session {
             this.update(cx, |this, cx| {
                 this.prompt_task = None;
                 this.input = None;
+                this.window = None;
                 match authorized {
                     Ok(session) => this.signed_in(session, index, cx),
                     Err(error) => this.failed(&error, cx),
@@ -410,6 +447,8 @@ impl Session {
         self.task = None;
         self.prompt_task = None;
         self.input = None;
+        self.window = None;
+        self.window_task = None;
         self.awaiting = None;
         self.error = None;
         if let Some((index, profile)) = self.resume.take() {
@@ -423,8 +462,72 @@ impl Session {
         cx.emit(SessionEvent::SignedOut);
     }
 
+    /// Opens the browser window for the secret prompt now showing. The window answers the prompt
+    /// itself once the user is through; closing it cancels the sign-in.
+    fn open_window(&mut self, cx: &mut Context<Self>) {
+        if !matches!(
+            self.state,
+            SessionState::Authorizing(Some(SignInPrompt::Secret))
+        ) || self.window.is_some()
+        {
+            return;
+        }
+        let Some(index) = self.awaiting else {
+            return;
+        };
+        let provider = &self.providers[index];
+        let Some(sign_in) = provider.web_sign_in() else {
+            return;
+        };
+        let target = webview::Target {
+            url: sign_in.url.to_string(),
+            landing: sign_in.landing.to_string(),
+            domain: sign_in.domain.to_string(),
+            proof: sign_in.proof.iter().map(ToString::to_string).collect(),
+            title: t!("login-window-title", provider = provider.name()).to_string(),
+        };
+        match webview::Login::open(target) {
+            Ok(login) => self.window = Some(login),
+            Err(error) => {
+                log::warn!("session: cannot open the sign-in window: {error:#}");
+                // Dropping the provider's task closes its prompt channel, which ends the prompt
+                // task on its own; this runs inside that task, so it must not drop it here.
+                self.task = None;
+                self.input = None;
+                return self.failed(&error, cx);
+            }
+        }
+        self.window_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(WINDOW_POLL).await;
+                let open = this.update(cx, |this, cx| {
+                    let Some(login) = this.window.as_mut() else {
+                        return false;
+                    };
+                    match login.poll() {
+                        webview::Poll::Pending => true,
+                        webview::Poll::Closed => {
+                            this.window = None;
+                            this.cancel_sign_in(cx);
+                            false
+                        }
+                        webview::Poll::Cookies(header) => {
+                            this.window = None;
+                            this.submit_input(header, cx);
+                            false
+                        }
+                    }
+                });
+                if !open.unwrap_or(false) {
+                    break;
+                }
+            }
+        }));
+    }
+
     pub fn submit_input(&mut self, text: String, cx: &mut Context<Self>) {
         if let Some(input) = &self.input {
+            self.window = None;
             input.send(text).ok();
             if let SessionState::Authorizing(Some(
                 SignInPrompt::Secret | SignInPrompt::Accounts(_),
@@ -461,6 +564,8 @@ impl Session {
         self.attempt = 0;
         self.prompt_task = None;
         self.input = None;
+        self.window = None;
+        self.window_task = None;
         self.awaiting = None;
         self.resume = None;
         self.client = None;
@@ -690,6 +795,38 @@ impl Session {
                 }
                 Err(error) => {
                     log::warn!("session: cannot update local music folders: {error:#}");
+                }
+            })
+            .ok();
+        }));
+    }
+
+    /// Brings up the local engine even when no folder has ever been configured, so a
+    /// file-association open can play a track without the user having visited Settings first.
+    /// A no-op once a local client already exists or one is already being brought up; a
+    /// configured library goes through the normal [`Session::rescan_local`] path instead.
+    pub fn ensure_local_ready(&mut self, cx: &mut Context<Self>) {
+        if self.local_client.is_some() || self.local_task.is_some() {
+            return;
+        }
+        if !self.local_folders.is_empty() {
+            return self.rescan_local(cx);
+        }
+
+        let provider = self.local_provider.clone();
+        let io = self.io.clone();
+        self.local_task = Some(cx.spawn(async move |this, cx| {
+            let prompt: PromptSink = Arc::new(|_| {});
+            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let signed_in = join(io.spawn(async move {
+                provider.sign_in(SignIn::Path(Vec::new()), prompt, rx).await
+            }))
+            .await;
+
+            this.update(cx, |this, cx| match signed_in {
+                Ok(session) => this.local_signed_in(session, cx),
+                Err(error) => {
+                    log::warn!("session: cannot initialize local playback: {error:#}");
                 }
             })
             .ok();

@@ -17,7 +17,7 @@ pub mod subsonic;
 pub mod youtube;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -104,6 +104,13 @@ pub trait MusicApi: Send + Sync {
         anyhow::bail!("this provider cannot edit tags")
     }
     async fn track(&self, track_id: &str) -> Result<Track>;
+
+    /// Reads an arbitrary file on disk as a track, for a provider whose tracks are files. Used
+    /// by file-association opens, which may point outside any scanned folder.
+    async fn track_from_path(&self, _path: &Path) -> Result<Track> {
+        anyhow::bail!("cannot open arbitrary files")
+    }
+
     async fn track_playcount(&self, track_id: &str) -> Result<Option<u64>>;
     async fn track_lyrics(&self, _track_id: &str) -> Result<Option<Lyrics>> {
         Ok(None)
@@ -370,6 +377,17 @@ pub enum SignInPrompt {
 pub type PromptSink = Arc<dyn Fn(SignInPrompt) + Send + Sync>;
 pub type InputSource = tokio::sync::mpsc::UnboundedReceiver<String>;
 
+/// A cookie sign-in the app runs in its own browser window. `url` opens first and `landing` scopes
+/// URL-based cookie reads. The user is through once the cookies for `domain` carry one of the
+/// `proof` names. The header those cookies make is what `SignInPrompt::Secret` then receives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WebSignIn {
+    pub url: &'static str,
+    pub landing: &'static str,
+    pub domain: &'static str,
+    pub proof: &'static [&'static str],
+}
+
 #[async_trait]
 pub trait MusicProvider: Send + Sync {
     fn name(&self) -> &'static str;
@@ -399,4 +417,9 @@ pub trait MusicProvider: Send + Sync {
     ) -> Result<ProviderSession>;
     fn abandon(&self) {}
     fn sign_out(&self);
+    /// How to run `SignIn::Secret` in a browser window. `None` means the provider has no cookie
+    /// sign-in, and the app offers no `Secret` option for it.
+    fn web_sign_in(&self) -> Option<WebSignIn> {
+        None
+    }
 }

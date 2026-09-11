@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sonora shows up in Open With for audio files. Opening one plays it right away; opening several
+  queues them to play next, in order, right after whatever is already playing, whatever provider
+  that came from.
+
 - Sonora can put what you are playing on your Discord profile. Turn on Show on Discord under
   Settings > Integrations. The status is called Sonora by default, and can name the service the
   track came from or just say Music instead; it can carry a badge of that service, and it can hide
@@ -54,6 +58,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A submenu that has no room beside its menu opens over it instead of under its rows, on whichever
   side has more room. The Add to playlist list in a narrow window no longer shows the context menu's
   items through it.
+- The song count on an album or playlist page follows a language change. It used to keep the
+  language the page was first opened in.
+
+- YouTube Music signs in through a window Sonora opens itself, on macOS, Windows and Linux. Sign
+  in with Google there and Sonora takes the cookies it needs; the window keeps nothing, so
+  browsing YouTube or Gmail in your regular browser no longer signs Sonora out. On Linux it needs
+  webkit2gtk, which most desktops already have.
+
+### Changed
+
+- Pasting a YouTube Music cookie header is gone. The sign-in window replaces it, and where Sonora
+  cannot open one only Guest mode is offered.
 
 ## [0.33.0] - 2026-09-09
 
