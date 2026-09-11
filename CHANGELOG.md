@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-11
+
 ### Added
 
 - Sonora shows up in Open With for audio files. Opening one plays it right away; opening several
@@ -45,6 +47,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A Back to top button appears in the sidebar and in the queue once either is scrolled, and
   glides back rather than jumping.
 
+- YouTube Music signs in through a window Sonora opens itself, on macOS, Windows and Linux. Sign
+  in with Google there and Sonora takes the cookies it needs; the window keeps nothing, so
+  browsing YouTube or Gmail in your regular browser no longer signs Sonora out. On Linux it needs
+  webkit2gtk, which most desktops already have.
+
 ### Changed
 
 - The tray menu draws the cover of the playing track beside its name, and clicking that row
@@ -52,6 +59,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Hovering the tray icon names the playing track, the way it already did on Linux.
 - The sleep timer lives under Settings > Playback. Turn it on there and a Configure button opens
   the slider; the moon button leaves the player bar.
+- Pasting a YouTube Music cookie header is gone. The sign-in window replaces it, and where Sonora
+  cannot open one only Guest mode is offered.
 
 ### Fixed
 
@@ -60,16 +69,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   items through it.
 - The song count on an album or playlist page follows a language change. It used to keep the
   language the page was first opened in.
-
-- YouTube Music signs in through a window Sonora opens itself, on macOS, Windows and Linux. Sign
-  in with Google there and Sonora takes the cookies it needs; the window keeps nothing, so
-  browsing YouTube or Gmail in your regular browser no longer signs Sonora out. On Linux it needs
-  webkit2gtk, which most desktops already have.
-
-### Changed
-
-- Pasting a YouTube Music cookie header is gone. The sign-in window replaces it, and where Sonora
-  cannot open one only Guest mode is offered.
 
 ## [0.33.0] - 2026-09-09
 
@@ -1475,7 +1474,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.33.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/sonorahq/sonora/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/sonorahq/sonora/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/sonorahq/sonora/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/sonorahq/sonora/compare/v0.30.0...v0.31.0
