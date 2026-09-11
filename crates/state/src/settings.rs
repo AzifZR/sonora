@@ -28,7 +28,7 @@ use ui::{
 };
 
 use crate::queue::{Resume, gap_target};
-use crate::{Io, Repeat, Sonora, join};
+use crate::{Io, Outcome, Repeat, Sonora, Toasts, join};
 
 /// Which panel the right sidebar shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -815,7 +815,10 @@ impl AppSettings {
                 this.lastfm_task = None;
                 match linked {
                     Ok((session, user)) => this.set_lastfm_session(Some(session), Some(user), cx),
-                    Err(error) => log::warn!("settings: cannot link Last.fm: {error:#}"),
+                    Err(error) => {
+                        log::warn!("settings: cannot link Last.fm: {error:#}");
+                        Toasts::show(Outcome::Failed, "toast-lastfm-failed", cx);
+                    }
                 }
                 cx.notify();
             })

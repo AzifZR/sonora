@@ -73,15 +73,29 @@ async fn call(
         .await
         .context("last.fm answered outside JSON")?;
     if let Some(error) = reply.get("error") {
-        let code = error
-            .get("code")
-            .and_then(|code| code.as_u64())
-            .unwrap_or_default() as u32;
-        let message = error
-            .get("message")
-            .and_then(|message| message.as_str())
-            .unwrap_or("unknown failure")
-            .to_owned();
+        // Failures arrive either as a bare code (`{"error":14,…}`) or as an
+        // object (`{"error":{"code":…,"message":…}}`).
+        let (code, message) = match error.is_u64() {
+            true => (
+                error.as_u64().unwrap_or_default() as u32,
+                reply
+                    .get("message")
+                    .and_then(|message| message.as_str())
+                    .unwrap_or("unknown failure")
+                    .to_owned(),
+            ),
+            false => (
+                error
+                    .get("code")
+                    .and_then(|code| code.as_u64())
+                    .unwrap_or_default() as u32,
+                error
+                    .get("message")
+                    .and_then(|message| message.as_str())
+                    .unwrap_or("unknown failure")
+                    .to_owned(),
+            ),
+        };
         return Err(ApiError { code, message }.into());
     }
     Ok(reply)

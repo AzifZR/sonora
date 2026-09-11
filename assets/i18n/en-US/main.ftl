@@ -636,6 +636,7 @@ toast-track-unplayable = { $name } could not be played
 toast-library-add-failed = { $name } could not be added to your library
 toast-library-remove-failed = { $name } could not be removed from your library
 toast-home-failed = Home could not be loaded
+toast-lastfm-failed = Last.fm could not be linked
 
 # lyrics
 lyrics-title = Lyrics

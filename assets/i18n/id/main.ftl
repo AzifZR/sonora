@@ -605,6 +605,7 @@ toast-track-unplayable = { $name } tidak dapat diputar
 toast-library-add-failed = { $name } tidak dapat ditambahkan ke koleksi kamu
 toast-library-remove-failed = { $name } tidak dapat dihapus dari koleksi kamu
 toast-home-failed = Beranda tidak dapat dimuat
+toast-lastfm-failed = Last.fm tidak dapat dihubungkan
 
 # lyrics
 lyrics-title = Lirik
