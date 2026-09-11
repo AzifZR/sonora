@@ -8,7 +8,7 @@ use crate::shared::local;
 use crate::shared::popups::{AccountPicker, SearchPopup, matches_query};
 use gpui::{
     AnyElement, App, Context, Entity, FontWeight, MouseUpEvent, Pixels, Render, SharedString, Task,
-    Window, div, font, px,
+    Window, div, px,
 };
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
@@ -2362,7 +2362,6 @@ impl Render for SettingsView {
 }
 
 fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedString> {
-    let missing = resolved(&text_system, "sonora-has-no-such-family");
     let mut names = text_system.all_font_names();
     names.sort_unstable();
     names.dedup();
@@ -2370,13 +2369,8 @@ fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedStri
     names
         .into_iter()
         .filter(|name| !name.starts_with('.'))
-        .filter(|name| resolved(&text_system, name) != missing)
         .map(SharedString::from)
         .collect()
-}
-
-fn resolved(text_system: &gpui::TextSystem, family: &str) -> gpui::FontId {
-    text_system.resolve_font(&font(SharedString::from(family.to_owned())))
 }
 
 fn sleep_slot(sleep: Option<Sleep>) -> usize {
