@@ -240,10 +240,10 @@ construction, layout and scene assembly, never GPU fill.
 | Console logging   | `RUST_LOG`; default filter `warn,symphonia=error,lofty=error`                                                                     |
 | File logging      | `SONORA_LOG`; default adds `sonora=debug,ui=debug`                                                                                |
 
-Startup runs one migration pass before constructing app state. It moves volatile values out of a
-pre-v2 `settings.json`, imports `history.sqlite3`, `flags.sqlite3` and
-`local-playlists.sqlite3` into `state.sqlite`, and moves `local-music.json`'s folder into
-`settings.json`. `music::credentials::migrate` runs in the same pass: it rewrites the Spotify
+Startup runs one migration pass before constructing app state. It imports `history.sqlite3`,
+`flags.sqlite3` and `local-playlists.sqlite3` into `state.sqlite`. `settings.json` is read as
+version 2 only; an older file keeps its preferences, and its runtime values fall back to the
+defaults. `music::credentials::migrate` runs in the same pass: it rewrites the Spotify
 `credentials.json` from the cache root into `spotify/` and folds the YouTube `cookies.txt`,
 `authuser.txt` and `guest` files into `youtube/credentials.json`, each owner-only, so the providers
 only ever read the new paths. A legacy file is removed only after its replacement has been written
