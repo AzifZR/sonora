@@ -199,6 +199,7 @@ queue-radio = Putar lagu serupa
 
 # player bar
 player-nothing-playing = Belum ada yang diputar
+player-up-next = Berikutnya: { $name }
 player-percent = { $value }%
 player-shuffle = Acak
 player-repeat = Ulangi

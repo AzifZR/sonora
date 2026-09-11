@@ -331,6 +331,11 @@ impl PlayerBar {
         let cover = track.as_ref().and_then(|track| track.cover.clone());
         let explicit = track.as_ref().is_some_and(|track| track.explicit);
         let like = like(track.clone(), cx);
+        let next = self
+            .playback
+            .read(cx)
+            .next_track(cx)
+            .map(|track| track.name.clone());
 
         div()
             .flex()
@@ -421,6 +426,15 @@ impl PlayerBar {
                                 .on_click(|id, cx| {
                                     navigate(Destination::Artist(id), cx);
                                 }),
+                            )
+                        })
+                        .when_some(next, |this, name| {
+                            this.child(
+                                div()
+                                    .text_size(artists)
+                                    .text_color(muted)
+                                    .truncate()
+                                    .child(t!("player-up-next", name = name.as_str())),
                             )
                         }),
                 )

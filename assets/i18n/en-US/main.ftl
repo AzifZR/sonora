@@ -207,6 +207,7 @@ queue-radio = Autoplay similar tracks
 
 # player bar
 player-nothing-playing = Nothing playing
+player-up-next = Up next: { $name }
 player-percent = { $value }%
 player-shuffle = Shuffle
 player-repeat = Repeat

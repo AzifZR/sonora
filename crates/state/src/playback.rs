@@ -1078,6 +1078,22 @@ impl Playback {
         self.repeat
     }
 
+    /// The track that will play after the current one, or [`None`] when
+    /// playback stops: an empty queue, or a sleep timer set for end of track.
+    /// Under repeat-one it is the current track; under repeat-all with an
+    /// empty queue it wraps to the start.
+    pub fn next_track<'a>(&'a self, cx: &'a App) -> Option<&'a Track> {
+        if self.sleep == Some(Sleep::EndOfTrack) {
+            return None;
+        }
+        let queue = self.queue.read(cx);
+        match self.repeat {
+            Repeat::One => self.track.as_ref(),
+            Repeat::All if !queue.has_next() => queue.past().next(),
+            _ => queue.upcoming().next().or_else(|| queue.similar().next()),
+        }
+    }
+
     pub fn cycle_repeat(&mut self, cx: &mut Context<Self>) {
         self.repeat = match self.repeat {
             Repeat::Off => Repeat::All,
