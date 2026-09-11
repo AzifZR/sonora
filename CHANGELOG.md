@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Flatpak can show what you are playing on Discord. It reaches the Discord socket whether
+  Discord is installed natively or as a Flatpak.
+
 ## [0.34.0] - 2026-09-11
 
 ### Added
