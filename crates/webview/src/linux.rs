@@ -39,6 +39,10 @@ const GTK_WINDOW_TOPLEVEL: c_int = 0;
 const GTK_WIN_POS_CENTER: c_int = 1;
 const G_SOURCE_REMOVE: Bool = 0;
 const G_SOURCE_CONTINUE: Bool = 1;
+/// `WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS`. WebKitGTK alone defaults to `ACCEPT_NO_THIRD_PARTY`;
+/// the other two backends take every cookie, and a session that dies with the window has no third
+/// party worth keeping out.
+const WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS: c_int = 0;
 
 type Ptr = *mut c_void;
 type Bool = c_int;
@@ -112,6 +116,7 @@ symbols! {
     webkit_web_view_get_uri: unsafe extern "C" fn(Ptr) -> *const c_char,
     webkit_web_view_load_uri: unsafe extern "C" fn(Ptr, *const c_char),
     webkit_settings_set_user_agent: unsafe extern "C" fn(Ptr, *const c_char),
+    webkit_cookie_manager_set_accept_policy: unsafe extern "C" fn(Ptr, c_int),
     webkit_cookie_manager_get_cookies: unsafe extern "C" fn(Ptr, *const c_char, Ptr, Ready, Ptr),
     webkit_cookie_manager_get_cookies_finish: unsafe extern "C" fn(Ptr, Ptr, *mut *mut Fault) -> *mut Node,
     soup_cookie_get_name: unsafe extern "C" fn(Ptr) -> *const c_char,
@@ -129,6 +134,8 @@ struct Shared {
     fetch: Fetch,
     /// The poll side wants a cookie read started.
     wanted: bool,
+    /// The poll side wants this url loaded.
+    load: Option<CString>,
     /// The poll side wants the window closed.
     dismissed: bool,
 }
@@ -210,6 +217,7 @@ impl Window {
                 closed: false,
                 fetch: Fetch::Idle,
                 wanted: false,
+                load: None,
                 dismissed: false,
             }),
         });
@@ -240,9 +248,12 @@ impl Window {
         }
     }
 
-    /// Forgets a finished read taken on a page that turned out not to be the landing.
-    pub(crate) fn discard(&mut self) {
-        self.session.state.lock().unwrap().fetch.discard();
+    /// Asks the GTK thread to navigate the view to `url`. It starts within a tick.
+    pub(crate) fn load(&self, url: &str) {
+        let Ok(url) = CString::new(url) else {
+            return;
+        };
+        self.session.state.lock().unwrap().load = Some(url);
     }
 
     /// Asks the GTK thread to take the window down. It is gone within a tick.
@@ -336,6 +347,13 @@ impl Live {
             bail!("cannot open the sign-in window");
         }
         let cookies = unsafe { (api.webkit_web_context_get_cookie_manager)(context) };
+        // The session dies with the window, so there is no third party to keep out of it.
+        unsafe {
+            (api.webkit_cookie_manager_set_accept_policy)(
+                cookies,
+                WEBKIT_COOKIE_POLICY_ACCEPT_ALWAYS,
+            )
+        };
         let settings = unsafe { (api.webkit_web_view_get_settings)(view) };
         unsafe { (api.webkit_settings_set_user_agent)(settings, agent.as_ptr()) };
 
@@ -389,8 +407,12 @@ impl Live {
         }
         state.uri = unsafe { text((api.webkit_web_view_get_uri)(self.view)) };
         let wanted = std::mem::take(&mut state.wanted);
+        let load = state.load.take();
         // `collected` locks the same state, so the read is started with the lock let go.
         drop(state);
+        if let Some(url) = load {
+            unsafe { (api.webkit_web_view_load_uri)(self.view, url.as_ptr()) };
+        }
         if wanted {
             let held = Arc::into_raw(self.session.clone()) as Ptr;
             unsafe {

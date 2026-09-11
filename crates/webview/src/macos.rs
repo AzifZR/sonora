@@ -120,9 +120,12 @@ impl Window {
         None
     }
 
-    /// Forgets a finished fetch taken on a page that turned out not to be the landing.
-    pub(crate) fn discard(&mut self) {
-        self.fetch.borrow_mut().discard();
+    /// Navigates the view to `url`; a url that does not parse is ignored.
+    pub(crate) fn load(&self, url: &str) {
+        let Some(url) = NSURL::URLWithString(&NSString::from_str(url)) else {
+            return;
+        };
+        unsafe { self.view.loadRequest(&NSURLRequest::requestWithURL(&url)) };
     }
 
     pub(crate) fn close(&self) {

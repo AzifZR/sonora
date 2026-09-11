@@ -126,9 +126,20 @@ impl Window {
         None
     }
 
-    /// Forgets a finished fetch taken on a page that turned out not to be the landing.
-    pub(crate) fn discard(&mut self) {
-        self.fetch.borrow_mut().discard();
+    /// Navigates the view to `url`. Nothing happens before the controller has arrived.
+    pub(crate) fn load(&self, url: &str) {
+        let Some(view) = self
+            .browser
+            .borrow()
+            .as_ref()
+            .map(|browser| browser.view.clone())
+        else {
+            return;
+        };
+        let url = wide(url);
+        if let Err(error) = unsafe { view.Navigate(PCWSTR(url.as_ptr())) } {
+            log::warn!("webview: cannot load the sign-in url again: {error}");
+        }
     }
 
     pub(crate) fn close(&self) {

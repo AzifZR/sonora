@@ -1,9 +1,15 @@
 //! A native browser window with a throwaway session, for providers that sign in with cookies.
 //!
 //! The window loads a sign-in page in a data store that lives only as long as the window. Once the
-//! page lands on the provider's own host with the proof cookies set, the cookie header is handed
-//! back and the window closes. No browser profile ever holds that session, so nothing rotates the
-//! cookies behind the app's back the way a shared browser session does.
+//! proof cookies appear, their header is handed back and the window closes. No browser profile ever
+//! holds that session, so nothing rotates the cookies behind the app's back the way a shared browser
+//! session does.
+//!
+//! An account provider can finish the sign-in on an interstitial of its own — Google's security
+//! check-up, say — that jumps straight to the return url and skips the hop that hands the account
+//! to the provider's domain. The page then comes up signed out. When that happens, the sign-in url
+//! is loaded once more: with the account already in, it only runs the hop that was skipped, which
+//! is exactly what the page's own Sign in button would do.
 //!
 //! macOS, Windows and Linux have native backends. Every other platform reports
 //! `supported() == false` and `Login::open` fails, so a caller falls back to pasting a header.
@@ -33,8 +39,10 @@ mod unsupported;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 use unsupported as platform;
 
-/// What a sign-in window is asked to do. `url` opens first. The user is through once the page is on
-/// `landing` and the cookies for `domain` carry at least one of the `proof` names.
+/// What a sign-in window is asked to do. `url` opens first. `landing` scopes cookie reads on
+/// platforms whose cookie store asks for a URL. The user is through as soon as the cookies for
+/// `domain` carry at least one of the `proof` names; a page on `domain` without them means the
+/// hand-off was skipped, and `url` is loaded once more.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     pub url: String,
@@ -67,6 +75,9 @@ pub enum Poll {
 pub struct Login {
     target: Target,
     window: platform::Window,
+    /// Whether the sign-in url has already been loaded a second time. Once is the limit: a page
+    /// that comes up signed out again is left to the user.
+    retried: bool,
 }
 
 /// Whether this platform can open a sign-in window at all. On Linux the answer is only known once
@@ -79,7 +90,11 @@ impl Login {
     /// Opens the window and starts loading the target url. Must run on the main thread.
     pub fn open(target: Target) -> Result<Self> {
         let window = platform::Window::open(&target)?;
-        Ok(Self { target, window })
+        Ok(Self {
+            target,
+            window,
+            retried: false,
+        })
     }
 
     /// Checks where the window is. Call it every few hundred milliseconds until it stops answering
@@ -87,13 +102,6 @@ impl Login {
     pub fn poll(&mut self) -> Poll {
         if self.window.closed() {
             return Poll::Closed;
-        }
-        let Some(host) = self.window.host() else {
-            return Poll::Pending;
-        };
-        if host != self.target.landing {
-            self.window.discard();
-            return Poll::Pending;
         }
         let Some(cookies) = self.window.fetch() else {
             return Poll::Pending;
@@ -104,8 +112,29 @@ impl Login {
                 self.window.close();
                 Poll::Cookies(header)
             }
-            false => Poll::Pending,
+            false => {
+                self.retry();
+                Poll::Pending
+            }
         }
+    }
+
+    /// Loads the sign-in url again when the page is on the provider's domain without a session,
+    /// once. Any page of the domain counts, not only the landing: a skipped hand-off can end on
+    /// an error page of the provider's just as well.
+    fn retry(&mut self) {
+        if self.retried {
+            return;
+        }
+        let Some(host) = self.window.host() else {
+            return;
+        };
+        if !matches(&host, &self.target.domain) {
+            return;
+        }
+        log::debug!("webview: {host} came up signed out, loading the sign-in url again");
+        self.retried = true;
+        self.window.load(&self.target.url);
     }
 }
 

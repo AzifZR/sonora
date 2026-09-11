@@ -359,9 +359,9 @@ pub enum SignInPrompt {
 pub type PromptSink = Arc<dyn Fn(SignInPrompt) + Send + Sync>;
 pub type InputSource = tokio::sync::mpsc::UnboundedReceiver<String>;
 
-/// A cookie sign-in the app runs in its own browser window. `url` opens first; the user is
-/// through once the page is on `landing` and the cookies for `domain` carry one of the `proof`
-/// names. The header those cookies make is what `SignInPrompt::Secret` then receives.
+/// A cookie sign-in the app runs in its own browser window. `url` opens first and `landing` scopes
+/// URL-based cookie reads. The user is through once the cookies for `domain` carry one of the
+/// `proof` names. The header those cookies make is what `SignInPrompt::Secret` then receives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WebSignIn {
     pub url: &'static str,

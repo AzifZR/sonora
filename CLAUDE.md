@@ -66,7 +66,10 @@ sonora → views → state → music
   entry of `icons` and `sonora` only.
 - `webview` is a leaf that knows nothing about gpui or music: `Login::open(Target)` puts up a
   platform window over a throwaway session and `poll()` answers `Pending`, `Closed` or
-  `Cookies(header)`. Every backend fits the same five calls. `macos.rs` is AppKit and WebKit
+  `Cookies(header)`. The user is through as soon as the proof cookies are on the provider's
+  domain; a page of that domain without them means the account provider skipped the hand-off hop
+  behind an interstitial of its own, and `poll` loads the sign-in url once more, which is what the
+  page's own Sign in button would do. Every backend fits the same six calls. `macos.rs` is AppKit and WebKit
   through `objc2`, `windows.rs` a Win32 host around an InPrivate WebView2, `linux.rs` a GTK window
   around WebKitGTK, and `unsupported.rs` is what any other platform gets. `native.rs` holds what
   the three share — the window's size, the source-url-to-host parsing, and the `Fetch`/`Reading`

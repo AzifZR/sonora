@@ -42,13 +42,6 @@ impl Fetch {
             Self::Idle => Reading::Start,
         }
     }
-
-    /// Forgets a finished read taken on a page that turned out not to be the landing.
-    pub(crate) fn discard(&mut self) {
-        if matches!(self, Self::Done(_)) {
-            *self = Self::Idle;
-        }
-    }
 }
 
 /// Extracts the host from the absolute HTTP(S) urls a webview reports as its source. macOS reads it

@@ -24,8 +24,10 @@ use crate::{
 pub use client::YouTubeClient;
 
 const GUEST_ID: &str = "youtube-guest";
-/// Google's sign-in page, told to come back to YouTube Music once the account is in.
-const SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fmusic.youtube.com%2F";
+/// Google's sign-in page, told to come back to YouTube Music once the account is in: the same url
+/// YouTube Music's own Sign in button opens, `www.youtube.com/signin` hop included, so that the
+/// second load the sign-in window falls back on runs exactly what that button would.
+const SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
 const LANDING: &str = "music.youtube.com";
 const COOKIE_DOMAIN: &str = "youtube.com";
 
