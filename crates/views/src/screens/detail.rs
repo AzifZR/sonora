@@ -286,7 +286,8 @@ impl DetailView {
             .unwrap_or_default();
         let owner = header.and_then(|header| header.owner.clone());
         let release_date = header.and_then(|header| header.release_date.as_deref());
-        let meta = header.map(|header| header.meta.clone()).unwrap_or_default();
+        let owner_name = header.and_then(|header| header.owner_name.clone());
+        let track_count = header.map(|header| header.track_count).unwrap_or(0);
         let listed = self.detail.read(cx).tracks();
         let duration: std::time::Duration = listed.iter().map(|track| track.duration).sum();
         let (eyebrow, label) = match kind {
@@ -318,8 +319,11 @@ impl DetailView {
         if let Some(release_date) = release_date {
             strip = strip.text(release_date_label(release_date));
         }
-        for item in meta {
-            strip = strip.text(item);
+        if let Some(owner_name) = owner_name {
+            strip = strip.text(owner_name);
+        }
+        if track_count > 0 {
+            strip = strip.text(t!("count-songs", count = track_count));
         }
         if !duration.is_zero() {
             strip = strip.text(clock(duration));
