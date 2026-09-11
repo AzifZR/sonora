@@ -54,6 +54,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A submenu that has no room beside its menu opens over it instead of under its rows, on whichever
   side has more room. The Add to playlist list in a narrow window no longer shows the context menu's
   items through it.
+- The song count on an album or playlist page follows a language change. It used to keep the
+  language the page was first opened in.
 
 ## [0.33.0] - 2026-09-09
 
