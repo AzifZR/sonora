@@ -17,7 +17,7 @@ pub mod subsonic;
 pub mod youtube;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,9 +26,10 @@ use async_trait::async_trait;
 
 pub use models::{
     Album, AlbumDetail, Artist, ArtistProfile, ArtistRef, Contributor, Credit, Genre, GenreDetail,
-    GenreItem, GenreSection, HomeFeed, Lyrics, LyricsHit, LyricsLane, LyricsLine, LyricsQuery,
-    LyricsWord, Playlist, PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey,
-    TrackTags, UserDetail, UserProfile, Voice, WritingSystem,
+    GenreItem, GenreSection, HomeFeed, LibraryItem, LibraryItemKind, LibraryOrder,
+    LibraryPinResult, Lyrics, LyricsHit, LyricsLane, LyricsLine, LyricsQuery, LyricsWord, Playlist,
+    PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey, TrackTags,
+    UserDetail, UserProfile, Voice, WritingSystem,
 };
 pub use spectrum::Spectrum;
 
@@ -103,11 +104,28 @@ pub trait MusicApi: Send + Sync {
         anyhow::bail!("this provider cannot edit tags")
     }
     async fn track(&self, track_id: &str) -> Result<Track>;
+
+    /// Reads an arbitrary file on disk as a track, for a provider whose tracks are files. Used
+    /// by file-association opens, which may point outside any scanned folder.
+    async fn track_from_path(&self, _path: &Path) -> Result<Track> {
+        anyhow::bail!("cannot open arbitrary files")
+    }
+
     async fn track_playcount(&self, track_id: &str) -> Result<Option<u64>>;
     async fn track_lyrics(&self, _track_id: &str) -> Result<Option<Lyrics>> {
         Ok(None)
     }
     async fn playlists(&self, limit: u32) -> Result<Vec<Playlist>>;
+    /// Change a provider's own library pin, rather than a local sidebar shortcut.
+    async fn set_library_item_pinned(&self, _uri: &str, _pinned: bool) -> Result<LibraryPinResult> {
+        anyhow::bail!("library pinning is not supported")
+    }
+
+    /// The provider's mixed library, including pins and its recent-play ordering.
+    /// None means this provider exposes only the separate saved collections.
+    async fn library_items(&self, _order: LibraryOrder) -> Result<Option<Vec<LibraryItem>>> {
+        Ok(None)
+    }
     async fn create_playlist(&self, name: &str) -> Result<String>;
     async fn rename_playlist(&self, playlist_id: &str, name: &str) -> Result<()>;
     async fn delete_playlist(&self, playlist_id: &str) -> Result<()>;
@@ -359,6 +377,17 @@ pub enum SignInPrompt {
 pub type PromptSink = Arc<dyn Fn(SignInPrompt) + Send + Sync>;
 pub type InputSource = tokio::sync::mpsc::UnboundedReceiver<String>;
 
+/// A cookie sign-in the app runs in its own browser window. `url` opens first and `landing` scopes
+/// URL-based cookie reads. The user is through once the cookies for `domain` carry one of the
+/// `proof` names. The header those cookies make is what `SignInPrompt::Secret` then receives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WebSignIn {
+    pub url: &'static str,
+    pub landing: &'static str,
+    pub domain: &'static str,
+    pub proof: &'static [&'static str],
+}
+
 #[async_trait]
 pub trait MusicProvider: Send + Sync {
     fn name(&self) -> &'static str;
@@ -367,6 +396,17 @@ pub trait MusicProvider: Send + Sync {
     fn stored(&self) -> bool;
     fn location(&self) -> Option<String> {
         None
+    }
+    /// What a status calls this provider after "listening to". A service answers with its own
+    /// name; one that is only the user's own files says what the files are instead.
+    fn listening_to(&self) -> &'static str {
+        self.name()
+    }
+    /// Whether the artwork urls this provider hands out can be given to another service. A path
+    /// on disk means nothing elsewhere, and a self-hosted url carries the credentials that fetch
+    /// it, so the default is no.
+    fn public_art(&self) -> bool {
+        false
     }
     async fn restore(&self) -> Result<Option<ProviderSession>>;
     async fn sign_in(
@@ -377,4 +417,9 @@ pub trait MusicProvider: Send + Sync {
     ) -> Result<ProviderSession>;
     fn abandon(&self) {}
     fn sign_out(&self);
+    /// How to run `SignIn::Secret` in a browser window. `None` means the provider has no cookie
+    /// sign-in, and the app offers no `Secret` option for it.
+    fn web_sign_in(&self) -> Option<WebSignIn> {
+        None
+    }
 }

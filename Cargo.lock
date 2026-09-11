@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3b7f7f85a7e5f68090000ed7622545829afd484d210358702ae4cb97dd0c320"
 dependencies = [
  "enumn",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -1795,6 +1795,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "discord-rich-presence"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90c55d69cab17c19677ce3a5f8face993a9e6eaf847fecac3547f3a3ff4a2494"
+dependencies = [
+ "log",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_repr",
+ "thiserror 2.0.19",
+ "uuid 0.8.2",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1891,7 +1906,7 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "embed"
-version = "0.33.0"
+version = "0.34.0"
 
 [[package]]
 name = "embed-resource"
@@ -2697,7 +2712,7 @@ dependencies = [
  "url",
  "usvg",
  "util_macros",
- "uuid",
+ "uuid 1.24.0",
  "waker-fn",
  "web-time",
  "windows 0.61.3",
@@ -2761,7 +2776,7 @@ dependencies = [
  "smol",
  "strum",
  "url",
- "uuid",
+ "uuid 1.24.0",
  "wayland-backend",
  "wayland-client",
  "wayland-cursor",
@@ -2817,7 +2832,7 @@ dependencies = [
  "semver",
  "smallvec",
  "strum",
- "uuid",
+ "uuid 1.24.0",
  "zed-font-kit",
 ]
 
@@ -2910,7 +2925,7 @@ dependencies = [
  "rand 0.9.5",
  "raw-window-handle",
  "smallvec",
- "uuid",
+ "uuid 1.24.0",
  "windows 0.61.3",
  "windows-core 0.61.2",
  "windows-numerics 0.2.0",
@@ -3294,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "i18n"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "fluent-bundle",
  "gpui",
@@ -3329,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "icons"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "embed",
@@ -3515,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "input"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "gpui",
  "ui",
@@ -3998,7 +4013,7 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "url",
- "uuid",
+ "uuid 1.24.0",
  "vergen-gitcl",
 ]
 
@@ -4016,7 +4031,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.19",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -4240,7 +4255,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
  "time",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -4393,7 +4408,7 @@ dependencies = [
  "portable-atomic",
  "smallvec",
  "tagptr",
- "uuid",
+ "uuid 1.24.0",
 ]
 
 [[package]]
@@ -4427,7 +4442,7 @@ dependencies = [
 
 [[package]]
 name = "music"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5063,6 +5078,20 @@ dependencies = [
  "block2 0.6.2",
  "objc2 0.6.4",
  "objc2-core-location",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-web-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2e5aaab980c433cf470df9d7af96a7b46a9d892d521a2cbbb2f8a4c16751e7f"
+dependencies = [
+ "bitflags 2.13.1",
+ "block2 0.6.2",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
  "objc2-foundation 0.3.2",
 ]
 
@@ -6421,7 +6450,7 @@ dependencies = [
 
 [[package]]
 name = "router"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "gpui",
  "ui",
@@ -7232,12 +7261,13 @@ dependencies = [
 
 [[package]]
 name = "sonora"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "dirs",
  "embed",
  "env_logger",
+ "futures",
  "gpui",
  "gpui_platform",
  "i18n",
@@ -7372,11 +7402,12 @@ dependencies = [
 
 [[package]]
 name = "state"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "dirs",
+ "discord-rich-presence",
  "fastrand",
  "futures",
  "gpui",
@@ -7395,6 +7426,7 @@ dependencies = [
  "storage",
  "tokio",
  "ui",
+ "webview",
 ]
 
 [[package]]
@@ -7405,7 +7437,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -8476,7 +8508,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "futures",
  "gpui",
@@ -8689,6 +8721,15 @@ dependencies = [
 
 [[package]]
 name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom 0.2.17",
+]
+
+[[package]]
+name = "uuid"
 version = "1.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
@@ -8805,7 +8846,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "views"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "gpui",
  "i18n",
@@ -9090,6 +9131,56 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "webview"
+version = "0.34.0"
+dependencies = [
+ "anyhow",
+ "block2 0.6.2",
+ "libc",
+ "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "objc2-web-kit",
+ "webview2-com",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "webview2-com"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f89fca7a704cee10dcb3654c1dbb8941d1783132f1917358af75bec37a7d7e6"
+dependencies = [
+ "webview2-com-macros",
+ "webview2-com-sys",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
+]
+
+[[package]]
+name = "webview2-com-macros"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67a921c1b6914c367b2b823cd4cde6f96beec77d30a939c8199bb377cf9b9b54"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "webview2-com-sys"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a07132775117d6065853d9d1178157b8c90e228de47129d6bce2c7edebedfb"
+dependencies = [
+ "thiserror 2.0.19",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -10027,7 +10118,7 @@ dependencies = [
  "serde_repr",
  "tracing",
  "uds_windows",
- "uuid",
+ "uuid 1.24.0",
  "windows-sys 0.61.2",
  "winnow 1.0.4",
  "zbus_macros",

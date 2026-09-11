@@ -3,9 +3,7 @@
 //! Preferences a user sets on purpose go in `settings.json` as [`Values`]. Everything the app
 //! changes on its own while running, such as the window frame or the volume, goes in
 //! `state.sqlite` as [`StateValues`]. [`AppSettings`] holds both and saves each on its own
-//! debounce, so a sidebar drag never rewrites the preferences file. A pre-v2 `settings.json`
-//! carried both kinds of value. The first start after the split moves the runtime half into
-//! SQLite and rewrites the JSON without it.
+//! debounce, so a sidebar drag never rewrites the preferences file.
 
 use std::collections::HashMap;
 use std::fs;
@@ -27,10 +25,46 @@ use ui::{
     Layout, Look, Mode, Pace, Pin, Rounding, Saver, Sorting, Stillness, ThemeKind, ThemeOverrides,
 };
 
+use crate::pins::PinSort;
 use crate::queue::{Resume, gap_target};
 use crate::{Repeat, Sonora};
 
 /// Which panel the right sidebar shows.
+/// What the Discord status calls itself. `Provider` asks the provider the track came from, so
+/// local files say Local Music rather than the provider's own name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiscordName {
+    #[default]
+    Sonora,
+    Provider,
+    Music,
+}
+
+impl DiscordName {
+    pub const ALL: [Self; 3] = [Self::Sonora, Self::Provider, Self::Music];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Sonora => "sonora",
+            Self::Provider => "provider",
+            Self::Music => "music",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Sonora => "settings-discord-name-sonora",
+            Self::Provider => "settings-discord-name-provider",
+            Self::Music => "settings-discord-name-music",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|name| name.id() == id)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SideTab {
@@ -160,9 +194,6 @@ const SETTINGS_VERSION: u32 = 2;
 /// "Whatever the platform uses".
 pub const SYSTEM_FONT: &str = "auto";
 
-/// Pins grouped by provider slug, deprecated since v2.
-type Groups = HashMap<String, Vec<Pin>>;
-
 /// A pin together with the provider it belongs to. The pin is flattened so the stored JSON
 /// reads as a pin with one extra `slug` key.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,6 +212,10 @@ struct Values {
     normalisation: bool,
     gapless: bool,
     sleep_timer: bool,
+    discord_presence: bool,
+    discord_name: DiscordName,
+    discord_badge: bool,
+    discord_without_details: bool,
     lyrics_for_local_files: bool,
     karaoke_lyrics: bool,
     blur_lyrics: bool,
@@ -220,7 +255,14 @@ struct Appearance {
     transparency: f32,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     server_side_decorations: bool,
+    /// The window's own corner rounding, independent of `rounding` (the UI element radius).
+    /// On Windows this maps onto DWM's two fixed presets; on Linux/FreeBSD it only has an
+    /// effect with client-side decorations, since server-side ones are the compositor's call.
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    window_rounding: String,
     window_controls: bool,
+    #[cfg(not(target_os = "macos"))]
+    traffic_light_controls: bool,
     controls_on_left: bool,
     reduce_motion: String,
     motion_pace: String,
@@ -235,6 +277,10 @@ impl Default for Values {
             normalisation: false,
             gapless: true,
             sleep_timer: false,
+            discord_presence: false,
+            discord_name: DiscordName::Sonora,
+            discord_badge: false,
+            discord_without_details: false,
             lyrics_for_local_files: true,
             karaoke_lyrics: true,
             blur_lyrics: true,
@@ -275,6 +321,10 @@ struct StateValues {
     sorting: HashMap<String, Option<Sorting>>,
     views: HashMap<String, Mode>,
     pinned: Vec<Held>,
+    sidebar_pinned_open: bool,
+    sidebar_full_library: bool,
+    sidebar_pin_sort: String,
+    sidebar_pin_reversed: bool,
     resume: Option<Resume>,
     window: Option<Frame>,
     system_theme: String,
@@ -297,64 +347,13 @@ impl Default for StateValues {
             sorting: HashMap::new(),
             views: HashMap::new(),
             pinned: Vec::new(),
+            sidebar_pinned_open: false,
+            sidebar_full_library: false,
+            sidebar_pin_sort: String::new(),
+            sidebar_pin_reversed: false,
             resume: None,
             window: None,
             system_theme: ThemeKind::Dark.id().to_owned(),
-        }
-    }
-}
-
-/// The runtime keys a pre-v2 `settings.json` stored in a shape [`StateValues`] no longer has.
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct Legacy {
-    hidden_columns: HashMap<String, Vec<String>>,
-    pins: Groups,
-    appearance: LegacyAppearance,
-}
-
-/// `system_theme` used to live inside the `appearance` block.
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct LegacyAppearance {
-    system_theme: Option<String>,
-}
-
-impl StateValues {
-    /// Reads runtime state out of a pre-v2 `settings.json`. Runs once, while `state.sqlite` has no
-    /// runtime row yet. An unparsable file yields the defaults.
-    fn inherited(bytes: &[u8]) -> Self {
-        let mut state: Self = serde_json::from_slice(bytes).unwrap_or_default();
-        let legacy: Legacy = serde_json::from_slice(bytes).unwrap_or_default();
-        state.adopt(legacy);
-        state
-    }
-
-    /// Hidden column lists become table layouts, pin groups flatten into one list with the active
-    /// provider's pins first, and the nested system theme moves to the top level.
-    fn adopt(&mut self, legacy: Legacy) {
-        for (table, hidden) in legacy.hidden_columns {
-            self.tables.entry(table).or_insert_with(|| Layout {
-                hidden,
-                ..Layout::default()
-            });
-        }
-
-        let mut pins = legacy.pins;
-        let mut slugs: Vec<String> = pins.keys().cloned().collect();
-        slugs.sort_by_key(|slug| (*slug != self.provider, slug.clone()));
-        for slug in slugs {
-            let Some(group) = pins.remove(&slug) else {
-                continue;
-            };
-            self.pinned.extend(group.into_iter().map(|pin| Held {
-                slug: slug.clone(),
-                pin,
-            }));
-        }
-
-        if let Some(system_theme) = legacy.appearance.system_theme {
-            self.system_theme = system_theme;
         }
     }
 }
@@ -400,19 +399,6 @@ impl StateStore {
             .context("cannot save app state")?;
         Ok(())
     }
-
-    /// Writes freshly migrated state and reports whether it landed, so a failed write keeps the
-    /// legacy files for the next start.
-    fn adopt(&self, state: StateValues) -> (StateValues, bool) {
-        let ready = match self.save(&state) {
-            Ok(()) => true,
-            Err(error) => {
-                log::warn!("settings: cannot migrate app state: {error:#}");
-                false
-            }
-        };
-        (state, ready)
-    }
 }
 
 impl Default for Appearance {
@@ -429,7 +415,11 @@ impl Default for Appearance {
             transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            window_rounding: Rounding::Square.id().to_owned(),
             window_controls: true,
+            #[cfg(not(target_os = "macos"))]
+            traffic_light_controls: false,
             controls_on_left: false,
             reduce_motion: Stillness::default().id().to_owned(),
             motion_pace: Pace::default().id().to_owned(),
@@ -456,23 +446,17 @@ pub struct AppSettings {
 impl AppSettings {
     /// Loads from the standard config and data paths.
     pub fn load(database: Database) -> Self {
-        Self::load_from(
-            settings_path(),
-            StateStore::new(database),
-            legacy_local_path(),
-        )
+        Self::load_from(settings_path(), StateStore::new(database))
     }
 
-    /// State already in SQLite wins. Otherwise the runtime half of a pre-v2 `settings.json` and the
-    /// folder from `local-music.json` are migrated, and the legacy files are only rewritten or
-    /// removed once the SQLite write has succeeded.
-    fn load_from(path: PathBuf, store: StateStore, legacy_local_path: PathBuf) -> Self {
-        let (bytes, existed, writable) = match fs::read(&path) {
-            Ok(bytes) => (Some(bytes), true, true),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, false, true),
+    /// A missing or unreadable `state.sqlite` row yields the default runtime state.
+    fn load_from(path: PathBuf, store: StateStore) -> Self {
+        let (bytes, writable) = match fs::read(&path) {
+            Ok(bytes) => (Some(bytes), true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, true),
             Err(error) => {
                 log::warn!("settings: cannot read {}: {error}", path.display());
-                (None, true, false)
+                (None, false)
             }
         };
         let (mut values, writable) = match bytes.as_deref().map(serde_json::from_slice::<Values>) {
@@ -483,11 +467,6 @@ impl AppSettings {
             }
             None => (Values::default(), writable),
         };
-        let old_version = bytes.as_deref().map_or(SETTINGS_VERSION, settings_version);
-        let legacy_local = legacy_local_folder(&legacy_local_path);
-        if values.local_folder.is_none() {
-            values.local_folder = legacy_local.clone();
-        }
         // A single `local_folder` predates multiple local libraries; fold it into
         // `local_folders` once and never write the singular field back out.
         if let Some(folder) = values.local_folder.take()
@@ -496,23 +475,17 @@ impl AppSettings {
             values.local_folders.push(folder);
         }
 
-        let inherited = || {
-            bytes
-                .as_deref()
-                .map(StateValues::inherited)
-                .unwrap_or_default()
-        };
-        let (state, state_ready) = match store.load() {
-            Ok(Some(saved)) => (saved, true),
-            Ok(None) => store.adopt(inherited()),
+        let state = match store.load() {
+            Ok(Some(saved)) => saved,
+            Ok(None) => StateValues::default(),
             Err(error) => {
                 log::warn!("settings: cannot load app state: {error:#}");
-                store.adopt(inherited())
+                StateValues::default()
             }
         };
         values.version = SETTINGS_VERSION;
 
-        let settings = Self {
+        Self {
             values,
             state,
             path,
@@ -521,12 +494,7 @@ impl AppSettings {
             save_state: None,
             watch: None,
             writable,
-        };
-        let cleanup = existed && old_version < SETTINGS_VERSION || legacy_local.is_some();
-        if cleanup && state_ready && settings.save_now() {
-            remove_legacy_local_folder(&legacy_local_path);
         }
-        settings
     }
 
     pub fn volume(&self) -> f32 {
@@ -543,6 +511,26 @@ impl AppSettings {
 
     pub fn sleep_timer(&self) -> bool {
         self.values.sleep_timer
+    }
+
+    /// Whether the playing track is published to a local Discord client.
+    pub fn discord_presence(&self) -> bool {
+        self.values.discord_presence
+    }
+
+    /// What the Discord status names itself after "listening to".
+    pub fn discord_name(&self) -> DiscordName {
+        self.values.discord_name
+    }
+
+    /// Whether the Discord status carries the badge of the provider the track came from.
+    pub fn discord_badge(&self) -> bool {
+        self.values.discord_badge
+    }
+
+    /// Whether the Discord status leaves the track out and only says that music is playing.
+    pub fn discord_without_details(&self) -> bool {
+        self.values.discord_without_details
     }
 
     pub fn lyrics_for_local_files(&self) -> bool {
@@ -706,8 +694,18 @@ impl AppSettings {
         }
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    pub fn window_rounding(&self) -> Rounding {
+        Rounding::from_id(&self.values.appearance.window_rounding)
+    }
+
     pub fn window_controls(&self) -> bool {
         self.values.appearance.window_controls
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn traffic_light_controls(&self) -> bool {
+        self.values.appearance.traffic_light_controls
     }
 
     pub fn controls_on_left(&self) -> bool {
@@ -769,6 +767,26 @@ impl AppSettings {
 
     pub fn set_sleep_timer(&mut self, sleep_timer: bool, cx: &mut Context<Self>) {
         self.values.sleep_timer = sleep_timer;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_presence(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_presence = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_name(&mut self, name: DiscordName, cx: &mut Context<Self>) {
+        self.values.discord_name = name;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_badge(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_badge = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_without_details(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_without_details = enabled;
         self.schedule_save(cx);
     }
 
@@ -990,6 +1008,70 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    /// Whether the sidebar's pinned section is expanded. Collapsed on a first run.
+    pub fn sidebar_pinned_open(&self) -> bool {
+        self.state.sidebar_pinned_open
+    }
+
+    pub fn set_sidebar_pinned_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.state.sidebar_pinned_open = open;
+        self.schedule_state_save(cx);
+    }
+
+    /// Whether the sidebar lists the rest of the library under the pins.
+    pub fn sidebar_full_library(&self) -> bool {
+        self.state.sidebar_full_library
+    }
+
+    pub fn set_sidebar_full_library(&mut self, full: bool, cx: &mut Context<Self>) {
+        self.state.sidebar_full_library = full;
+        self.schedule_state_save(cx);
+    }
+
+    pub fn sidebar_pin_sort(&self) -> Option<PinSort> {
+        PinSort::from_id(&self.state.sidebar_pin_sort)
+    }
+
+    pub fn sidebar_pin_reversed(&self) -> bool {
+        self.state.sidebar_pin_reversed
+    }
+
+    pub fn set_sidebar_pin_sort(
+        &mut self,
+        sort: Option<PinSort>,
+        reversed: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.sidebar_pin_sort = sort.map(PinSort::id).unwrap_or_default().to_owned();
+        self.state.sidebar_pin_reversed = reversed;
+        self.schedule_state_save(cx);
+    }
+
+    /// Rewrites the pins of `slugs` into `order`, leaving another provider's pins in their slots.
+    /// Nothing happens unless `order` holds exactly the pins already there.
+    pub fn rearrange(&mut self, order: &[Pin], slugs: &[&str], cx: &mut Context<Self>) {
+        let slots: Vec<usize> = shown(&self.state.pinned, slugs)
+            .map(|(index, _)| index)
+            .collect();
+        let moved: Vec<Held> = order
+            .iter()
+            .filter_map(|pin| {
+                self.state
+                    .pinned
+                    .iter()
+                    .find(|held| held.pin.same(pin))
+                    .cloned()
+            })
+            .collect();
+        if moved.len() != slots.len() {
+            return;
+        }
+        for (slot, held) in slots.into_iter().zip(moved) {
+            self.state.pinned[slot] = held;
+        }
+        self.schedule_state_save(cx);
+    }
+
     pub fn nav_shown(&self, entry: &str) -> bool {
         !self.values.hidden_nav.iter().any(|hidden| hidden == entry)
     }
@@ -1099,8 +1181,20 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    pub fn set_window_rounding(&mut self, rounding: Rounding, cx: &mut Context<Self>) {
+        self.values.appearance.window_rounding = rounding.id().to_owned();
+        self.schedule_save(cx);
+    }
+
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {
         self.values.appearance.window_controls = shown;
+        self.schedule_save(cx);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_traffic_light_controls(&mut self, traffic_light: bool, cx: &mut Context<Self>) {
+        self.values.appearance.traffic_light_controls = traffic_light;
         self.schedule_save(cx);
     }
 
@@ -1231,43 +1325,6 @@ fn settings_path() -> PathBuf {
         .join("settings.json")
 }
 
-fn legacy_local_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("sonora")
-        .join("local-music.json")
-}
-
-/// The `version` key of a `settings.json`, without parsing the rest. Missing counts as 0.
-fn settings_version(bytes: &[u8]) -> u32 {
-    serde_json::from_slice::<serde_json::Value>(bytes)
-        .ok()
-        .and_then(|value| value.get("version")?.as_u64())
-        .and_then(|version| u32::try_from(version).ok())
-        .unwrap_or(0)
-}
-
-/// The folder from the old `local-music.json`, which now lives in `settings.json`.
-fn legacy_local_folder(path: &std::path::Path) -> Option<PathBuf> {
-    #[derive(Deserialize)]
-    struct Local {
-        path: Option<PathBuf>,
-    }
-
-    fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Local>(&bytes).ok())
-        .and_then(|stored| stored.path)
-}
-
-fn remove_legacy_local_folder(path: &std::path::Path) {
-    if let Err(error) = fs::remove_file(path)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
-        log::warn!("settings: cannot remove {}: {error}", path.display());
-    }
-}
-
 /// The pins of the given providers, in stored order.
 fn gather(pinned: &[Held], slugs: &[&str]) -> Vec<Pin> {
     shown(pinned, slugs)
@@ -1360,6 +1417,16 @@ mod tests {
             }),
             ..Resume::default()
         }
+    }
+
+    #[test]
+    fn the_pinned_section_starts_closed_in_the_dragged_order() {
+        let state = StateValues::default();
+        assert!(!state.sidebar_pinned_open);
+        assert!(!state.sidebar_full_library);
+        assert!(!state.sidebar_pin_reversed);
+        assert!(PinSort::from_id(&state.sidebar_pin_sort).is_none());
+        assert!(PinSort::from_id("nonsense").is_none());
     }
 
     #[test]
@@ -1482,81 +1549,6 @@ mod tests {
         assert_eq!(loaded.pinned.len(), 1);
 
         fs::remove_file(path).expect("test database is removed");
-        fs::remove_dir(root).expect("test directory is removed");
-    }
-
-    #[test]
-    fn first_load_moves_legacy_state_and_local_folder_then_cleans_json() {
-        let root = scratch("migration");
-        fs::create_dir_all(&root).expect("test directory is created");
-        let settings_path = root.join("settings.json");
-        let legacy_local = root.join("local-music.json");
-        let database = root.join("state.sqlite");
-        fs::write(
-            &settings_path,
-            serde_json::to_vec_pretty(&serde_json::json!({
-                "volume": 0.2,
-                "provider": "youtube",
-                "sidebar_open": false,
-                "appearance": { "system_theme": "light" }
-            }))
-            .expect("legacy settings serialize"),
-        )
-        .expect("legacy settings are written");
-        fs::write(
-            &legacy_local,
-            serde_json::to_vec_pretty(&serde_json::json!({ "path": "/music" }))
-                .expect("legacy local config serializes"),
-        )
-        .expect("legacy local config is written");
-
-        let settings = AppSettings::load_from(
-            settings_path.clone(),
-            StateStore::new(Database::at(database.clone())),
-            legacy_local.clone(),
-        );
-
-        assert_eq!(settings.volume(), 0.2);
-        assert_eq!(settings.provider(), "youtube");
-        assert!(!settings.sidebar_open());
-        assert_eq!(
-            settings.local_folders(),
-            &[std::path::PathBuf::from("/music")]
-        );
-        assert!(!legacy_local.exists());
-
-        let cleaned: serde_json::Value =
-            serde_json::from_slice(&fs::read(&settings_path).expect("cleaned settings are read"))
-                .expect("cleaned settings parse");
-        let object = cleaned.as_object().expect("settings are an object");
-        assert_eq!(object.get("version"), Some(&serde_json::json!(2)));
-        assert_eq!(
-            object.get("local_folders"),
-            Some(&serde_json::json!(["/music"]))
-        );
-        assert!(!object.contains_key("local_folder"));
-        for key in ["volume", "provider", "sidebar_open"] {
-            assert!(!object.contains_key(key), "{key} survived cleanup");
-        }
-        assert!(
-            !object["appearance"]
-                .as_object()
-                .expect("appearance is an object")
-                .contains_key("system_theme")
-        );
-
-        let state = settings
-            .store
-            .load()
-            .expect("migrated state loads")
-            .expect("migrated state exists");
-        assert_eq!(state.volume, 0.2);
-        assert_eq!(state.provider, "youtube");
-        assert!(!state.sidebar_open);
-        assert_eq!(state.system_theme, "light");
-
-        fs::remove_file(settings_path).expect("test settings are removed");
-        fs::remove_file(database).expect("test database is removed");
         fs::remove_dir(root).expect("test directory is removed");
     }
 

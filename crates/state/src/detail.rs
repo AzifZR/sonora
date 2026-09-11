@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use gpui::{Context, Entity, Task};
-use i18n::t;
 use music::{Album, AlbumDetail, ArtistRef, Contributor, Playlist, PlaylistDetail, Track};
 use tokio::task::AbortHandle;
 
@@ -25,7 +24,10 @@ pub struct Header {
     pub artist_refs: Vec<ArtistRef>,
     pub owner: Option<Contributor>,
     pub release_date: Option<String>,
-    pub meta: Vec<String>,
+    /// The owner's name when the provider gives no id to link it to.
+    pub owner_name: Option<String>,
+    /// Zero when the provider does not report a count.
+    pub track_count: u32,
     pub cover: Option<String>,
 }
 
@@ -433,11 +435,6 @@ impl Detail {
 }
 
 fn album_header(album: &Album) -> Header {
-    let mut parts = Vec::new();
-    if album.track_count > 0 {
-        parts.push(t!("count-songs", count = album.track_count).to_string());
-    }
-
     Header {
         kind: Collection::Album,
         title: album.name.clone(),
@@ -448,7 +445,8 @@ fn album_header(album: &Album) -> Header {
             true => (album.year > 0).then(|| album.year.to_string()),
             false => Some(album.release_date.clone()),
         },
-        meta: parts,
+        owner_name: None,
+        track_count: album.track_count,
         cover: album.cover_large.clone(),
     }
 }
@@ -462,13 +460,10 @@ fn playlist_header(playlist: &Playlist) -> Header {
             avatar: None,
         }),
     };
-    let mut parts = match owner.is_some() {
-        true => Vec::new(),
-        false => vec![playlist.owner.clone()],
+    let owner_name = match owner.is_some() {
+        true => None,
+        false => Some(playlist.owner.clone()),
     };
-    if playlist.track_count > 0 {
-        parts.push(t!("count-songs", count = playlist.track_count).to_string());
-    }
 
     Header {
         kind: Collection::Playlist,
@@ -477,7 +472,8 @@ fn playlist_header(playlist: &Playlist) -> Header {
         artist_refs: Vec::new(),
         owner,
         release_date: None,
-        meta: parts,
+        owner_name,
+        track_count: playlist.track_count,
         cover: playlist.cover.clone(),
     }
 }

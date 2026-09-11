@@ -74,6 +74,10 @@ impl MusicProvider for SpotifyProvider {
         "spotify"
     }
 
+    fn public_art(&self) -> bool {
+        true
+    }
+
     fn sign_in_options(&self) -> Vec<crate::SignIn> {
         vec![crate::SignIn::Default]
     }

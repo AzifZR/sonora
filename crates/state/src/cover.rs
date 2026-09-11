@@ -44,6 +44,13 @@ impl Cover {
         self.large.as_deref()
     }
 
+    /// Returns the large artwork only when it belongs to `album`.
+    pub(crate) fn large_for(&self, album: &str) -> Option<&str> {
+        self.large
+            .as_deref()
+            .filter(|_| self.album.as_deref() == Some(album))
+    }
+
     fn forget(&mut self, cx: &mut Context<Self>) {
         self.task = None;
         self.album = None;

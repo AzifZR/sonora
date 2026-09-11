@@ -17,8 +17,22 @@ struct Column {
     slug: &'static str,
     name: &'static str,
     options: Vec<SignIn>,
+    web_sign_in: bool,
     disabled: bool,
     cancel: bool,
+}
+
+enum LoginAction {
+    SignIn(SignIn),
+    Credentials,
+    Cookies,
+}
+
+struct LoginOption {
+    id: SharedString,
+    label: SharedString,
+    action: LoginAction,
+    primary: bool,
 }
 
 pub struct LoginView {
@@ -29,6 +43,7 @@ pub struct LoginView {
     username: Entity<Input>,
     password: Entity<Input>,
     credentials_for: Option<&'static str>,
+    manual_secret: bool,
     tab: usize,
 }
 
@@ -45,6 +60,7 @@ impl LoginView {
             username: cx.new(|cx| Input::new("login-username-hint", cx)),
             password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
             credentials_for: None,
+            manual_secret: false,
             tab: 0,
         }
     }
@@ -65,20 +81,9 @@ impl LoginView {
             }))
     }
 
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        self.acted(cx);
-        let text = self.secret.read(cx).text().to_string();
-        if text.trim().is_empty() {
-            return;
-        }
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
-        self.session
-            .update(cx, |session, cx| session.submit_input(text, cx));
-    }
-
     fn abandon(&mut self, cx: &mut Context<Self>) {
         self.acted(cx);
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
+        self.clear_secret(cx);
         self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
@@ -97,6 +102,11 @@ impl LoginView {
         self.password.update(cx, |input, cx| input.set_text("", cx));
     }
 
+    fn clear_secret(&mut self, cx: &mut Context<Self>) {
+        self.manual_secret = false;
+        self.secret.update(cx, |input, cx| input.set_text("", cx));
+    }
+
     fn abandon_credentials(&mut self, cx: &mut Context<Self>) {
         self.acted(cx);
         self.clear_credentials(cx);
@@ -113,7 +123,6 @@ impl LoginView {
         if server.trim().is_empty() || username.trim().is_empty() || password.is_empty() {
             return;
         }
-        self.acted(cx);
         self.clear_credentials(cx);
         self.start(
             slug,
@@ -126,56 +135,119 @@ impl LoginView {
         );
     }
 
-    fn start(&self, slug: &'static str, method: SignIn, cx: &mut Context<Self>) {
+    fn start(&mut self, slug: &'static str, method: SignIn, cx: &mut Context<Self>) {
         self.acted(cx);
+        self.manual_secret = false;
         self.session
             .update(cx, |session, cx| session.sign_in(slug, method, cx));
     }
 
-    fn option_button(
+    fn start_manual(&mut self, slug: &'static str, cx: &mut Context<Self>) {
+        self.acted(cx);
+        self.manual_secret = true;
+        self.session
+            .update(cx, |session, cx| session.sign_in_with_cookies(slug, cx));
+    }
+
+    fn submit_secret(&mut self, cx: &mut Context<Self>) {
+        let text = self.secret.read(cx).text().to_string();
+        if text.trim().is_empty() {
+            return;
+        }
+        self.acted(cx);
+        self.clear_secret(cx);
+        self.session
+            .update(cx, |session, cx| session.submit_input(text, cx));
+    }
+
+    fn option_buttons(
         &self,
         slug: &'static str,
         provider: &str,
         method: &SignIn,
+        web_sign_in: bool,
+        disabled: bool,
+        cx: &mut Context<Self>,
+    ) -> Vec<Button> {
+        let options = match method {
+            SignIn::Secret => {
+                let mut options = Vec::new();
+                if web_sign_in {
+                    options.push(LoginOption {
+                        id: format!("sign-in-{slug}-cookies").into(),
+                        label: t!("login-sign-in", provider = provider),
+                        action: LoginAction::SignIn(SignIn::Secret),
+                        primary: true,
+                    });
+                }
+                options.push(LoginOption {
+                    id: format!("sign-in-{slug}-cookies-manual").into(),
+                    label: t!("login-connect-cookies"),
+                    action: LoginAction::Cookies,
+                    primary: false,
+                });
+                options
+            }
+            SignIn::Default | SignIn::Anonymous | SignIn::Path(_) | SignIn::Credentials { .. } => {
+                let (suffix, label, action, primary) = match method {
+                    SignIn::Default => (
+                        "",
+                        t!("login-sign-in", provider = provider),
+                        LoginAction::SignIn(method.clone()),
+                        true,
+                    ),
+                    SignIn::Anonymous => (
+                        "-guest",
+                        t!("login-use", provider = provider),
+                        LoginAction::SignIn(method.clone()),
+                        true,
+                    ),
+                    SignIn::Path(_) => (
+                        "-path",
+                        t!("login-sign-in", provider = provider),
+                        LoginAction::SignIn(method.clone()),
+                        false,
+                    ),
+                    SignIn::Credentials { .. } => (
+                        "-server",
+                        t!("login-sign-in", provider = provider),
+                        LoginAction::Credentials,
+                        true,
+                    ),
+                    SignIn::Secret => unreachable!(),
+                };
+                vec![LoginOption {
+                    id: format!("sign-in-{slug}{suffix}").into(),
+                    label,
+                    action,
+                    primary,
+                }]
+            }
+        };
+
+        options
+            .into_iter()
+            .map(|option| self.login_button(slug, option, disabled, cx))
+            .collect()
+    }
+
+    fn login_button(
+        &self,
+        slug: &'static str,
+        option: LoginOption,
         disabled: bool,
         cx: &mut Context<Self>,
     ) -> Button {
-        let (id, label) = match method {
-            SignIn::Default => (
-                format!("sign-in-{slug}"),
-                t!("login-sign-in", provider = provider),
-            ),
-            SignIn::Anonymous => (
-                format!("sign-in-{slug}-guest"),
-                t!("login-use", provider = provider),
-            ),
-            SignIn::Secret => (
-                format!("sign-in-{slug}-cookies"),
-                t!("login-connect-cookies"),
-            ),
-            SignIn::Path(_) => (
-                format!("sign-in-{slug}-path"),
-                t!("login-sign-in", provider = provider),
-            ),
-            SignIn::Credentials { .. } => (
-                format!("sign-in-{slug}-server"),
-                t!("login-sign-in", provider = provider),
-            ),
-        };
-        let primary = matches!(
-            method,
-            SignIn::Default | SignIn::Anonymous | SignIn::Credentials { .. }
-        );
-        let method = method.clone();
-        let button = Button::new(SharedString::from(id))
-            .label(label)
+        let button = Button::new(option.id)
+            .label(option.label)
             .w_full()
             .disabled(disabled)
-            .on_click(cx.listener(move |this, _, _, cx| match &method {
-                SignIn::Credentials { .. } => this.open_credentials(slug, cx),
-                method => this.start(slug, method.clone(), cx),
+            .on_click(cx.listener(move |this, _, _, cx| match &option.action {
+                LoginAction::SignIn(method) => this.start(slug, method.clone(), cx),
+                LoginAction::Credentials => this.open_credentials(slug, cx),
+                LoginAction::Cookies => this.start_manual(slug, cx),
             }));
-        match primary {
+        match option.primary {
             true => button.primary(),
             false => button.outline(),
         }
@@ -187,6 +259,7 @@ impl LoginView {
             slug,
             name,
             options,
+            web_sign_in,
             disabled,
             cancel,
         } = column;
@@ -220,11 +293,9 @@ impl LoginView {
                     .flex_col()
                     .gap_2()
                     .w_full()
-                    .children(
-                        options
-                            .into_iter()
-                            .map(|method| self.option_button(slug, name, method, disabled, cx)),
-                    )
+                    .children(options.into_iter().flat_map(|method| {
+                        self.option_buttons(slug, name, method, web_sign_in, disabled, cx)
+                    }))
                     .when(cancel, |this| {
                         this.child(
                             Button::new("cancel-sign-in")
@@ -295,12 +366,6 @@ impl LoginView {
             })
     }
 
-    fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        CookiePrompt::new(self.secret.clone())
-            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
-            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
-    }
-
     fn account_modal(
         &self,
         accounts: Vec<AccountChoice>,
@@ -337,6 +402,12 @@ impl LoginView {
             )
             .on_dismiss(cx.listener(|this, _, _, cx| this.abandon_credentials(cx)))
     }
+
+    fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        CookiePrompt::new(self.secret.clone())
+            .on_submit(cx.listener(|this, _, _, cx| this.submit_secret(cx)))
+            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
+    }
 }
 
 impl Render for LoginView {
@@ -353,11 +424,15 @@ impl Render for LoginView {
             })
             .map(|info| info.slug)
             .next();
+        let manual_secret = self.manual_secret
+            && matches!(
+                &state,
+                SessionState::Authorizing(Some(SignInPrompt::Secret))
+            );
         let waiting = match &state {
-            SessionState::Authorizing(prompt) => !matches!(
-                prompt,
-                Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))
-            ),
+            SessionState::Authorizing(prompt) => {
+                !manual_secret && !matches!(prompt, Some(SignInPrompt::Accounts(_)))
+            }
             _ => false,
         };
         let tabs = providers
@@ -381,6 +456,7 @@ impl Render for LoginView {
             slug: info.slug,
             name: info.name,
             options: info.options,
+            web_sign_in: info.web_sign_in,
             disabled: pending,
             cancel: waiting && info.pending,
         });
@@ -393,9 +469,7 @@ impl Render for LoginView {
         let status = match &state {
             SessionState::SignedOut => t!("login-signed-out"),
             SessionState::Restoring => t!("login-restoring"),
-            SessionState::Authorizing(Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))) => {
-                t!("login-signed-out")
-            }
+            SessionState::Authorizing(Some(SignInPrompt::Accounts(_))) => t!("login-signed-out"),
             SessionState::Authorizing(_) => t!("login-authorizing"),
             SessionState::SignedIn(profile) => t!("login-signed-in", name = &profile.display_name),
             SessionState::Failed(_) => t!("login-signed-out"),
@@ -405,7 +479,6 @@ impl Render for LoginView {
             SessionState::Authorizing(prompt) => prompt.clone(),
             _ => None,
         };
-        let secret = matches!(prompt, Some(SignInPrompt::Secret));
         let accounts = match &prompt {
             Some(SignInPrompt::Accounts(accounts)) => Some(accounts.clone()),
             _ => None,
@@ -423,6 +496,11 @@ impl Render for LoginView {
         let asking = self.usage.read(cx).asking();
         let orphan = asking && guest.is_none();
 
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(Sonora::global(cx).settings.read(cx));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<Pixels> = None;
+
         div()
             .relative()
             .flex()
@@ -431,6 +509,7 @@ impl Render for LoginView {
             .justify_center()
             .gap_6()
             .size_full()
+            .when_some(radius, |this, radius| this.rounded_b(radius))
             .child(
                 div()
                     .flex()
@@ -481,7 +560,7 @@ impl Render for LoginView {
                 )
             })
             .when(orphan, |this| this.child(self.consent(cx)))
-            .when(secret, |this| {
+            .when(manual_secret, |this| {
                 this.child(self.secret_prompt(cx).into_any_element())
             })
             .when(self.credentials_for.is_some(), |this| {

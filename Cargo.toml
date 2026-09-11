@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.33.0"
+version = "0.34.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sonorahq/sonora"
@@ -19,6 +19,7 @@ input = { path = "crates/input" }
 router = { path = "crates/router" }
 ui = { path = "crates/ui" }
 views = { path = "crates/views" }
+webview = { path = "crates/webview" }
 
 anyhow = "1.0"
 async-trait = "0.1"
@@ -27,6 +28,7 @@ bytes = "1"
 flate2 = "1"
 cpal = "0.17"
 dirs = "6.0"
+discord-rich-presence = "1.1"
 deunicode = "1.6"
 env_logger = "0.11"
 fastrand = "2.5"
@@ -46,6 +48,13 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_WindowsAndMessaging",
+] }
+webview2-com = "0.39"
 interprocess = "2.4"
 image = { version = "0.25", default-features = false, features = [
   "jpeg",
@@ -61,7 +70,20 @@ log = "0.4"
 moka = { version = "0.12.15", features = ["future", "sync"] }
 oauth2 = "5.0"
 open = "5.4"
+block2 = "0.6"
 objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "objc2-app-kit",
+  "objc2-core-foundation",
+  "WKHTTPCookieStore",
+  "WKNavigation",
+  "WKWebView",
+  "WKWebViewConfiguration",
+  "WKWebsiteDataStore",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
 reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
