@@ -27,9 +27,9 @@ nav-settings = 设置
 nav-songs = 歌曲
 nav-albums = 专辑
 nav-playlists = 播放列表
-nav-artists = 艺术家
+nav-artists = 歌手
 nav-local = 本地音乐
-nav-back = 后退
+nav-back = 回退
 nav-forward = 前进
 nav-sidebar = 切换侧边栏
 nav-sidebar-right = 显示或隐藏歌词和队列
@@ -38,21 +38,21 @@ nav-unpin = 取消固定
 nav-pin-hint = 拖放到此处以固定
 library-liked-songs = 收藏
 library-play-liked-songs = 播放
-library-no-songs = 还没有收藏
+library-no-songs = 还没有收藏的歌曲
 library-no-albums = 还没有保存的专辑
 library-no-playlists = 还没有播放列表
-library-no-artists = 还没有收藏的艺术家
+library-no-artists = 还没有收藏的歌手
 library-no-local-songs = 未找到导入的歌曲
 library-no-local-albums = 未找到导入的专辑
-library-no-local-artists = 未找到导入的艺术家
+library-no-local-artists = 未找到导入的歌手
 library-no-local-playlists = 还没有本地播放列表
 library-no-catalog-songs = 未找到歌曲
 library-no-catalog-albums = 未找到专辑
-library-no-catalog-artists = 未找到艺术家
+library-no-catalog-artists = 未找到歌手
 library-no-matches = 无匹配结果
-library-not-loaded = 你的音乐库未能加载
-library-part-not-loaded = 你的音乐库的这部分未能加载
-library-local-unconfigured = 配置你的本地音乐库
+library-not-loaded = 音乐库加载失败
+library-part-not-loaded = 音乐库的这部分加载失败
+library-local-unconfigured = 配置本地音乐库
 
 # app menu
 app-refresh-library = 刷新音乐库
@@ -81,7 +81,7 @@ tray-pause = 暂停
 column-played-at = 播放时间
 column-index = #
 column-title = 标题
-column-artist = 艺术家
+column-artist = 歌手
 column-album = 专辑
 column-date-added = 添加日期
 column-added-by = 添加者
@@ -134,7 +134,7 @@ menu-add-tracks-to-queue = { $count ->
 }
 menu-song-radio = 前往歌曲电台
 menu-go-to-album = 前往专辑
-menu-go-to-artist = 前往艺术家
+menu-go-to-artist = 前往歌手
 menu-view-details = 查看详情
 menu-copy-link = 复制链接
 menu-cut = 剪切
@@ -152,7 +152,7 @@ menu-make-playlist-public = 设为公开
 menu-make-playlist-private = 设为私密
 menu-open-album = 打开专辑
 menu-play-album = 播放专辑
-menu-play-artist = 播放艺术家
+menu-play-artist = 播放歌手
 
 # playlist editor
 playlist-name-placeholder = 播放列表名称
@@ -169,8 +169,8 @@ confirm-remove-library-title = 从音乐库中移除
 confirm-remove-playlist-title = 从播放列表中移除
 confirm-remove-history-title = 从历史记录中移除
 confirm-remove-songs = { $count ->
-    [one] 从你的音乐库中移除此歌曲？
-   *[other] 从你的音乐库中移除 { $count } 首歌曲？
+    [one] 从音乐库中移除此歌曲？
+   *[other] 从音乐库中移除 { $count } 首歌曲？
 }
 confirm-remove-playlist-songs = { $count ->
     [one] 从播放列表中移除此歌曲？
@@ -181,16 +181,16 @@ confirm-remove-history-songs = { $count ->
    *[other] 从收听历史中移除 { $count } 首歌曲？
 }
 confirm-remove-albums = { $count ->
-    [one] 从你的音乐库中移除此专辑？
-   *[other] 从你的音乐库中移除 { $count } 张专辑？
+    [one] 从音乐库中移除此专辑？
+   *[other] 从音乐库中移除 { $count } 张专辑？
 }
 confirm-remove-artists = { $count ->
-    [one] 从收藏中移除此艺术家？
-   *[other] 从收藏中移除 { $count } 位艺术家？
+    [one] 从收藏中移除此歌手？
+   *[other] 从收藏中移除 { $count } 位歌手？
 }
 confirm-remove-playlists = { $count ->
-    [one] 从你的音乐库中移除此播放列表？
-   *[other] 从你的音乐库中移除 { $count } 个播放列表？
+    [one] 从音乐库中移除此播放列表？
+   *[other] 从音乐库中移除 { $count } 个播放列表？
 }
 
 # queue panel
@@ -200,8 +200,8 @@ queue-now-playing = 正在播放
 queue-from = 来自
 queue-up-next = 接下来播放
 queue-reset = 重置
-queue-clear = 清除
-queue-empty = 你的队列是空的
+queue-clear = 清空
+queue-empty = 队列为空
 queue-similar = 相似曲目
 queue-radio = 自动播放相似曲目
 
@@ -222,17 +222,17 @@ fullscreen-artwork = 封面
 
 # filters
 filter-history = 筛选收听历史
-history-empty = 你播放的曲目将显示在这里。
-history-not-loaded = 收听历史未能加载。
+history-empty = 你播放的曲目会显示在这里。
+history-not-loaded = 收听历史加载失败。
 history-clear = 清除历史记录
 history-clear-title = 清除收听历史
 history-clear-confirm = 此设备上的所有播放记录将被移除。此操作无法撤销。
-filter-library = 筛选你的音乐库
+filter-library = 筛选音乐库
 filter-album = 筛选专辑曲目
 filter-reset = 重置筛选
 filter-duration = 时长
 filter-year = 年份
-filter-explicit = 仅显式内容
+filter-explicit = 仅露骨内容
 filter-playable = 仅可播放
 filter-favorites = 仅收藏
 filter-owned = 由你拥有
@@ -249,15 +249,15 @@ tool-filters = 筛选
 # login
 login-signed-out = 登录以加载你的音乐库
 login-restoring = 正在检查已保存的会话…
-login-authorizing = 正在等待浏览器中的授权…
+login-authorizing = 正在浏览器中等待授权…
 login-signed-in = 已登录为 { $name }
 login-failed-title = 登录失败
-login-problem-region = Spotify 不会从你所在的国家/地区开启会话。请从你的所在国家/地区登录，或更改你的 Spotify 账户上的国家/地区。
+login-problem-region = Spotify 不会从你所在的国家/地区开启会话。请从你的所在国家/地区登录，或更改 Spotify 账户上的国家/地区。
 login-problem-credentials = 你保存的 Spotify 会话已失效。请重新登录以继续。
-login-problem-network = Sonora 无法连接到 Spotify。请检查你的网络连接并重试。
+login-problem-network = Sonora 无法连接到 Spotify。请检查网络连接并重试。
 login-problem-cancelled = 你在批准登录之前关闭了浏览器页面。请重新开始以完成登录。
 login-problem-refused = Spotify 拒绝了登录请求。请稍等片刻后重试。
-login-problem-premium = Sonora 通过 Spotify Premium 进行串流，而此账户没有 Premium。请使用 Premium 账户登录以继续。
+login-problem-premium = Sonora 通过 Spotify Premium 串流，而此账户没有 Premium。请使用 Premium 账户登录以继续。
 login-sign-in = 使用 { $provider } 登录
 login-connect-cookies = 手动粘贴 Cookies
 login-use = 使用 { $provider }
@@ -276,13 +276,13 @@ login-cookie-step-4 = 在标头（Headers）中，找到请求标头（Request H
 login-cookie-step-note = 请确保粘贴完整值，包括 SAPISID 和 __Secure-3PAPISID。
 login-cookie-title = 粘贴你的 YouTube Music cookies 以完成登录
 login-server-title = 连接到你的 Subsonic 服务器
-login-server-detail = 输入任意 Subsonic 或 OpenSubsonic 服务器（Navidrome、Airsonic、Gonic……）的地址，然后使用你的服务器用户名和密码登录。会话保留在此设备上。
+login-server-detail = 输入任意 Subsonic 或 OpenSubsonic 服务器（Navidrome、Airsonic、Gonic……）的地址，然后使用服务器用户名和密码登录。会话会保留在此设备上。
 login-server-hint = https://music.example.com
 login-username-hint = 用户名
 login-password-hint = 密码
 login-server-submit = 连接
 login-account-title = 选择一个账户
-login-account-detail = 此会话已登录多个 Google 账户。请选择 Sonora 应使用的账户。
+login-account-detail = 此会话登录了多个 Google 账户。请选择 Sonora 应使用的账户。
 
 # album and playlist pages
 detail-album = 专辑
@@ -297,15 +297,15 @@ play-loading = 加载中…
 play-shuffle = 随机播放
 
 # artist page
-artist-eyebrow = 艺术家
+artist-eyebrow = 歌手
 artist-monthly-listeners = { $count ->
-    [one] { $value } 位月度听众
-   *[other] { $value } 位月度听众
+    [one] { $value } 位每月听众
+   *[other] { $value } 位每月听众
 }
 artist-play = 立即播放
 artist-popular = 热门
-artist-popular-eyebrow = 探索这位艺术家
-artist-popular-empty = 这位艺术家暂无可播放内容
+artist-popular-eyebrow = 探索这位歌手
+artist-popular-empty = 这位歌手暂无可播放内容
 artist-popular-more = 显示全部
 artist-popular-less = 收起
 artist-releases = 发行作品
@@ -341,7 +341,7 @@ release-meta = { $year } • { $kind }
 home-quick-picks = 快速推荐
 home-listen-again = 再次收听
 home-quick-picks-eyebrow = 从一首歌开始
-home-quick-picks-empty = 收藏几首歌后它们会显示在这里
+home-quick-picks-empty = 收藏几首歌后，它们会显示在这里
 
 # search page
 search-placeholder = 你想听什么？
@@ -351,7 +351,7 @@ search-best-match = 最佳匹配
 search-no-matches = 无匹配结果
 search-results = 结果
 search-songs = 歌曲
-search-artists = 艺术家
+search-artists = 歌手
 search-albums-playlists = 专辑和播放列表
 search-tag = { $kind } ·
 search-saved =
@@ -360,7 +360,7 @@ search-saved =
        *[other] 音乐库中有 { $count } 首歌曲
     }
 kind-song = 歌曲
-kind-artist = 艺术家
+kind-artist = 歌手
 kind-album = 专辑
 kind-playlist = 播放列表
 
@@ -385,11 +385,11 @@ song-details = 流派和详情
 song-genres = 流派
 song-language = 语言
 song-content = 内容
-song-explicit = 显式内容
-song-clean = 清洁版
-artist-about = 关于艺术家
-artist-about-fallback = 探索这位艺术家的热门歌曲和发行作品。
-artist-about-open = 前往艺术家
+song-explicit = 露骨内容
+song-clean = 干净版
+artist-about = 关于歌手
+artist-about-fallback = 探索这位歌手的热门歌曲和发行作品。
+artist-about-open = 前往歌手
 song-copyright = © { $notice }
 
 # song languages
@@ -447,8 +447,9 @@ settings-tab-general = 通用
 settings-tab-appearance = 外观
 settings-tab-playback = 播放
 settings-tab-privacy = 隐私
+settings-tab-integrations = 集成
 settings-theme = 主题
-settings-theme-detail = 选择应用程序的配色方案
+settings-theme-detail = 选择应用的配色方案
 settings-opacity = 不透明度
 settings-opacity-detail = 调整应用背景的不透明度
 settings-opacity-value = { $percent }%
@@ -466,14 +467,14 @@ settings-pace-detail = 界面动画的播放速度
 settings-saver = 省电模式
 settings-saver-detail = 当 Sonora 未聚焦时限制动画帧率，从下次启动起生效
 settings-corners = 圆角
-settings-corners-detail = 表面和控件的圆角程度
+settings-corners-detail = 界面和控件的圆角程度
 settings-blur = 模糊
 settings-blur-detail = 在模糊的桌面上绘制窗口。需要不透明度低于 100%
 settings-font = 字体大小
 settings-font-detail = 基础文字大小，其他所有内容随之缩放
 settings-font-value = { $size } px
 settings-startup = 启动时显示
-settings-startup-detail = Sonora 启动时打开的屏幕
+settings-startup-detail = Sonora 启动时打开的页面
 settings-entries = 侧边栏条目
 settings-entries-detail = 侧边栏中列出的部分
 settings-entries-pick = 选择条目
@@ -492,16 +493,37 @@ settings-server-side-decorations-detail = 让合成器绘制标题栏、边框�
 settings-typeface-loading = 加载中…
 settings-window-controls = 窗口控件
 settings-window-controls-detail = 在标题栏中绘制最小化、最大化和关闭按钮
+settings-traffic-light-controls = 红绿灯按钮
+settings-traffic-light-controls-detail = 将最小化、最大化和关闭绘制为彩色圆点
+settings-window-rounding = 窗口圆角
+settings-window-rounding-detail = 窗口自身角落的圆角程度
 settings-controls-side = 控件位置
 settings-controls-side-detail = 控件位于标题栏的哪一端
 settings-close-to-tray = 关闭时继续播放
 settings-close-to-tray-detail = 窗口关闭后将 Sonora 保留在系统托盘中并继续播放
+settings-discord = 在 Discord 上显示
+settings-discord-detail = 将你正在播放的曲目显示在 Discord 个人资料上
+settings-discord-name = 状态名称
+settings-discord-name-detail = 状态在“正在收听”后显示的名称，你的好友会看到
+settings-discord-name-sonora = Sonora
+settings-discord-name-provider = 服务提供商
+settings-discord-name-music = 音乐
+settings-discord-badge = 显示服务提供商徽章
+settings-discord-badge-detail = 用曲目来源服务的小图标标记状态
+settings-discord-anonymous = 隐藏详细信息
+settings-discord-anonymous-detail = 仅显示正在播放音乐，不显示标题、歌手或封面
+# the Discord status when the track is left out of it
+discord-listening = 正在收听音乐
 settings-normalisation = 响度标准化
 settings-normalisation-detail = 保持曲目音量一致
 settings-gapless = 无缝播放
 settings-gapless-detail = 曲目之间无间隙地连续播放，如同专辑原本的编排
 settings-sleep = 睡眠定时器
 settings-sleep-detail = 让音乐在设定时间后自动停止，伴你入眠
+settings-sleep-configure = 配置…
+settings-sleep-off = 关闭
+settings-sleep-end-of-track = 曲目结束后
+settings-sleep-minutes = { $count } 分钟
 settings-panel-lyrics-size = 歌词大小（面板）
 settings-panel-lyrics-size-detail = 侧边面板中歌词文字的大小，基于基础字体大小
 settings-fullscreen-lyrics-size = 歌词大小（全屏）
@@ -509,10 +531,10 @@ settings-fullscreen-lyrics-size-detail = 全屏播放器中歌词文字的大小
 settings-lyrics-size-value = { $size }%
 settings-lyrics-for-local-files = 本地文件歌词
 settings-lyrics-for-local-files-detail = 使用本地文件的元数据从互联网获取歌词
-settings-karaoke-lyrics = 卡拉OK歌词
-settings-karaoke-lyrics-detail = 在有时间轴时逐字高亮歌词
-settings-blur-lyrics = 模糊非活动歌词
-settings-blur-lyrics-detail = 在歌词面板中模糊即将播放和已播放的歌词行
+settings-karaoke-lyrics = 逐字歌词
+settings-karaoke-lyrics-detail = 歌词有时间轴时，逐字高亮显示
+settings-blur-lyrics = 模糊非当前歌词
+settings-blur-lyrics-detail = 在歌词面板中模糊尚未播放和已经播放的歌词行
 settings-romanized-lyrics = 罗马化歌词
 settings-romanized-lyrics-detail = 为选定的书写系统显示本地生成的发音
 settings-romanization-writing-systems = 书写系统
@@ -532,9 +554,10 @@ settings-group-motion = 动画
 settings-group-title-bar = 标题栏
 settings-group-window-style = 窗口样式
 settings-group-lyrics = 歌词
+settings-group-discord = Discord
 settings-group-project = 项目
 settings-adaptive-menu = 自适应上下文菜单
-settings-adaptive-menu-detail = 省略行中已显示的条目，例如专辑或艺术家
+settings-adaptive-menu-detail = 省略行中已显示的条目，例如专辑或歌手
 settings-accounts = 管理账户
 settings-accounts-detail = 此设备可以播放的服务
 settings-provider-none = 未连接
@@ -563,7 +586,7 @@ settings-team-github = GitHub
 settings-role-lead-maintainer = 首席维护者
 settings-role-maintainer = 维护者
 settings-role-contributor = 贡献者
-settings-notice = 版权所有 © 2026 Sonora 贡献者。Sonora 附带绝对无担保。它是自由软件，欢迎你在 GNU 通用公共许可证第 3 版或更高版本的条款下重新分发。Sonora 是非官方的，与 Spotify AB 无关联。
+settings-notice = 版权所有 © 2026 Sonora 贡献者。Sonora 不提供任何担保。它是自由软件，你可以根据 GNU 通用公共许可证第 3 版或更高版本的条款重新分发。Sonora 是非官方项目，与 Spotify AB 无关联。
 
 # themes
 theme-system = 系统
@@ -606,16 +629,16 @@ toast-playlist-failed = 该更改无法保存
 toast-playlist-busy = 另一个更改仍在进行中
 toast-playlist-signed-out = 登录以更改播放列表
 toast-queued-track = { $name } 已添加到队列
-toast-next-track = { $name } 将在下一首播放
+toast-next-track = 接下来播放 { $name }
 toast-queued-album = 专辑已添加到队列
-toast-next-album = 专辑将在下一首播放
+toast-next-album = 接下来播放专辑
 toast-queued-playlist = 播放列表已添加到队列
-toast-next-playlist = 播放列表将在下一首播放
-toast-queued-artist = 艺术家已添加到队列
-toast-next-artist = 艺术家将在下一首播放
+toast-next-playlist = 接下来播放播放列表
+toast-queued-artist = 歌手已添加到队列
+toast-next-artist = 接下来播放歌手
 toast-queue-failed = 无法添加到队列
 toast-keys-refused = Spotify 未授予此账户播放密钥
-toast-sign-in-to-play = { $name } 仅向已登录的听众串流
+toast-sign-in-to-play = { $name } 仅向已登录用户播放
 toast-track-unplayable = { $name } 无法播放
 toast-library-add-failed = { $name } 无法添加到你的音乐库
 toast-library-remove-failed = { $name } 无法从你的音乐库中移除
@@ -625,15 +648,15 @@ lyrics-title = 歌词
 lyrics-idle = 播放一些内容以查看歌词
 lyrics-loading = 正在查找歌词…
 lyrics-missing = 抱歉，未找到歌词！
-lyrics-instrumental = 这首歌是纯器乐
+lyrics-instrumental = 这首歌是纯音乐
 lyrics-failed = 无法连接到歌词服务
-lyrics-follow = 再次跟随歌曲
+lyrics-follow = 重新跟随歌曲
 lyrics-source = 歌词来自 { $source }
 lyrics-writers = 由 { $writers } 创作
 
 update-available = Sonora { $version } 已发布
 update-detail = 你当前使用的是 { $running }。查看更新内容，或立即更新。
-update-detail-notes = 你当前使用的是 { $running }。查看更新内容，然后按照你的安装方式更新 Sonora。
+update-detail-notes = 你当前使用的是 { $running }。查看更新内容，然后按你的安装方式更新 Sonora。
 update-notes = 新内容
 update-now = 更新
 update-later = 稍后
@@ -648,13 +671,13 @@ tags-sheet-song = 歌曲
 tags-sheet-album = 专辑
 tags-sheet-details = 详情
 tags-title = 标题
-tags-artist = 艺术家
+tags-artist = 歌手
 tags-track = 曲目编号
 tags-track-total = 发行曲目总数
 tags-disc = 碟片编号
 tags-disc-total = 发行碟片总数
 tags-album = 专辑
-tags-album-artist = 专辑艺术家
+tags-album-artist = 专辑歌手
 tags-year = 年份
 tags-genre = 流派
 tags-composer = 作曲家
@@ -663,3 +686,12 @@ tags-isrc = ISRC
 tags-comment = 备注
 toast-tags-saved = 已保存 { $name } 的标签
 toast-tags-failed = 标签无法保存
+
+nav-pin = 固定
+toast-library-pin-limit = 已达到 Spotify 的固定上限。请先取消固定其他项目。
+toast-library-pin-failed = 无法在 Spotify 中更新固定状态。
+nav-nothing-pinned = 这里什么都没有
+nav-pins-alphabetical = 按字母顺序
+nav-pins-kind = 按类型
+nav-show-full-library = 显示完整音乐库
+nav-return-top = 返回顶部
