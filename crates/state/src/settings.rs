@@ -28,7 +28,7 @@ use ui::{
 };
 
 use crate::queue::{Resume, gap_target};
-use crate::{Repeat, Sonora};
+use crate::{Io, Repeat, Sonora, join};
 
 /// Which panel the right sidebar shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +192,7 @@ struct Values {
     check_updates: bool,
     close_to_tray: bool,
     discord_rpc: bool,
+    lastfm_enabled: bool,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -247,6 +248,7 @@ impl Default for Values {
             check_updates: cfg!(target_os = "windows"),
             close_to_tray: true,
             discord_rpc: true,
+            lastfm_enabled: true,
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -280,6 +282,8 @@ struct StateValues {
     resume: Option<Resume>,
     window: Option<Frame>,
     system_theme: String,
+    lastfm_session: Option<String>,
+    lastfm_user: Option<String>,
 }
 
 impl Default for StateValues {
@@ -302,6 +306,8 @@ impl Default for StateValues {
             resume: None,
             window: None,
             system_theme: ThemeKind::Dark.id().to_owned(),
+            lastfm_session: None,
+            lastfm_user: None,
         }
     }
 }
@@ -453,6 +459,8 @@ pub struct AppSettings {
     save_state: Option<Task<()>>,
     watch: Option<Subscription>,
     writable: bool,
+    lastfm_connecting: bool,
+    lastfm_task: Option<Task<()>>,
 }
 
 impl AppSettings {
@@ -523,6 +531,8 @@ impl AppSettings {
             save_state: None,
             watch: None,
             writable,
+            lastfm_connecting: false,
+            lastfm_task: None,
         };
         let cleanup = existed && old_version < SETTINGS_VERSION || legacy_local.is_some();
         if cleanup && state_ready && settings.save_now() {
@@ -545,6 +555,10 @@ impl AppSettings {
 
     pub fn discord_rpc(&self) -> bool {
         self.values.discord_rpc
+    }
+
+    pub fn lastfm_enabled(&self) -> bool {
+        self.values.lastfm_enabled
     }
 
     pub fn sleep_timer(&self) -> bool {
@@ -637,6 +651,14 @@ impl AppSettings {
 
     pub fn provider(&self) -> &str {
         &self.state.provider
+    }
+
+    pub fn lastfm_session(&self) -> Option<String> {
+        self.state.lastfm_session.clone()
+    }
+
+    pub fn lastfm_user(&self) -> Option<String> {
+        self.state.lastfm_user.clone()
     }
 
     pub fn local_folders(&self) -> &[PathBuf] {
@@ -763,6 +785,52 @@ impl AppSettings {
         self.schedule_state_save(cx);
     }
 
+    pub fn set_lastfm_session(
+        &mut self,
+        session: Option<String>,
+        user: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.lastfm_session = session;
+        self.state.lastfm_user = user;
+        self.schedule_state_save(cx);
+    }
+
+    pub fn lastfm_connecting(&self) -> bool {
+        self.lastfm_connecting
+    }
+
+    /// Starts the Last.fm browser approval flow: fetch a token, open the
+    /// approval page, then poll until the user approves and a session key
+    /// arrives. Replacing the task cancels an in-flight attempt.
+    pub fn connect_lastfm(&mut self, io: Io, cx: &mut Context<Self>) {
+        if self.lastfm_connecting {
+            return;
+        }
+        self.lastfm_connecting = true;
+        self.lastfm_task = Some(cx.spawn(async move |this, cx| {
+            let linked = join(io.spawn(async move { crate::scrobble::link().await })).await;
+            this.update(cx, |this, cx| {
+                this.lastfm_connecting = false;
+                this.lastfm_task = None;
+                match linked {
+                    Ok((session, user)) => this.set_lastfm_session(Some(session), Some(user), cx),
+                    Err(error) => log::warn!("settings: cannot link Last.fm: {error:#}"),
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
+        cx.notify();
+    }
+
+    pub fn disconnect_lastfm(&mut self, cx: &mut Context<Self>) {
+        self.lastfm_task = None;
+        self.lastfm_connecting = false;
+        self.set_lastfm_session(None, None, cx);
+        cx.notify();
+    }
+
     pub fn set_normalisation(&mut self, normalisation: bool, cx: &mut Context<Self>) {
         self.values.normalisation = normalisation;
         self.schedule_save(cx);
@@ -775,6 +843,11 @@ impl AppSettings {
 
     pub fn set_discord_rpc(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.values.discord_rpc = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_lastfm_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.lastfm_enabled = enabled;
         self.schedule_save(cx);
     }
 

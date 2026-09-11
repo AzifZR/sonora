@@ -201,6 +201,8 @@ impl SettingsView {
                 self.title("settings-group-window", cx),
                 Row::Item(self.tray_row(cx).into_any_element()),
                 Row::Item(self.discord_row(cx).into_any_element()),
+                Row::Item(self.lastfm_row(cx).into_any_element()),
+                Row::Item(self.lastfm_toggle_row(cx).into_any_element()),
                 self.title("settings-group-accounts", cx),
                 Row::Item(self.accounts_row(cx).into_any_element()),
                 self.title("settings-group-library", cx),
@@ -1177,6 +1179,76 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_discord_rpc(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn lastfm_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let user = self.settings.read(cx).lastfm_user();
+        let connecting = self.settings.read(cx).lastfm_connecting();
+
+        let action = match (&user, connecting) {
+            (Some(_), _) => Button::new("lastfm-disconnect")
+                .label(t!("settings-lastfm-disconnect"))
+                .small()
+                .ghost()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.disconnect_lastfm(cx));
+                })),
+            (None, true) => Button::new("lastfm-cancel")
+                .label(t!("settings-lastfm-cancel"))
+                .small()
+                .ghost()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.disconnect_lastfm(cx));
+                })),
+            (None, false) => Button::new("lastfm-connect")
+                .label(t!("settings-lastfm-connect"))
+                .small()
+                .outline()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    let io = Io::global(cx);
+                    this.settings
+                        .update(cx, |settings, cx| settings.connect_lastfm(io, cx));
+                })),
+        };
+
+        let detail = match (&user, connecting) {
+            (Some(user), _) => t!("settings-lastfm-connected", name = user),
+            (None, true) => t!("settings-lastfm-waiting"),
+            (None, false) => t!("settings-lastfm-detail"),
+        };
+
+        self.row(
+            t!("settings-lastfm"),
+            detail,
+            muted,
+            small,
+            action.into_any_element(),
+        )
+    }
+
+    fn lastfm_toggle_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).lastfm_enabled();
+
+        self.row(
+            t!("settings-lastfm-enable"),
+            t!("settings-lastfm-enable-detail"),
+            muted,
+            small,
+            Switch::new("lastfm-scrobbling", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_lastfm_enabled(!on, cx));
                 }))
                 .into_any_element(),
         )
