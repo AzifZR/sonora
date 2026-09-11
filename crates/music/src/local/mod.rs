@@ -37,8 +37,11 @@ impl LocalProvider {
             .await
             .context("local scan task panicked")?;
 
-        let api: Arc<dyn MusicApi> =
-            Arc::new(client::LocalClient::new(scanned, self.database.clone()));
+        let api: Arc<dyn MusicApi> = Arc::new(client::LocalClient::new(
+            scanned,
+            self.database.clone(),
+            self.cache_dir.clone(),
+        ));
         let playback: Arc<dyn PlaybackFactory> = Arc::new(playback::Factory);
 
         Ok(ProviderSession {

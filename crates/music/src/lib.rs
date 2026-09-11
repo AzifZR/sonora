@@ -17,7 +17,7 @@ pub mod subsonic;
 pub mod youtube;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -104,6 +104,13 @@ pub trait MusicApi: Send + Sync {
         anyhow::bail!("this provider cannot edit tags")
     }
     async fn track(&self, track_id: &str) -> Result<Track>;
+
+    /// Reads an arbitrary file on disk as a track, for a provider whose tracks are files. Used
+    /// by file-association opens, which may point outside any scanned folder.
+    async fn track_from_path(&self, _path: &Path) -> Result<Track> {
+        anyhow::bail!("cannot open arbitrary files")
+    }
+
     async fn track_playcount(&self, track_id: &str) -> Result<Option<u64>>;
     async fn track_lyrics(&self, _track_id: &str) -> Result<Option<Lyrics>> {
         Ok(None)

@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +17,9 @@ pub enum Instance {
     Failed,
 }
 
-pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
+/// `args` is every non-flag command-line argument of this launch: a lone `spotify:`/web link, or
+/// one or more file paths from an "Open With" selection.
+pub fn claim(args: &[String], sender: UnboundedSender<Vec<String>>) -> Instance {
     let name = match SOCKET.to_ns_name::<GenericNamespaced>() {
         Ok(name) => name,
         Err(error) => {
@@ -32,7 +34,7 @@ pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
         Err(error) => {
             // Windows reports an occupied pipe with an error other than
             // AddrInUse, so any failure may mean another Sonora owns the socket.
-            if hand_over(name.clone(), link) {
+            if hand_over(name.clone(), args) {
                 return Instance::Running;
             }
 
@@ -61,14 +63,20 @@ pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
 
     thread::spawn(move || {
         for connection in listener.incoming() {
-            let Ok(connection) = connection else {
+            let Ok(mut connection) = connection else {
                 continue;
             };
-            let mut line = String::new();
-            if BufReader::new(connection).read_line(&mut line).is_err() {
+            let mut payload = String::new();
+            if connection.read_to_string(&mut payload).is_err() {
                 continue;
             }
-            if sender.send(line.trim().to_owned()).is_err() {
+            let items: Vec<String> = payload
+                .split('\n')
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if sender.send(items).is_err() {
                 break;
             }
         }
@@ -77,9 +85,9 @@ pub fn claim(link: Option<&str>, sender: UnboundedSender<String>) -> Instance {
     Instance::First
 }
 
-fn hand_over(name: interprocess::local_socket::Name<'_>, link: Option<&str>) -> bool {
+fn hand_over(name: interprocess::local_socket::Name<'_>, args: &[String]) -> bool {
     let Ok(mut stream) = Stream::connect(name) else {
         return false;
     };
-    writeln!(stream, "{}", link.unwrap_or_default()).is_ok()
+    stream.write_all(args.join("\n").as_bytes()).is_ok()
 }
