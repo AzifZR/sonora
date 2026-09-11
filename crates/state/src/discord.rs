@@ -160,12 +160,13 @@ impl DiscordRpc {
         };
 
         // Covers and reuploads (plain YouTube videos outside the Music catalog)
-        // often carry no artist or album metadata. Fall back so Discord never
-        // shows a blank line.
+        // often carry no artist or album metadata. Fall back to the video
+        // title and then the album so Discord never shows a blank line.
         let artist = match track.artists.trim().is_empty() {
             false => track.artists.clone(),
-            true if !track.album.trim().is_empty() => track.album.clone(),
-            true => String::from("Unknown Artist"),
+            true => split_artist(&track.name)
+                .or_else(|| (!track.album.trim().is_empty()).then(|| track.album.clone()))
+                .unwrap_or_else(|| String::from("Unknown Artist")),
         };
 
         let live_pos = playback.live_position().as_secs();
@@ -298,6 +299,21 @@ fn rpc_worker(receiver: Receiver<Command>) {
     }
 
     let _ = client.close();
+}
+
+/// Splits an "Artist - Title" video name (dashes with spaces, including en/em
+/// dashes) into its artist. Only exact single-separator names qualify: with
+/// zero separators there is nothing to split, and with more the order is
+/// ambiguous (titles like "Song - Artist - Vocal Cover" read backwards).
+fn split_artist(name: &str) -> Option<String> {
+    let normalized = name.replace(['–', '—'], "-");
+    let mut parts = normalized.split(" - ");
+    let artist = parts.next()?.trim();
+    let title = parts.next()?.trim();
+    if parts.next().is_some() || artist.is_empty() || title.is_empty() {
+        return None;
+    }
+    Some(artist.to_owned())
 }
 
 fn apply(client: &mut DiscordIpcClient, cmd: &Command) -> bool {
