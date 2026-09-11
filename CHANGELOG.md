@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.34.1] - 2026-09-11
+
+### Fixed
+
+- The Flatpak can show what you are playing on Discord. It reaches the Discord socket whether
+  Discord is installed natively or as a Flatpak.
+
 ## [0.34.0] - 2026-09-11
 
 ### Added
@@ -1474,7 +1481,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.34.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.34.1...HEAD
+[0.34.1]: https://github.com/sonorahq/sonora/compare/v0.34.0...v0.34.1
 [0.34.0]: https://github.com/sonorahq/sonora/compare/v0.33.0...v0.34.0
 [0.33.0]: https://github.com/sonorahq/sonora/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/sonorahq/sonora/compare/v0.31.0...v0.32.0

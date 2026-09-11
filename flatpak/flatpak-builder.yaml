@@ -19,6 +19,11 @@ finish-args:
   # Open With passes an arbitrary path as argv; a plain Exec launch (unlike a portal file-open)
   # gets no per-file bind mount, so reading it needs read access to the whole host.
   - --filesystem=host:ro
+  # Discord presence talks to Discord's IPC socket in the host runtime dir: a native Discord
+  # puts it at discord-ipc-0, a Flatpak Discord under app/com.discordapp.Discord, which has to
+  # be created from our side so the bind exists before Discord starts.
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/app/com.discordapp.Discord:create
 
   # Session Bus Permissions (Same as Spotify flatpak):
   - --talk-name=org.gnome.SettingsDaemon.MediaKeys
