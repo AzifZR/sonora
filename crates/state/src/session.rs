@@ -303,9 +303,14 @@ impl Session {
     }
 
     pub fn slug_for(&self, id: &str) -> Option<&'static str> {
+        self.provider_for(id).map(|provider| provider.slug())
+    }
+
+    /// The provider an id belongs to, whichever shelf it sits on.
+    pub(crate) fn provider_for(&self, id: &str) -> Option<&dyn MusicProvider> {
         match music::is_local_id(id) {
-            true => Some(self.local_slug()),
-            false => self.provider_slug(),
+            true => Some(self.local_provider.as_ref()),
+            false => self.active.map(|index| self.providers[index].as_ref()),
         }
     }
 

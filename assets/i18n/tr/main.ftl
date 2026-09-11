@@ -203,10 +203,6 @@ player-previous = Önceki parça
 player-next = Sonraki parça
 player-fullscreen = Tam ekran
 player-fullscreen-leave = Tam ekrandan çık
-player-sleep = Uyku zamanlayıcısı
-player-sleep-off = Kapalı
-player-sleep-end-of-track = Parçanın sonunda
-player-sleep-minutes = { $count } dk
 fullscreen-artwork = Kapak
 
 # filters
@@ -490,6 +486,10 @@ settings-gapless = Boşluksuz çalma
 settings-gapless-detail = Bir parçayı, albüm nasıl kurgulandıysa öyle, araya boşluk koymadan diğerine bağlar
 settings-sleep = Uyku zamanlayıcısı
 settings-sleep-detail = Belirlenen sürenin sonunda müziğin kendiliğinden durmasını sağlar, böylece seni uyutabilir
+settings-sleep-configure = Ayarla…
+settings-sleep-off = Kapalı
+settings-sleep-end-of-track = Parçanın sonunda
+settings-sleep-minutes = { $count } dk
 settings-panel-lyrics-size = Şarkı sözü boyutu (panel)
 settings-panel-lyrics-size-detail = Yan paneldeki şarkı sözü metninin, temel yazı boyutuna eklenen boyutu
 settings-fullscreen-lyrics-size = Şarkı sözü boyutu (tam ekran)

@@ -1,10 +1,17 @@
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Div, ElementId, Entity, Interactivity, ScrollWheelEvent, StyleRefinement,
-    Window, div,
+    AnyElement, App, Div, ElementId, Entity, Interactivity, Pixels, ScrollWheelEvent,
+    StyleRefinement, Window, div, px,
 };
 
+use crate::button::Button;
 use crate::scrollbar::Scrollbar;
+use crate::theme::ActiveTheme as _;
+
+/// How far a region has to be scrolled before the trip back is worth a button, in rows.
+const REACH: f32 = 3.;
+/// How far a perched control floats off the bottom of its region.
+const PERCH: Pixels = px(12.);
 
 #[derive(IntoElement)]
 pub struct Scroller {
@@ -95,4 +102,57 @@ impl RenderOnce for Scroller {
             .child(surface)
             .child(bar)
     }
+}
+
+/// The shape every control that floats over a scrolling region takes: a round bordered pill,
+/// centred along the bottom. It swallows clicks meant for it rather than the rows behind, and
+/// still lets the wheel through. The caller places it with `bottom_*`.
+pub fn perched(button: Button, cx: &App) -> Div {
+    let theme = *cx.theme();
+
+    div()
+        .absolute()
+        .bottom(PERCH)
+        .w_full()
+        .flex()
+        .justify_center()
+        .child(
+            div().flex().flex_none().block_mouse_except_scroll().child(
+                button
+                    .ghost()
+                    .small()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.popover),
+            ),
+        )
+}
+
+/// The room a scrolling region has to keep under its last row for a perched control to float in
+/// without covering it.
+pub fn perch_room(cx: &App) -> Pixels {
+    PERCH * 2. + cx.theme().metrics.control_small
+}
+
+/// A perched button that glides a scrolling region back to its top. It stays away until the
+/// region has been scrolled far enough for the trip to be worth one. The parent has to be
+/// `relative`.
+pub fn return_top(id: impl Into<ElementId>, bar: &Entity<Scrollbar>, cx: &App) -> Option<Div> {
+    let viewport = bar.read(cx).viewport();
+    let reach = (cx.theme().metrics.list_row * REACH).min(viewport / 2.);
+    if viewport <= Pixels::ZERO || bar.read(cx).offset() < reach {
+        return None;
+    }
+    let bar = bar.clone();
+
+    Some(perched(
+        Button::new(id)
+            .icon("icons/undo-2.svg")
+            .tooltip("nav-return-top")
+            .on_click(move |_, window, cx| {
+                bar.update(cx, |bar, _| bar.aim(Pixels::ZERO, window));
+            }),
+        cx,
+    ))
 }

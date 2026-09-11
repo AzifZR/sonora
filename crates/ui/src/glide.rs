@@ -3,10 +3,42 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, EntityId, Pixels, Point, ScrollHandle, SpringConfig, SpringState, Window, point, px,
+    App, EntityId, ListState, Pixels, Point, ScrollHandle, SpringConfig, SpringState, Window,
+    point, px,
 };
 
 use crate::snapped;
+
+/// A scroll position that can be animated by the shared glide controller.
+pub trait ScrollPosition: Clone + 'static {
+    fn offset(&self) -> Point<Pixels>;
+    fn set_offset(&self, offset: Point<Pixels>);
+    fn max_offset(&self) -> Point<Pixels>;
+}
+
+impl ScrollPosition for ScrollHandle {
+    fn offset(&self) -> Point<Pixels> {
+        ScrollHandle::offset(self)
+    }
+    fn set_offset(&self, offset: Point<Pixels>) {
+        ScrollHandle::set_offset(self, offset);
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        ScrollHandle::max_offset(self)
+    }
+}
+
+impl ScrollPosition for ListState {
+    fn offset(&self) -> Point<Pixels> {
+        self.scroll_px_offset_for_scrollbar()
+    }
+    fn set_offset(&self, offset: Point<Pixels>) {
+        self.set_offset_from_scrollbar(offset);
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        self.max_offset_for_scrollbar()
+    }
+}
 
 const EASE: f32 = 0.12;
 const HERTZ: f32 = 180.;
@@ -62,7 +94,7 @@ impl Glide {
         self.watched = Some(view);
     }
 
-    pub fn sync(&self, scroll: &ScrollHandle) {
+    pub fn sync(&self, scroll: &impl ScrollPosition) {
         let mut drift = self.drift.borrow_mut();
         if !drift.gliding {
             drift.shown = scroll.offset();
@@ -70,7 +102,7 @@ impl Glide {
         }
     }
 
-    pub fn nudge(&self, scroll: &ScrollHandle, window: &mut Window) {
+    pub fn nudge(&self, scroll: &impl ScrollPosition, window: &mut Window) {
         {
             let mut drift = self.drift.borrow_mut();
             let landed = scroll.offset();
@@ -90,7 +122,7 @@ impl Glide {
         self.schedule_frame(scroll, window);
     }
 
-    pub fn aim(&self, scroll: &ScrollHandle, to: Point<Pixels>, window: &mut Window) {
+    pub fn aim(&self, scroll: &impl ScrollPosition, to: Point<Pixels>, window: &mut Window) {
         {
             let mut drift = self.drift.borrow_mut();
             if !drift.gliding {
@@ -108,7 +140,7 @@ impl Glide {
         self.schedule_frame(scroll, window);
     }
 
-    pub fn jump(&self, scroll: &ScrollHandle, to: Point<Pixels>) {
+    pub fn jump(&self, scroll: &impl ScrollPosition, to: Point<Pixels>) {
         let landed = {
             let mut drift = self.drift.borrow_mut();
             drift.target = held(to, scroll);
@@ -123,7 +155,7 @@ impl Glide {
         scroll.set_offset(landed);
     }
 
-    pub fn stop_spring(&self, scroll: &ScrollHandle) -> bool {
+    pub fn stop_spring(&self, scroll: &impl ScrollPosition) -> bool {
         let mut drift = self.drift.borrow_mut();
         if !drift.springing {
             return false;
@@ -138,7 +170,7 @@ impl Glide {
         true
     }
 
-    pub fn goal(&self, scroll: &ScrollHandle) -> Point<Pixels> {
+    pub fn goal(&self, scroll: &impl ScrollPosition) -> Point<Pixels> {
         let drift = self.drift.borrow();
 
         match drift.gliding {
@@ -147,7 +179,7 @@ impl Glide {
         }
     }
 
-    pub fn presentation(&self, scroll: &ScrollHandle) -> Point<Pixels> {
+    pub fn presentation(&self, scroll: &impl ScrollPosition) -> Point<Pixels> {
         let drift = self.drift.borrow();
 
         match drift.gliding && drift.springing {
@@ -156,7 +188,7 @@ impl Glide {
         }
     }
 
-    fn schedule_frame(&self, scroll: &ScrollHandle, window: &mut Window) {
+    fn schedule_frame(&self, scroll: &impl ScrollPosition, window: &mut Window) {
         {
             let mut drift = self.drift.borrow_mut();
             if drift.armed {
@@ -170,7 +202,7 @@ impl Glide {
         window.on_next_frame(move |window, cx| glide.step(&scroll, window, cx));
     }
 
-    fn step(&self, scroll: &ScrollHandle, window: &mut Window, cx: &mut App) {
+    fn step(&self, scroll: &impl ScrollPosition, window: &mut Window, cx: &mut App) {
         let landed = {
             let mut drift = self.drift.borrow_mut();
             drift.armed = false;
@@ -246,7 +278,7 @@ fn grid(at: Point<Pixels>, window: &Window) -> Point<Pixels> {
     point(snapped(at.x, window), snapped(at.y, window))
 }
 
-fn held(at: Point<Pixels>, scroll: &ScrollHandle) -> Point<Pixels> {
+fn held(at: Point<Pixels>, scroll: &impl ScrollPosition) -> Point<Pixels> {
     let reach = scroll.max_offset();
 
     point(

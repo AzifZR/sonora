@@ -3,7 +3,7 @@ use ksni::menu::{MenuItem, StandardItem};
 use ksni::{Category, ToolTip};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::{Event, Shown};
+use super::{Art, Event, Shown};
 
 const ID: &str = "sonora";
 const ICON_NAME: &str = "sonora";
@@ -129,7 +129,9 @@ impl ksni::Tray for Item {
         vec![
             StandardItem {
                 label: shown.caption.clone(),
-                enabled: false,
+                icon_data: cover(shown.artwork.as_ref()).unwrap_or_default(),
+                enabled: shown.song,
+                activate: Box::new(|this: &mut Self| this.send(Event::Song)),
                 ..Default::default()
             }
             .into(),
@@ -141,5 +143,23 @@ impl ksni::Tray for Item {
             self.entry(&shown.show, Event::Show),
             self.entry(&shown.quit, Event::Quit),
         ]
+    }
+}
+
+/// The cover as the png a menu item carries. A cover that cannot be encoded is simply left off
+/// the row.
+fn cover(art: Option<&Art>) -> Option<Vec<u8>> {
+    let art = art?;
+    let image = image::RgbaImage::from_raw(art.width, art.height, art.data.clone())?;
+
+    let mut png = Vec::new();
+    let written = image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png);
+    match written {
+        Ok(()) => Some(png),
+        Err(error) => {
+            log::warn!("tray: cannot encode the cover: {error:#}");
+            None
+        }
     }
 }
