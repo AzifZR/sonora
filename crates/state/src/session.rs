@@ -801,6 +801,38 @@ impl Session {
         }));
     }
 
+    /// Brings up the local engine even when no folder has ever been configured, so a
+    /// file-association open can play a track without the user having visited Settings first.
+    /// A no-op once a local client already exists or one is already being brought up; a
+    /// configured library goes through the normal [`Session::rescan_local`] path instead.
+    pub fn ensure_local_ready(&mut self, cx: &mut Context<Self>) {
+        if self.local_client.is_some() || self.local_task.is_some() {
+            return;
+        }
+        if !self.local_folders.is_empty() {
+            return self.rescan_local(cx);
+        }
+
+        let provider = self.local_provider.clone();
+        let io = self.io.clone();
+        self.local_task = Some(cx.spawn(async move |this, cx| {
+            let prompt: PromptSink = Arc::new(|_| {});
+            let (_tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let signed_in = join(io.spawn(async move {
+                provider.sign_in(SignIn::Path(Vec::new()), prompt, rx).await
+            }))
+            .await;
+
+            this.update(cx, |this, cx| match signed_in {
+                Ok(session) => this.local_signed_in(session, cx),
+                Err(error) => {
+                    log::warn!("session: cannot initialize local playback: {error:#}");
+                }
+            })
+            .ok();
+        }));
+    }
+
     fn local_signed_in(&mut self, session: ProviderSession, cx: &mut Context<Self>) {
         self.local_catalog = Some(Arc::new(CatalogSource::new(session.api.clone())));
         self.local_client = Some(session.api);

@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sonora shows up in Open With for audio files. Opening one plays it right away; opening several
+  queues them to play next, in order, right after whatever is already playing, whatever provider
+  that came from.
+
 - Sonora can put what you are playing on your Discord profile. Turn on Show on Discord under
   Settings > Integrations. The status is called Sonora by default, and can name the service the
   track came from or just say Music instead; it can carry a badge of that service, and it can hide
