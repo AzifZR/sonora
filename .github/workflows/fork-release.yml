@@ -78,7 +78,10 @@ jobs:
         shell: pwsh
         run: |
           cd dist
-          Get-ChildItem * -File |
+          # Collect first: Out-File creates its target up front, and a lazy
+          # glob would then feed the output file back into its own input.
+          $files = Get-ChildItem * -File | Where-Object { $_.Name -ne 'SHA256SUMS' }
+          $files |
             ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
             Out-File -Encoding ascii SHA256SUMS
 
