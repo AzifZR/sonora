@@ -75,8 +75,12 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "scripts/windows/sonora.iss"
 
       - name: checksums
-        shell: bash
-        run: cd dist && shasum -a 256 * > SHA256SUMS
+        shell: pwsh
+        run: |
+          cd dist
+          Get-ChildItem * -File |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Out-File -Encoding ascii SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
