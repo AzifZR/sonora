@@ -9,12 +9,14 @@ mod album;
 mod artist;
 mod browse;
 mod hashes;
+mod library;
 mod plays;
 mod search;
 
 pub(crate) use album::album;
 pub(crate) use artist::{Overview, artist};
 pub(crate) use browse::{all as genres, page as genre};
+pub(crate) use library::{library, set_library_item_pinned};
 pub(crate) use plays::track;
 pub(crate) use search::{albums as search_albums, playlists as search_playlists};
 

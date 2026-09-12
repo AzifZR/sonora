@@ -34,10 +34,7 @@ pub fn scan(roots: &[PathBuf], cache_dir: &Path) -> Scanned {
     let parsed: Vec<(Track, String)> = files
         .into_iter()
         .filter_map(|path| {
-            let artist_hint = path
-                .parent()
-                .and_then(Path::parent)
-                .map(|dir| folder_name(dir));
+            let artist_hint = path.parent().and_then(Path::parent).map(folder_name);
             let (album_hint, _) = path
                 .parent()
                 .map(|dir| dated(&folder_name(dir)))
@@ -242,7 +239,7 @@ mod tests {
         let dir = std::env::temp_dir().join("sonora-scan-test-ignore");
         let _ = fs::remove_dir_all(&dir);
         touch(&dir.join("notes.txt"));
-        let scanned = scan(&[dir.clone()], &dir);
+        let scanned = scan(std::slice::from_ref(&dir), &dir);
         assert!(scanned.tracks.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
@@ -251,7 +248,7 @@ mod tests {
     fn empty_root_yields_nothing() {
         let dir = std::env::temp_dir().join("sonora-scan-test-missing");
         let _ = fs::remove_dir_all(&dir);
-        let scanned = scan(&[dir.clone()], &dir);
+        let scanned = scan(std::slice::from_ref(&dir), &dir);
         assert!(scanned.tracks.is_empty());
         assert!(scanned.albums.is_empty());
     }

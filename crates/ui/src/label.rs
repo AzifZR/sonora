@@ -32,7 +32,7 @@ pub fn vacant(label: impl Into<SharedString>, cx: &App) -> Div {
         .justify_center()
         .p(theme.metrics.pad * 2.)
         .text_align(gpui::TextAlign::Center)
-        .text_size(theme.text(Text::Body))
+        .text_size(theme.text(Text::Label))
         .text_color(theme.muted_foreground)
         .child(div().min_w_0().child(label.into()))
 }

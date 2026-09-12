@@ -15,6 +15,12 @@ const WORKER: &str = "https://billowing-resonance-da83.johnwatson.workers.dev/ha
 const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const FILE: &str = "pathfinder.json";
 
+const DESKTOP_OPERATIONS: [(&str, &str); 3] = [
+    ("libraryV3", "query"),
+    ("pinLibraryItem", "mutation"),
+    ("unpinLibraryItem", "mutation"),
+];
+
 pub(super) struct Hash {
     pub(super) value: String,
     pub(super) tried: bool,
@@ -43,6 +49,21 @@ pub(super) async fn resolve(session: &Session, operation: &str) -> Result<Hash> 
             tried: false,
         });
     }
+    if DESKTOP_OPERATIONS
+        .iter()
+        .any(|(name, _)| *name == operation)
+    {
+        return match desktop_hash(operation).await {
+            Ok(value) => Ok(Hash {
+                value,
+                tried: false,
+            }),
+            Err(error) => cached
+                .and_then(|mut registry| registry.operations.remove(operation))
+                .map(|value| Hash { value, tried: true })
+                .ok_or(error),
+        };
+    }
     let latest = match fetched(session).await {
         Ok(operations) => operations,
         Err(error) => {
@@ -60,6 +81,12 @@ pub(super) async fn resolve(session: &Session, operation: &str) -> Result<Hash> 
 }
 
 pub(super) async fn refetch(session: &Session, operation: &str, stale: &str) -> Option<String> {
+    if DESKTOP_OPERATIONS
+        .iter()
+        .any(|(name, _)| *name == operation)
+    {
+        return desktop_hash(operation).await.ok();
+    }
     refreshed(session, Some(stale))
         .await
         .ok()?
@@ -103,7 +130,17 @@ async fn download(session: &Session, stale: Option<&str>) -> Result<HashMap<Stri
         .request_body(request)
         .await
         .context("cannot request the query hashes")?;
-    parsed(&body)
+    let mut operations = parsed(&body)?;
+    if let Some(cached) = registry() {
+        for (operation, _) in DESKTOP_OPERATIONS {
+            if let Some(hash) = cached.operations.get(operation) {
+                operations
+                    .entry(operation.to_owned())
+                    .or_insert_with(|| hash.clone());
+            }
+        }
+    }
+    Ok(operations)
 }
 
 fn parsed(body: &[u8]) -> Result<HashMap<String, String>> {
@@ -179,9 +216,119 @@ fn path() -> PathBuf {
     crate::credentials::root().join(FILE)
 }
 
+// Discover desktop library operations missing from the shared hash service.
+async fn desktop_hash(operation: &str) -> Result<String> {
+    // librespot overwrites User-Agent on every request, which makes this page serve
+    // the mobile bundle. This unauthenticated client reads only public web assets.
+    let public = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+        .timeout(Duration::from_secs(20)).build()?;
+    let html = public_text(&public, "https://open.spotify.com").await?;
+    let bundle = desktop_bundle(&html).context("Spotify page has no desktop player bundle")?;
+    let javascript = public_text(&public, bundle).await?;
+    let mut operations = registry()
+        .map(|registry| registry.operations)
+        .unwrap_or_default();
+    let mut requested = None;
+    for (name, kind) in DESKTOP_OPERATIONS {
+        if let Some(hash) = operation_hash(&javascript, name, kind) {
+            operations.insert(name.to_owned(), hash.to_owned());
+            if name == operation {
+                requested = Some(hash.to_owned());
+            }
+        }
+    }
+    let requested =
+        requested.with_context(|| format!("Spotify bundle has no {operation} operation"))?;
+    store(&operations);
+    Ok(requested)
+}
+
+async fn public_text(client: &reqwest::Client, url: &str) -> Result<String> {
+    use std::io::Read as _;
+    let body = client
+        .get(url)
+        .header(header::ACCEPT_ENCODING, "identity")
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    let bytes = if body.starts_with(&[0x1f, 0x8b]) {
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(body.as_ref()).read_to_end(&mut decoded)?;
+        decoded
+    } else {
+        body.to_vec()
+    };
+    String::from_utf8(bytes).context("Spotify bundle is not UTF-8")
+}
+
+fn desktop_bundle(html: &str) -> Option<&str> {
+    html.split('"').find(|url| {
+        url.starts_with("https://open.spotifycdn.com/cdn/build/web-player/web-player.")
+            && url.ends_with(".js")
+    })
+}
+
+fn operation_hash<'a>(javascript: &'a str, operation: &str, kind: &str) -> Option<&'a str> {
+    let marker = format!("\"{operation}\",\"{kind}\",\"");
+    let (_, after) = javascript.split_once(&marker)?;
+    let (hash, _) = after.split_once('"')?;
+    sane(hash).then_some(hash)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovers_only_the_desktop_bundle_and_a_valid_query_hash() {
+        let url = "https://open.spotifycdn.com/cdn/build/web-player/web-player.abc.js";
+        assert_eq!(
+            desktop_bundle(&format!(r#"<script src="{url}"></script>"#)),
+            Some(url)
+        );
+        assert!(
+            desktop_bundle(r#"<script src="https://example.com/web-player.js"></script>"#)
+                .is_none()
+        );
+        let hash = "0123456789abcdef".repeat(4);
+        assert_eq!(
+            operation_hash(
+                &format!(r#"new Query("libraryV3","query","{hash}",null)"#),
+                "libraryV3",
+                "query"
+            ),
+            Some(hash.as_str())
+        );
+        assert!(
+            operation_hash(
+                r#"new Query("libraryV3","query","broken",null)"#,
+                "libraryV3",
+                "query"
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn discovers_each_library_mutation_without_confusing_pin_and_unpin() {
+        let pin = "a".repeat(64);
+        let unpin = "b".repeat(64);
+        let javascript = format!(
+            r#"new Query("unpinLibraryItem","mutation","{unpin}",null);new Query("pinLibraryItem","mutation","{pin}",null)"#
+        );
+        assert_eq!(
+            operation_hash(&javascript, "pinLibraryItem", "mutation"),
+            Some(pin.as_str())
+        );
+        assert_eq!(
+            operation_hash(&javascript, "unpinLibraryItem", "mutation"),
+            Some(unpin.as_str())
+        );
+        assert!(operation_hash(&javascript, "pinLibraryItem", "query").is_none());
+    }
 
     fn payload(hash: &str) -> Vec<u8> {
         format!(

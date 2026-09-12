@@ -125,3 +125,19 @@ fn stem(icon: &str) -> &str {
     let name = icon.rsplit('/').next().unwrap_or(icon);
     name.strip_suffix(KIND).unwrap_or(name)
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_pack_has_its_own_pin() {
+        for pack in super::packs() {
+            assert!(pack.icon("pin").is_some(), "{} borrows its pin", pack.id);
+            let path = super::shown(pack, "icons/pin.svg");
+            assert!(
+                super::asset(&path).is_some(),
+                "pin missing from {}",
+                pack.id
+            );
+        }
+    }
+}

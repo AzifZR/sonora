@@ -2,18 +2,22 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use crate::shared::local;
-use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
+use crate::shared::popups::{AccountPicker, SearchPopup, matches_query};
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, Task, Window, div,
-    font, px,
+    AnyElement, App, Context, Entity, FontWeight, MouseUpEvent, Pixels, Render, SharedString, Task,
+    Window, div, px,
 };
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{
+    AppSettings, DiscordName, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sleep,
+    Sonora,
+};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
@@ -28,6 +32,8 @@ const SOURCE_URL: &str = "https://github.com/sonorahq/sonora";
 const THEMES: &str = "themes";
 const PACKS: &str = "packs";
 const CORNERS: &str = "corners";
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+const WINDOW_ROUNDING: &str = "window-rounding";
 const LANGUAGES: &str = "languages";
 const TYPEFACES: &str = "typefaces";
 const TYPEFACE_LIMIT: usize = 200;
@@ -38,9 +44,16 @@ const TYPEFACE_GUESS: usize = 24;
 const TYPEFACE_BATCH: usize = 3;
 const STARTUP: &str = "startup";
 const ENTRIES: &str = "entries";
+const DISCORD_NAME: &str = "discord-name";
 const MOTION: &str = "motion";
 const PACE: &str = "pace";
 const SAVER: &str = "saver";
+const SLEEP: &str = "sleep";
+const SLEEP_MAX_MINUTES: u64 = 120;
+const SLEEP_MAGNETS: [u64; 4] = [15, 30, 45, 60];
+const SLEEP_MAGNET_WEIGHT: usize = 4;
+const SLEEP_LAST: usize =
+    SLEEP_MAX_MINUTES as usize + SLEEP_MAGNETS.len() * (SLEEP_MAGNET_WEIGHT - 1) + 1;
 
 enum Row {
     Item(AnyElement),
@@ -126,8 +139,9 @@ pub struct SettingsView {
     tab: SettingsTab,
     scrollbar: Entity<Scrollbar>,
     opacity: ScrubberState,
+    sleep: ScrubberState,
+    pending_sleep: Option<Option<Sleep>>,
     popovers: Popovers,
-    secret: Entity<Input>,
     server: Entity<Input>,
     username: Entity<Input>,
     password: Entity<Input>,
@@ -171,8 +185,9 @@ impl SettingsView {
             tab: SettingsTab::General,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
             opacity: ScrubberState::new("opacity"),
+            sleep: ScrubberState::new("sleep"),
+            pending_sleep: None,
             popovers: Popovers::default(),
-            secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
             server: cx.new(|cx| Input::new("login-server-hint", cx)),
             username: cx.new(|cx| Input::new("login-username-hint", cx)),
             password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
@@ -200,7 +215,6 @@ impl SettingsView {
                 Row::Item(self.language_row(cx).into_any_element()),
                 self.title("settings-group-window", cx),
                 Row::Item(self.tray_row(cx).into_any_element()),
-                Row::Item(self.discord_row(cx).into_any_element()),
                 Row::Item(self.lastfm_row(cx).into_any_element()),
                 Row::Item(self.lastfm_toggle_row(cx).into_any_element()),
                 self.title("settings-group-accounts", cx),
@@ -243,9 +257,11 @@ impl SettingsView {
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
             ],
-            SettingsTab::Privacy => vec![Row::Item(
-                self.lyrics_for_local_files_row(cx).into_any_element(),
-            )],
+            SettingsTab::Privacy => vec![
+                self.title("settings-group-lyrics", cx),
+                Row::Item(self.lyrics_for_local_files_row(cx).into_any_element()),
+            ],
+            SettingsTab::Integrations => self.discord_rows(cx),
             SettingsTab::About => vec![
                 Row::Item(self.version_row(cx).into_any_element()),
                 Row::Item(self.updates_row(cx).into_any_element()),
@@ -274,16 +290,25 @@ impl SettingsView {
     )]
     fn decoration_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let rows = vec![
+        let mut rows = vec![
             self.title("settings-group-window-style", cx),
             Row::Item(self.server_side_decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
+            Row::Item(self.traffic_light_controls_row(cx).into_any_element()),
         ];
+        // Server-side decorations put the compositor in charge of the frame, so window
+        // rounding is only ever this app's call with client-side ones.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if !self.settings.read(cx).server_side_decorations() {
+            rows.push(Row::Item(self.window_rounding_row(cx).into_any_element()));
+        }
         #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
         let rows = vec![
             self.title("settings-group-title-bar", cx),
             Row::Item(self.decorations_row(cx).into_any_element()),
             Row::Item(self.side_row(cx).into_any_element()),
+            Row::Item(self.traffic_light_controls_row(cx).into_any_element()),
+            Row::Item(self.window_rounding_row(cx).into_any_element()),
         ];
         #[cfg(target_os = "macos")]
         let rows = Vec::<Row>::new();
@@ -749,6 +774,57 @@ impl SettingsView {
     }
 
     #[cfg(not(target_os = "macos"))]
+    fn traffic_light_controls_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).traffic_light_controls();
+
+        self.row(
+            t!("settings-traffic-light-controls"),
+            t!("settings-traffic-light-controls-detail"),
+            muted,
+            small,
+            Switch::new("traffic-light-controls", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_traffic_light_controls(!on, cx)
+                    });
+                }))
+                .into_any_element(),
+        )
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    fn window_rounding_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let current = self.settings.read(cx).window_rounding();
+
+        let picker = Picker::new(WINDOW_ROUNDING, &self.popovers, current.label())
+            .width(Picker::NARROW)
+            .items(Rounding::ALL.into_iter().map(|rounding| {
+                MenuItem::new(rounding.id(), rounding.label())
+                    .selected(current == rounding)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings.update(cx, |settings, cx| {
+                            settings.set_window_rounding(rounding, cx)
+                        });
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-window-rounding"),
+            t!("settings-window-rounding-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    #[cfg(not(target_os = "macos"))]
     fn side_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1164,26 +1240,6 @@ impl SettingsView {
         )
     }
 
-    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-        let muted = theme.muted_foreground;
-        let small = theme.text(Text::Small);
-        let on = self.settings.read(cx).discord_rpc();
-
-        self.row(
-            t!("settings-discord"),
-            t!("settings-discord-detail"),
-            muted,
-            small,
-            Switch::new("discord-rpc", on)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_discord_rpc(!on, cx));
-                }))
-                .into_any_element(),
-        )
-    }
-
     fn lastfm_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1280,22 +1336,88 @@ impl SettingsView {
         let small = theme.text(Text::Small);
         let on = self.settings.read(cx).sleep_timer();
 
+        let picker = Picker::plain(SLEEP, &self.popovers, t!("settings-sleep-configure"))
+            .width(Picker::REGULAR)
+            .selected(self.playback.read(cx).sleep().is_some())
+            .items(match self.popovers.shows(SLEEP) {
+                true => vec![self.sleep_dial(cx)],
+                false => Vec::new(),
+            });
+        let action = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .when(on, |this| this.child(picker))
+            .child(
+                Switch::new("sleep-timer", on).on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
+                    if on {
+                        this.popovers.close();
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
+                    }
+                })),
+            );
+
         self.row(
             t!("settings-sleep"),
             t!("settings-sleep-detail"),
             muted,
             small,
-            Switch::new("sleep-timer", on)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
-                    if on {
-                        this.playback
-                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
-                    }
-                }))
-                .into_any_element(),
+            action.into_any_element(),
         )
+    }
+
+    /// The slider that arms the timer: off at the left, end of track at the right, minutes in
+    /// between, with the quarter hours widened.
+    fn sleep_dial(&self, cx: &mut Context<Self>) -> MenuItem {
+        let theme = *cx.theme();
+        let current = self
+            .pending_sleep
+            .unwrap_or_else(|| self.playback.read(cx).sleep());
+
+        let dial = div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .gap_2()
+            .py_1()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .text_size(theme.text(Text::Small))
+                    .child(
+                        div()
+                            .text_color(theme.muted_foreground)
+                            .child(t!("settings-sleep")),
+                    )
+                    .child(sleep_label(current)),
+            )
+            .child(
+                Scrubber::new(&self.sleep, sleep_slot(current) as f32 / SLEEP_LAST as f32)
+                    .colors(
+                        theme.progress_bar,
+                        theme.muted_foreground.opacity(0.3),
+                        theme.foreground,
+                    )
+                    .on_move(cx.listener(|this, fraction: &f32, _, cx| {
+                        this.pending_sleep = Some(sleep_at_fraction(*fraction));
+                        cx.notify();
+                    }))
+                    .on_release(cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                        let Some(sleep) = this.pending_sleep.take() else {
+                            return;
+                        };
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(sleep, cx));
+                    })),
+            );
+
+        MenuItem::new("sleep-dial", "").content(dial)
     }
 
     fn updates_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1389,6 +1511,111 @@ impl SettingsView {
             muted,
             small,
             actions.into_any_element(),
+        )
+    }
+
+    fn discord_rows(&self, cx: &mut Context<Self>) -> Vec<Row> {
+        let mut rows = vec![
+            self.title("settings-group-discord", cx),
+            Row::Item(self.discord_row(cx).into_any_element()),
+        ];
+        if self.settings.read(cx).discord_presence() {
+            rows.push(Row::Item(self.discord_name_row(cx).into_any_element()));
+            rows.push(Row::Item(self.discord_badge_row(cx).into_any_element()));
+            rows.push(Row::Item(self.discord_anonymous_row(cx).into_any_element()));
+        }
+        rows
+    }
+
+    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_presence();
+
+        self.row(
+            t!("settings-discord"),
+            t!("settings-discord-detail"),
+            muted,
+            small,
+            Switch::new("discord", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_presence(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_name_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let chosen = self.settings.read(cx).discord_name();
+
+        let picker = Picker::new(
+            DISCORD_NAME,
+            &self.popovers,
+            i18n::lookup(chosen.key(), None),
+        )
+        .width(Picker::NARROW)
+        .items(DiscordName::ALL.map(|name| {
+            MenuItem::new(name.id(), i18n::lookup(name.key(), None))
+                .selected(name == chosen)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_name(name, cx));
+                    cx.notify();
+                }))
+        }));
+
+        self.row(
+            t!("settings-discord-name"),
+            t!("settings-discord-name-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    fn discord_badge_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_badge();
+
+        self.row(
+            t!("settings-discord-badge"),
+            t!("settings-discord-badge-detail"),
+            muted,
+            small,
+            Switch::new("discord-badge", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_badge(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_anonymous_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).discord_without_details();
+
+        self.row(
+            t!("settings-discord-anonymous"),
+            t!("settings-discord-anonymous-detail"),
+            muted,
+            small,
+            Switch::new("discord-anonymous", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_discord_without_details(!on, cx)
+                    });
+                }))
+                .into_any_element(),
         )
     }
 
@@ -1614,10 +1841,7 @@ impl SettingsView {
         let signed_out = matches!(session.state(), SessionState::SignedOut);
         let guest = !session.authenticated();
         let waiting = match session.state() {
-            SessionState::Authorizing(prompt) => !matches!(
-                prompt,
-                Some(SignInPrompt::Secret | SignInPrompt::Accounts(_))
-            ),
+            SessionState::Authorizing(prompt) => !matches!(prompt, Some(SignInPrompt::Accounts(_))),
             _ => false,
         };
         let accounts: Vec<Account> = session
@@ -1783,20 +2007,9 @@ impl SettingsView {
     }
 
     fn abandon(&mut self, cx: &mut Context<Self>) {
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
         self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
-    }
-
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        let text = self.secret.read(cx).text().to_string();
-        if text.trim().is_empty() {
-            return;
-        }
-        self.secret.update(cx, |input, cx| input.set_text("", cx));
-        self.session
-            .update(cx, |session, cx| session.submit_input(text, cx));
     }
 
     fn open_credentials(&mut self, slug: &'static str, cx: &mut Context<Self>) {
@@ -1838,12 +2051,6 @@ impl SettingsView {
                 cx,
             )
         });
-    }
-
-    fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        CookiePrompt::new(self.secret.clone())
-            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
-            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
     }
 
     fn credentials_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1896,7 +2103,7 @@ impl SettingsView {
             SignIn::Anonymous => (format!("connect-{slug}-guest"), t!("login-guest-use")),
             SignIn::Secret => (
                 format!("connect-{slug}-cookies"),
-                t!("login-connect-cookies"),
+                t!("login-sign-in", provider = provider),
             ),
             SignIn::Path(_) => (
                 format!("connect-{slug}-path"),
@@ -2190,10 +2397,6 @@ impl Render for SettingsView {
             }
             _ => None,
         };
-        let secret = matches!(
-            self.session.read(cx).state(),
-            SessionState::Authorizing(Some(SignInPrompt::Secret))
-        );
 
         div()
             .relative()
@@ -2224,9 +2427,6 @@ impl Render for SettingsView {
             .when_some(accounts, |this, accounts| {
                 this.child(self.account_modal(accounts, cx).into_any_element())
             })
-            .when(secret, |this| {
-                this.child(self.secret_prompt(cx).into_any_element())
-            })
             .when(self.credentials_for.is_some(), |this| {
                 this.child(self.credentials_prompt(cx).into_any_element())
             })
@@ -2234,7 +2434,6 @@ impl Render for SettingsView {
 }
 
 fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedString> {
-    let missing = resolved(&text_system, "sonora-has-no-such-family");
     let mut names = text_system.all_font_names();
     names.sort_unstable();
     names.dedup();
@@ -2242,11 +2441,59 @@ fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedStri
     names
         .into_iter()
         .filter(|name| !name.starts_with('.'))
-        .filter(|name| resolved(&text_system, name) != missing)
         .map(SharedString::from)
         .collect()
 }
 
-fn resolved(text_system: &gpui::TextSystem, family: &str) -> gpui::FontId {
-    text_system.resolve_font(&font(SharedString::from(family.to_owned())))
+fn sleep_slot(sleep: Option<Sleep>) -> usize {
+    match sleep {
+        None => 0,
+        Some(Sleep::EndOfTrack) => SLEEP_LAST,
+        Some(Sleep::After(after)) => minute_slot(after.as_secs() / 60),
+    }
+}
+
+fn sleep_at_fraction(fraction: f32) -> Option<Sleep> {
+    let slot = (fraction.clamp(0., 1.) * SLEEP_LAST as f32).round() as usize;
+    match slot {
+        0 => None,
+        SLEEP_LAST => Some(Sleep::EndOfTrack),
+        slot => Some(Sleep::After(Duration::from_secs(slot_minute(slot) * 60))),
+    }
+}
+
+fn minute_slot(minutes: u64) -> usize {
+    let minutes = minutes.clamp(1, SLEEP_MAX_MINUTES);
+    let earlier_magnets = SLEEP_MAGNETS
+        .iter()
+        .filter(|magnet| **magnet < minutes)
+        .count();
+    let width = match SLEEP_MAGNETS.contains(&minutes) {
+        true => SLEEP_MAGNET_WEIGHT,
+        false => 1,
+    };
+    minutes as usize + earlier_magnets * (SLEEP_MAGNET_WEIGHT - 1) + (width - 1) / 2
+}
+
+fn slot_minute(slot: usize) -> u64 {
+    let mut first = 1;
+    for minute in 1..=SLEEP_MAX_MINUTES {
+        let width = match SLEEP_MAGNETS.contains(&minute) {
+            true => SLEEP_MAGNET_WEIGHT,
+            false => 1,
+        };
+        if slot < first + width {
+            return minute;
+        }
+        first += width;
+    }
+    SLEEP_MAX_MINUTES
+}
+
+fn sleep_label(sleep: Option<Sleep>) -> SharedString {
+    match sleep {
+        Some(Sleep::EndOfTrack) => t!("settings-sleep-end-of-track"),
+        Some(Sleep::After(after)) => t!("settings-sleep-minutes", count = after.as_secs() / 60),
+        None => t!("settings-sleep-off"),
+    }
 }

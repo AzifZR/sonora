@@ -1,375 +1,438 @@
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient, activity};
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
+use i18n::t;
+use music::Track;
+use tokio::sync::watch;
 
-use crate::{AppSettings, Playback, PlaybackState, Sonora};
+use crate::{AppSettings, Cover, DiscordName, Io, Playback, Session};
 
-// Sonora Discord Application ID
-const DISCORD_APP_ID: &str = "1547582803313561642";
-
-/// Back off this long between Discord connects while it is unreachable.
-const RECONNECT_COOLDOWN: Duration = Duration::from_secs(5);
-/// Re-apply the current activity this often so a dropped frame never sticks.
-const REFRESH_EVERY: Duration = Duration::from_secs(30);
-/// Resend while playing when the position jumped this far past what Discord
-/// was told: a seek changes neither track nor state, so without this the
-/// progress bar would drift until the next refresh.
-const SEEK_RESEND_SECS: u64 = 5;
-/// A pause that lasts this long turns into browsing: the player has no stop,
-/// so a paused track would otherwise sit on Discord forever.
-const PAUSE_BROWSING_AFTER: Duration = Duration::from_secs(5 * 60);
-
-#[derive(Clone)]
-enum Command {
-    Update {
-        title: String,
-        artist: String,
-        album: String,
-        pos_secs: u64,
-        dur_secs: u64,
-        playing: bool,
-        loading: bool,
-    },
-    Browsing,
-    Clear,
-}
-
-/// What Discord currently shows. Position is deliberately excluded: the progress
-/// bar moves on its own from the timestamps, so only content, duration, or
-/// state changes need a new frame. Seeks are caught separately by comparing
-/// the live position against the last sent one.
-#[derive(PartialEq, Eq)]
-struct Shown {
-    id: Option<String>,
-    name: String,
-    artists: String,
-    album: String,
-    dur_secs: u64,
-    class: u8,
-}
+const APPLICATION_ID: &str = "1547350467904806923";
+const RETRY_DELAY: Duration = Duration::from_secs(3);
+const SWITCH_DEBOUNCE: Duration = Duration::from_secs(1);
+const MAX_START_DRIFT_SECONDS: u64 = 2;
+const MAX_TEXT_UTF16_UNITS: usize = 128;
+/// What the status says when it names the music rather than a service.
+const MUSIC: &str = "Music";
 
 struct Attached {
-    _discord: Entity<DiscordRpc>,
+    _discord: Entity<Discord>,
 }
 
 impl Global for Attached {}
 
-pub fn attach(cx: &mut App) {
-    if cx.has_global::<Attached>() {
-        return;
-    }
-    let playback = Sonora::global(cx).playback.clone();
-    let settings = Sonora::global(cx).settings.clone();
-    let discord = cx.new(|cx| DiscordRpc::new(playback, settings, cx));
+pub(crate) fn attach(
+    playback: Entity<Playback>,
+    settings: Entity<AppSettings>,
+    session: Entity<Session>,
+    cover: Entity<Cover>,
+    io: Io,
+    cx: &mut App,
+) {
+    let discord = cx.new(|cx| Discord::new(playback, settings, session, cover, io, cx));
     cx.set_global(Attached { _discord: discord });
 }
 
-pub struct DiscordRpc {
-    playback: Entity<Playback>,
-    settings: Entity<AppSettings>,
-    sender: Sender<Command>,
-    shown: Option<Shown>,
-    sent_pos: u64,
-    pause_timeout: Option<Task<()>>,
+#[derive(Clone, Debug, Default, PartialEq)]
+enum Shown {
+    #[default]
+    Off,
+    On(Presence),
 }
 
-impl DiscordRpc {
+#[derive(Clone, Debug, PartialEq)]
+struct Presence {
+    source: Option<Source>,
+    details: String,
+    state: Option<String>,
+    image: Option<String>,
+    image_text: Option<String>,
+    started_at: Option<i64>,
+    ends_at: Option<i64>,
+}
+
+/// The provider a track came from, as the presence shows it. `badge` is the provider slug, which
+/// doubles as the key of the image uploaded to the Discord application, and is left out when the
+/// badge is turned off. `listening` is what the status calls itself and follows the setting;
+/// `name` is the badge tooltip and is always the provider's own name.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Source {
+    badge: Option<&'static str>,
+    listening: Option<&'static str>,
+    name: &'static str,
+}
+
+#[derive(Default)]
+struct Timing {
+    listening_since: Option<i64>,
+    track: Option<String>,
+    track_started_at: Option<i64>,
+}
+
+impl Timing {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn listening_since(&mut self) -> i64 {
+        *self.listening_since.get_or_insert_with(unix_time)
+    }
+
+    fn track_started_at(&mut self, track: &Track, position: Duration) -> i64 {
+        let measured = unix_time().saturating_sub(position.as_secs() as i64);
+        let moved = self
+            .track_started_at
+            .is_none_or(|started_at| started_at.abs_diff(measured) > MAX_START_DRIFT_SECONDS);
+        if moved || self.track.as_deref() != track.id.as_deref() {
+            self.track = track.id.clone();
+            self.track_started_at = Some(measured);
+        }
+        self.track_started_at.unwrap_or(measured)
+    }
+}
+
+/// Watches playback and settings, and hands each new presence to the worker.
+struct Discord {
+    playback: Entity<Playback>,
+    settings: Entity<AppSettings>,
+    session: Entity<Session>,
+    cover: Entity<Cover>,
+    sender: watch::Sender<Shown>,
+    timing: Timing,
+    _worker: Task<()>,
+}
+
+impl Discord {
     fn new(
         playback: Entity<Playback>,
         settings: Entity<AppSettings>,
+        session: Entity<Session>,
+        cover: Entity<Cover>,
+        io: Io,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (sender, receiver) = mpsc::channel();
-
-        std::thread::Builder::new()
-            .name("discord-rpc".into())
-            .spawn(move || rpc_worker(receiver))
-            .ok();
+        let (sender, receiver) = watch::channel(Shown::Off);
+        let worker = io.spawn(run(receiver));
+        let _worker = cx.spawn(async move |_, _| {
+            if let Err(error) = worker.await {
+                log::warn!("discord: the presence worker stopped: {error}");
+            }
+        });
 
         cx.observe(&playback, |this, _, cx| this.publish(cx))
             .detach();
         cx.observe(&settings, |this, _, cx| this.publish(cx))
             .detach();
+        cx.observe(&cover, |this, _, cx| this.publish(cx)).detach();
 
         Self {
             playback,
             settings,
+            session,
+            cover,
             sender,
-            shown: None,
-            sent_pos: 0,
-            pause_timeout: None,
+            timing: Timing::default(),
+            _worker,
         }
     }
 
     fn publish(&mut self, cx: &mut Context<Self>) {
-        let playback = self.playback.read(cx);
-        let enabled = self.settings.read(cx).discord_rpc();
-        let class = match playback.state() {
-            PlaybackState::Playing => 0,
-            PlaybackState::Paused => 1,
-            PlaybackState::Loading => 2,
-            PlaybackState::Idle => 3,
-            PlaybackState::Failed(_) => 4,
-        };
-        // A disabled integration clears the presence like a failure does.
-        let class = match enabled {
-            true => class,
-            false => 4,
-        };
-
-        // Gone always clears, even when a track is still retained.
-        if class == 4 {
-            let key = Shown {
-                id: None,
-                name: String::new(),
-                artists: String::new(),
-                album: String::new(),
-                dur_secs: 0,
-                class,
-            };
-            if self.shown.as_ref() == Some(&key) {
-                return;
+        let shown = self.shown(cx);
+        self.sender.send_if_modified(|current| {
+            let changed = *current != shown;
+            if changed {
+                *current = shown;
             }
-            self.shown = Some(key);
-            self.sent_pos = 0;
-            let _ = self.sender.send(Command::Clear);
-            return;
-        }
-        // Idle shows a browsing activity instead of disappearing.
-        if class == 3 {
-            let key = Shown {
-                id: None,
-                name: String::new(),
-                artists: String::new(),
-                album: String::new(),
-                dur_secs: 0,
-                class,
-            };
-            if self.shown.as_ref() == Some(&key) {
-                return;
-            }
-            self.shown = Some(key);
-            self.sent_pos = 0;
-            let _ = self.sender.send(Command::Browsing);
-            return;
-        }
-        let Some(track) = playback.track() else {
-            return;
-        };
-
-        // Covers and reuploads (plain YouTube videos outside the Music catalog)
-        // often carry no artist or album metadata. Fall back to the video
-        // title and then the album so Discord never shows a blank line.
-        let artist = match track.artists.trim().is_empty() {
-            false => track.artists.clone(),
-            true => split_artist(&track.name)
-                .or_else(|| (!track.album.trim().is_empty()).then(|| track.album.clone()))
-                .unwrap_or_else(|| String::from("Unknown Artist")),
-        };
-
-        let live_pos = playback.live_position().as_secs();
-        let key = Shown {
-            id: track.id.clone(),
-            name: track.name.clone(),
-            artists: track.artists.clone(),
-            album: track.album.clone(),
-            dur_secs: track.duration.as_secs(),
-            class,
-        };
-        // A seek jumps the position without changing track or state; resend so
-        // Discord follows it instead of drifting until the next refresh.
-        let seeked = class == 0 && live_pos.abs_diff(self.sent_pos) >= SEEK_RESEND_SECS;
-        if self.shown.as_ref() == Some(&key) && !seeked {
-            return;
-        }
-        self.shown = Some(key);
-        self.sent_pos = live_pos;
-        // A fresh pause arms the browsing timeout; anything else cancels it.
-        // Replacing the task restarts the delay.
-        self.pause_timeout = match class == 1 {
-            true => Some(cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(PAUSE_BROWSING_AFTER).await;
-                this.update(cx, |this, cx| this.rest(cx)).ok();
-            })),
-            false => None,
-        };
-
-        let _ = self.sender.send(Command::Update {
-            title: track.name.clone(),
-            artist,
-            album: track.album.clone(),
-            pos_secs: live_pos,
-            dur_secs: track.duration.as_secs(),
-            playing: class == 0,
-            loading: class == 2,
+            changed
         });
     }
 
-    /// Turns a long pause into browsing, unless playback moved on meanwhile.
-    fn rest(&mut self, cx: &mut Context<Self>) {
-        self.pause_timeout = None;
-        let paused = matches!(self.playback.read(cx).state(), PlaybackState::Paused)
-            && self.shown.as_ref().is_some_and(|shown| shown.class == 1);
-        if !paused {
-            return;
+    fn shown(&mut self, cx: &App) -> Shown {
+        let playback = self.playback.read(cx);
+        let Some(track) = playback.track() else {
+            self.timing.reset();
+            return Shown::Off;
+        };
+        // a paused status stays up, but without the timestamps, so nothing keeps counting
+        let playing = playback.wants_playing();
+
+        let since = self.timing.listening_since();
+        let settings = self.settings.read(cx);
+        if !settings.discord_presence() {
+            return Shown::Off;
         }
-        self.shown = Some(Shown {
-            id: None,
-            name: String::new(),
-            artists: String::new(),
-            album: String::new(),
-            dur_secs: 0,
-            class: 3,
+
+        let session = self.session.read(cx);
+        let provider = track.id.as_deref().and_then(|id| session.provider_for(id));
+        let named = provider.map(|provider| Source {
+            badge: settings.discord_badge().then(|| provider.slug()),
+            listening: match settings.discord_name() {
+                DiscordName::Sonora => None,
+                DiscordName::Provider => Some(provider.listening_to()),
+                DiscordName::Music => Some(MUSIC),
+            },
+            name: provider.name(),
         });
-        self.sent_pos = 0;
-        let _ = self.sender.send(Command::Browsing);
+        if settings.discord_without_details() {
+            return Shown::On(Presence {
+                source: named,
+                details: anonymous_details(),
+                state: None,
+                image: None,
+                image_text: None,
+                started_at: playing.then_some(since),
+                ends_at: None,
+            });
+        }
+
+        let started_at = playing.then(|| {
+            self.timing
+                .track_started_at(track, playback.live_position())
+        });
+        let duration = track.duration.as_secs() as i64;
+        let public_art = provider.is_some_and(|provider| provider.public_art());
+        Shown::On(Presence {
+            source: named,
+            details: fit_text(&track.name).unwrap_or_else(anonymous_details),
+            state: fit_text(&track.artists),
+            image: self.artwork(track, public_art, cx),
+            image_text: fit_text(&track.album),
+            started_at,
+            ends_at: started_at
+                .filter(|_| duration > 0)
+                .map(|started_at| started_at.saturating_add(duration)),
+        })
+    }
+
+    /// Cover art for the track, but only from a provider whose art is public. Discord fetches
+    /// the image through its own proxy, so a path on disk is unreachable and a self-hosted url
+    /// would hand over the credentials that fetch it.
+    fn artwork(&self, track: &Track, public_art: bool, cx: &App) -> Option<String> {
+        if !public_art {
+            return None;
+        }
+        let album = track.album_id.as_deref()?;
+        self.cover
+            .read(cx)
+            .large_for(album)
+            .map(str::to_owned)
+            .or_else(|| track.cover.clone())
+            .filter(|cover| cover.starts_with("https://"))
     }
 }
 
-fn rpc_worker(receiver: Receiver<Command>) {
-    let mut client = DiscordIpcClient::new(DISCORD_APP_ID);
-    let mut connected = false;
-    let mut last_attempt = Instant::now() - REFRESH_EVERY;
-    let mut pending: Option<Command> = None;
-    let mut applied: Option<(Command, Instant)> = None;
+/// Why a presence did not land. A refused payload is permanent; an unreachable socket is
+/// worth trying again.
+enum Failure {
+    Unreachable(String),
+    Refused(String),
+}
 
-    loop {
-        if pending.is_none() {
-            match receiver.recv_timeout(REFRESH_EVERY) {
-                Ok(cmd) => pending = Some(cmd),
-                Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => {
-                    // Periodic refresh: re-apply the current activity so a
-                    // frame Discord dropped never sticks around. Fold the time
-                    // since the frame was built back into the position, so the
-                    // progress bar continues instead of jumping backwards.
-                    if connected {
-                        if let Some((
-                            Command::Update {
-                                playing: true,
-                                pos_secs,
-                                dur_secs,
-                                ..
-                            },
-                            stamped,
-                        )) = &mut applied
-                        {
-                            *pos_secs = (*pos_secs + stamped.elapsed().as_secs()).min(*dur_secs);
-                            *stamped = Instant::now();
-                            pending = applied.clone().map(|(cmd, _)| cmd);
-                        } else if let Some((cmd, _)) = &applied {
-                            pending = Some(cmd.clone());
+async fn run(mut receiver: watch::Receiver<Shown>) {
+    let mut client = DiscordIpcClient::new(APPLICATION_ID);
+    let mut shown = Shown::Off;
+    let mut reported: Option<String> = None;
+
+    while let Some(wanted) = next_presence(&mut receiver, &shown).await {
+        // the socket blocks on both halves of a round trip, so it gets a thread of its own
+        let attempted = tokio::task::spawn_blocking(move || {
+            let result = send(&mut client, &wanted);
+            (client, wanted, result)
+        })
+        .await;
+
+        let Ok((used, wanted, result)) = attempted else {
+            log::warn!("discord: the presence thread went away");
+            return;
+        };
+        client = used;
+
+        match result {
+            Ok(()) => {
+                shown = wanted;
+                reported = None;
+            }
+            // Offering the same refused payload again would only reconnect forever, so it
+            // counts as shown and waits for the next change.
+            Err(Failure::Refused(message)) => {
+                complain(&mut reported, message);
+                shown = wanted;
+            }
+            Err(Failure::Unreachable(message)) => {
+                complain(&mut reported, message);
+                tokio::select! {
+                    changed = receiver.changed() => {
+                        if changed.is_err() {
+                            return;
                         }
                     }
+                    () = tokio::time::sleep(RETRY_DELAY) => {}
                 }
             }
         }
-        while let Ok(newer) = receiver.try_recv() {
-            pending = Some(newer);
+    }
+}
+
+/// Returns the next useful presence. Replacements are debounced until the listener settles on a
+/// track, while turning presence off remains immediate.
+async fn next_presence(receiver: &mut watch::Receiver<Shown>, shown: &Shown) -> Option<Shown> {
+    loop {
+        let wanted = receiver.borrow_and_update().clone();
+        if &wanted == shown {
+            receiver.changed().await.ok()?;
+            continue;
+        }
+        if !matches!((shown, &wanted), (Shown::On(_), Shown::On(_))) {
+            return Some(wanted);
         }
 
-        if !connected {
-            if last_attempt.elapsed() < RECONNECT_COOLDOWN {
-                // Keep pending for the next attempt; sleep so a queued retry
-                // does not spin while the cooldown runs out.
-                std::thread::sleep(Duration::from_millis(250));
-                continue;
-            }
-            last_attempt = Instant::now();
-            if client.connect().is_ok() {
-                connected = true;
-                log::info!("discord-rpc: connected to Discord");
-            } else {
-                continue;
-            }
-        }
+        tokio::select! {
+            biased;
 
-        if let Some(cmd) = pending.take() {
-            if apply(&mut client, &cmd) {
-                applied = Some((cmd, Instant::now()));
-            } else {
-                log::debug!("discord-rpc: lost Discord connection, will retry");
-                let _ = client.close();
-                connected = false;
-                pending = Some(cmd);
+            changed = receiver.changed() => {
+                changed.ok()?;
+            }
+            () = tokio::time::sleep(SWITCH_DEBOUNCE) => {
+                return Some(wanted);
             }
         }
     }
-
-    let _ = client.close();
 }
 
-/// Splits an "Artist - Title" video name (dashes with spaces, including en/em
-/// dashes) into its artist. Only exact single-separator names qualify: with
-/// zero separators there is nothing to split, and with more the order is
-/// ambiguous (titles like "Song - Artist - Vocal Cover" read backwards).
-fn split_artist(name: &str) -> Option<String> {
-    let normalized = name.replace(['–', '—'], "-");
-    let mut parts = normalized.split(" - ");
-    let artist = parts.next()?.trim();
-    let title = parts.next()?.trim();
-    if parts.next().is_some() || artist.is_empty() || title.is_empty() {
+/// Says what went wrong once, however long it goes on going wrong.
+fn complain(reported: &mut Option<String>, failure: String) {
+    if reported.as_ref() == Some(&failure) {
+        return;
+    }
+
+    log::warn!("discord: cannot show the presence: {failure}");
+    *reported = Some(failure);
+}
+
+/// Offers one presence to Discord, reconnecting once for a socket that has gone stale. The
+/// client connects lazily, so the first offer of a session always takes this second path.
+fn send(client: &mut DiscordIpcClient, shown: &Shown) -> Result<(), Failure> {
+    match offer(client, shown) {
+        Err(Failure::Unreachable(_)) => {
+            client
+                .connect()
+                .map_err(|error| Failure::Unreachable(error.to_string()))?;
+            offer(client, shown)
+        }
+        result => result,
+    }
+}
+
+fn offer(client: &mut DiscordIpcClient, shown: &Shown) -> Result<(), Failure> {
+    match activity(shown) {
+        Some(activity) => client.set_activity(activity),
+        None => client.clear_activity(),
+    }
+    .map_err(|error| Failure::Unreachable(error.to_string()))?;
+
+    let (_, answer) = client
+        .recv()
+        .map_err(|error| Failure::Unreachable(error.to_string()))?;
+    if answer.get("evt").and_then(|event| event.as_str()) != Some("ERROR") {
+        return Ok(());
+    }
+
+    let message = answer
+        .pointer("/data/message")
+        .and_then(|message| message.as_str())
+        .unwrap_or("discord turned the activity down");
+    Err(Failure::Refused(message.to_owned()))
+}
+
+/// The activity to send, or nothing when the presence is to be cleared.
+fn activity(shown: &Shown) -> Option<activity::Activity<'_>> {
+    let Shown::On(presence) = shown else {
+        return None;
+    };
+
+    let mut activity = activity::Activity::new()
+        .activity_type(activity::ActivityType::Listening)
+        .details(presence.details.as_str());
+    if let Some(listening) = presence.source.and_then(|source| source.listening) {
+        activity = activity.name(listening);
+    }
+    if let Some(state) = presence.state.as_deref() {
+        activity = activity.state(state);
+    }
+    if let Some(assets) = assets(presence) {
+        activity = activity.assets(assets);
+    }
+
+    let Some(started_at) = presence.started_at else {
+        return Some(activity);
+    };
+
+    let mut timestamps = activity::Timestamps::new().start(started_at);
+    if let Some(ends_at) = presence.ends_at {
+        timestamps = timestamps.end(ends_at);
+    }
+    Some(activity.timestamps(timestamps))
+}
+
+/// The artwork half of an activity, when there is any.
+fn assets(presence: &Presence) -> Option<activity::Assets<'_>> {
+    let image = presence.image.as_deref();
+    let text = presence.image_text.as_deref();
+    let badge = presence
+        .source
+        .and_then(|source| source.badge.map(|key| (key, source.name)));
+    if image.is_none() && text.is_none() && badge.is_none() {
         return None;
     }
-    Some(artist.to_owned())
+
+    let mut assets = activity::Assets::new();
+    if let Some(image) = image {
+        assets = assets.large_image(image);
+    }
+    if let Some(text) = text {
+        assets = assets.large_text(text);
+    }
+    if let Some((key, name)) = badge {
+        assets = assets.small_image(key).small_text(name);
+    }
+    Some(assets)
 }
 
-fn apply(client: &mut DiscordIpcClient, cmd: &Command) -> bool {
-    let result = match cmd {
-        Command::Update {
-            title,
-            artist,
-            album,
-            pos_secs,
-            dur_secs,
-            playing,
-            loading,
-        } => {
-            let mut assets = activity::Assets::new()
-                .large_image("sonora")
-                .large_text(album.as_str());
-            if *playing {
-                assets = assets.small_image("play").small_text("Playing");
-            } else if *loading {
-                assets = assets.small_image("pause").small_text("Loading");
-            } else {
-                assets = assets.small_image("pause").small_text("Paused");
-            }
+/// What the status says when the track is deliberately left out of it.
+fn anonymous_details() -> String {
+    let text = t!("discord-listening").to_string();
+    fit_text(&text).unwrap_or(text)
+}
 
-            let mut act = activity::Activity::new()
-                .details(title.as_str())
-                .state(artist.as_str())
-                .assets(assets)
-                .activity_type(activity::ActivityType::Listening);
+/// Cuts a value to what Discord accepts in a text field, or drops it if nothing is left.
+/// A lone character is padded with a non-breaking space, which Discord counts as the second
+/// unit it insists on and draws as nothing.
+fn fit_text(value: &str) -> Option<String> {
+    let mut units = 0;
+    let mut fitted = String::new();
+    for character in value.trim().chars() {
+        units += character.len_utf16();
+        if units > MAX_TEXT_UTF16_UNITS {
+            break;
+        }
+        fitted.push(character);
+    }
 
-            if *playing && *dur_secs > 0 {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-                let start = now - *pos_secs as i64;
-                act = act.timestamps(
-                    activity::Timestamps::new()
-                        .start(start)
-                        .end(start + *dur_secs as i64),
-                );
-            }
-            client.set_activity(act)
+    let mut fitted = fitted.trim_end().to_owned();
+    match fitted.chars().count() {
+        0 => None,
+        1 => {
+            fitted.push('\u{a0}');
+            Some(fitted)
         }
-        Command::Browsing => {
-            let assets = activity::Assets::new()
-                .large_image("sonora")
-                .large_text("Sonora");
-            client.set_activity(
-                activity::Activity::new()
-                    .details("Browsing Sonora")
-                    .assets(assets)
-                    .activity_type(activity::ActivityType::Listening),
-            )
-        }
-        Command::Clear => client.clear_activity(),
-    };
-    result.is_ok()
+        _ => Some(fitted),
+    }
+}
+
+fn unix_time() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }

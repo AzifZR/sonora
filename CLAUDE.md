@@ -34,6 +34,7 @@ crates/
   i18n/       Fluent localization: the `t!` macro, locale selection, embedded .ftl
   icons/      the icon packs: registry, active pack, path resolution, AssetSource
   embed/      build-script helper that walks a folder and writes include_bytes! literals
+  webview/    a native browser window with a throwaway session, for cookie sign-ins
 ```
 
 Dependency direction is strict; do not create a back edge:
@@ -41,6 +42,7 @@ Dependency direction is strict; do not create a back edge:
 ```
 sonora → views → state → music
          state, music → storage
+         state → webview
          all ui-side crates → ui, router, input → ui → gpui
          every ui-side crate → i18n, icons → gpui
 ```
@@ -62,6 +64,23 @@ sonora → views → state → music
   `ui`, so `ui` and `views` can both reach it.
 - `embed` is a build-support crate. Nothing links it at runtime; it is a `[build-dependencies]`
   entry of `icons` and `sonora` only.
+- `webview` is a leaf that knows nothing about gpui or music: `Login::open(Target)` puts up a
+  platform window over a throwaway session and `poll()` answers `Pending`, `Closed` or
+  `Cookies(header)`. The user is through as soon as the proof cookies are on the provider's
+  domain; a page of that domain without them means the account provider skipped the hand-off hop
+  behind an interstitial of its own, and `poll` loads the sign-in url once more, which is what the
+  page's own Sign in button would do. Every backend fits the same six calls. `macos.rs` is AppKit and WebKit
+  through `objc2`, `windows.rs` a Win32 host around an InPrivate WebView2, `linux.rs` a GTK window
+  around WebKitGTK, and `unsupported.rs` is what any other platform gets. `native.rs` holds what
+  the three share — the window's size, the source-url-to-host parsing, and the `Fetch`/`Reading`
+  cookie round trip every backend drives the same way — so a new backend writes only the calls
+  that are actually its own. Nothing links webkit2gtk: `linux.rs` reaches it through `dlopen`, one
+  handle whose dependencies also answer for gtk, glib and soup, so a system without it just
+  answers `supported() == false` and the Flatpak runtime, which ships no webkitgtk, keeps
+  building as it is. Each toolkit pins its window
+  to one thread: AppKit and WebView2 to GPUI's main thread, which is why `state::Session` opens
+  and polls from the foreground executor, and GTK to a resident thread of the backend's own, since
+  GPUI talks to X11 or Wayland itself and never initialises GTK.
 
 ## Building
 
@@ -70,6 +89,10 @@ sonora → views → state → music
 The GPUI renderer is Vulkan-based, so a Vulkan ICD is a **runtime** requirement, not just a build
 one. Link-time deps: `vulkan-loader`, `wayland`, `libxkbcommon`, `libxcb`, `libx11`, `libxcursor`,
 `libxi`, `fontconfig`, `freetype`, `alsa-lib`, `dbus`, `sqlite`, plus `pkg-config`.
+
+webkit2gtk is deliberately **not** on that list: `crates/webview` reaches
+`libwebkit2gtk-4.1.so.0` (or the older `4.0.so.37`) through `dlopen` when a provider signs in with
+cookies, so a Linux system without it loses that one window and nothing else.
 
 `.cargo/config.toml` passes `-fuse-ld=mold` for `x86_64-unknown-linux-gnu`, so **mold must be on
 PATH** for that target. If it isn't, either install mold or build with
@@ -217,10 +240,10 @@ construction, layout and scene assembly, never GPU fill.
 | Console logging   | `RUST_LOG`; default filter `warn,symphonia=error,lofty=error`                                                                     |
 | File logging      | `SONORA_LOG`; default adds `sonora=debug,ui=debug`                                                                                |
 
-Startup runs one migration pass before constructing app state. It moves volatile values out of a
-pre-v2 `settings.json`, imports `history.sqlite3`, `flags.sqlite3` and
-`local-playlists.sqlite3` into `state.sqlite`, and moves `local-music.json`'s folder into
-`settings.json`. `music::credentials::migrate` runs in the same pass: it rewrites the Spotify
+Startup runs one migration pass before constructing app state. It imports `history.sqlite3`,
+`flags.sqlite3` and `local-playlists.sqlite3` into `state.sqlite`. `settings.json` is read as
+version 2 only; an older file keeps its preferences, and its runtime values fall back to the
+defaults. `music::credentials::migrate` runs in the same pass: it rewrites the Spotify
 `credentials.json` from the cache root into `spotify/` and folds the YouTube `cookies.txt`,
 `authuser.txt` and `guest` files into `youtube/credentials.json`, each owner-only, so the providers
 only ever read the new paths. A legacy file is removed only after its replacement has been written
@@ -706,6 +729,16 @@ in `chrome::tools` (`columns`, `filters`, `sorts`, `views`) rather than writing 
 screen owns one `ui::Popovers` so only one of its popovers is open at a time, and holds its own
 `tools::Sliders` cache so scrubber positions survive across frames (`LibraryView` keeps one per
 section, so tab switches cannot bleed).
+
+**A cookie sign-in is the app's own browser window, nothing else.** `MusicProvider::web_sign_in`
+describes it: the url to load, the host that means the user is through, the cookie domain to
+collect and the proof cookie names. When `SignInPrompt::Secret` arrives, `Session::open_window`
+puts up a `webview::Login` and polls it; the header it produces goes through `submit_input`, and
+closing the window cancels the sign-in. There is no paste fallback and no modal: `Session::offered`
+drops `SignIn::Secret` from a provider's options unless `webview::supported()` and the provider
+describes a window, so a platform without a backend simply does not list it. A shared browser
+profile rotates Google's session cookies from any open tab and kills a copied header within
+hours; the throwaway session has no tab left to do that.
 
 **Filtering.** Implement `chrome::Searchable` on the view; `Toolbar::bind` binds it to the search
 field in the title bar. Don't build a second search box.

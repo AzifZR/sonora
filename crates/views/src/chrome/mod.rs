@@ -19,14 +19,32 @@ pub(crate) use update_notice::UpdateNotice;
 
 use gpui::prelude::*;
 use gpui::{App, Div, Entity, Global, Pixels, Window, div};
-use ui::{ActiveTheme as _, MIN_CONTENT, Room, eyebrow, snapped};
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use state::AppSettings;
+use ui::{ActiveTheme as _, MIN_CONTENT, Room, eyebrow};
 
-pub(crate) fn section_label(key: &'static str, window: &Window, cx: &App) -> Div {
+/// The window's own corner radius, or `None` when it shouldn't visibly round: server-side
+/// decorations put the compositor in charge of the frame, and `Rounding::Square` is the
+/// explicit off state. Windows applies its rounding through DWM instead (see
+/// `state::apply_window_rounding`), so this only matters for Linux/FreeBSD chrome that
+/// rounds its own corners to match — GPUI has no way to clip a subtree to a rounded parent.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+pub(crate) fn window_radius(settings: &AppSettings) -> Option<Pixels> {
+    if settings.server_side_decorations() {
+        return None;
+    }
+    match settings.window_rounding() {
+        ui::Rounding::Square => None,
+        rounding => Some(rounding.radius()),
+    }
+}
+
+pub(crate) fn section_label(key: &'static str, cx: &App) -> Div {
     div()
         .flex()
         .flex_none()
         .items_end()
-        .h(snapped(cx.theme().metrics.list_row, window))
+        .h(cx.theme().metrics.list_row)
         .px_2()
         .pb_1()
         .child(eyebrow(i18n::lookup(key, None), cx))

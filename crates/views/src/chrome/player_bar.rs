@@ -10,10 +10,10 @@ use gpui::{
 use gpui::{Window, div, px};
 use i18n::t;
 use input::{ToggleFullscreen, ToggleLyrics, ToggleQueue};
-use state::{AppSettings, Playback, Queue, SideTab, Sleep, Sonora};
+use state::{AppSettings, Playback, Queue, SideTab, Sonora};
 use ui::{
-    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, MenuItem, Picker, Popovers, Popup,
-    Room, Scrollbar, Scrubber, ScrubberState, clock,
+    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popup, Room, Scrollbar, Scrubber,
+    ScrubberState, clock,
 };
 
 use crate::chrome::SidebarRight;
@@ -25,12 +25,6 @@ const VOLUME_WIDTH: f32 = 110.;
 const VOLUME_TIGHT: f32 = 72.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
-const SLEEP: &str = "sleep";
-const SLEEP_MAX_MINUTES: u64 = 120;
-const SLEEP_MAGNETS: [u64; 4] = [15, 30, 45, 60];
-const SLEEP_MAGNET_WEIGHT: usize = 4;
-const SLEEP_LAST: usize =
-    SLEEP_MAX_MINUTES as usize + SLEEP_MAGNETS.len() * (SLEEP_MAGNET_WEIGHT - 1) + 1;
 
 pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
@@ -38,9 +32,6 @@ pub(crate) struct PlayerBar {
     settings: Entity<AppSettings>,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
-    sleep_group: Popovers,
-    sleep: ScrubberState,
-    pending_sleep: Option<Option<Sleep>>,
     seek: ScrubberState,
     volume: ScrubberState,
     pending: Option<f32>,
@@ -68,9 +59,6 @@ impl PlayerBar {
             settings,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
-            sleep_group: Popovers::default(),
-            sleep: ScrubberState::new("sleep"),
-            pending_sleep: None,
             seek: ScrubberState::new("seek"),
             volume: ScrubberState::new("volume"),
             pending: None,
@@ -193,15 +181,10 @@ impl PlayerBar {
 
     fn side_buttons(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = *cx.theme();
-        let (open, tab, show_sleep) = {
+        let (open, tab) = {
             let settings = self.settings.read(cx);
-            (
-                settings.sidebar_right_open(),
-                settings.sidebar_right_tab(),
-                settings.sleep_timer(),
-            )
+            (settings.sidebar_right_open(), settings.sidebar_right_tab())
         };
-        let sleep = show_sleep.then(|| self.sleep_button(cx));
 
         let button = move |id: &'static str, icon: &'static str, hint: &'static str, side| {
             let showing = open && tab == side;
@@ -242,75 +225,7 @@ impl PlayerBar {
                 "queue-title",
                 SideTab::Queue,
             ))
-            .children(sleep)
             .into_any_element()
-    }
-
-    fn sleep_button(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = *cx.theme();
-        let armed = self.playback.read(cx).sleep().is_some();
-
-        Picker::icon(SLEEP, &self.sleep_group, "icons/moon.svg")
-            .tooltip_above("player-sleep")
-            .selected(armed)
-            .tint(match armed {
-                true => theme.foreground,
-                false => theme.muted_foreground,
-            })
-            .items(match self.sleep_group.shows(SLEEP) {
-                true => self.sleep_items(cx),
-                false => Vec::new(),
-            })
-            .into_any_element()
-    }
-
-    fn sleep_items(&mut self, cx: &mut Context<Self>) -> Vec<MenuItem> {
-        let theme = *cx.theme();
-        let current = self
-            .pending_sleep
-            .unwrap_or_else(|| self.playback.read(cx).sleep());
-
-        let dial = div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .gap_2()
-            .py_1()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .text_size(theme.text(ui::Text::Small))
-                    .child(
-                        div()
-                            .text_color(theme.muted_foreground)
-                            .child(t!("player-sleep")),
-                    )
-                    .child(sleep_label(current)),
-            )
-            .child(
-                Scrubber::new(&self.sleep, sleep_slot(current) as f32 / SLEEP_LAST as f32)
-                    .colors(
-                        theme.progress_bar,
-                        theme.muted_foreground.opacity(0.3),
-                        theme.foreground,
-                    )
-                    .on_move(cx.listener(|this, fraction: &f32, _, cx| {
-                        this.pending_sleep = Some(sleep_at_fraction(*fraction));
-                        cx.notify();
-                    }))
-                    .on_release(cx.listener(|this, _: &MouseUpEvent, _, cx| {
-                        let Some(sleep) = this.pending_sleep.take() else {
-                            return;
-                        };
-                        this.playback
-                            .update(cx, |playback, cx| playback.set_sleep(sleep, cx));
-                    })),
-            );
-
-        vec![MenuItem::new("sleep-dial", "").content(dial)]
     }
 
     fn fullscreen_button(&self) -> Button {
@@ -522,6 +437,11 @@ impl Render for PlayerBar {
             .child(clock_label(total, false))
             .into_any_element();
 
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let radius = crate::chrome::window_radius(self.settings.read(cx));
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let radius: Option<Pixels> = None;
+
         let base = div()
             .flex()
             .w_full()
@@ -529,6 +449,7 @@ impl Render for PlayerBar {
             .flex_none()
             .px_5()
             .when(stacked, |this| this.py_2())
+            .when_some(radius, |this, radius| this.rounded_b(radius))
             .when(!theme.transparent, |this| this.bg(theme.secondary))
             .border_t_1()
             .border_color(theme.border)
@@ -599,58 +520,5 @@ impl Render for PlayerBar {
         };
 
         content.when_some(context_menu, |this, menu| this.child(menu))
-    }
-}
-
-fn sleep_slot(sleep: Option<Sleep>) -> usize {
-    match sleep {
-        None => 0,
-        Some(Sleep::EndOfTrack) => SLEEP_LAST,
-        Some(Sleep::After(after)) => minute_slot(after.as_secs() / 60),
-    }
-}
-
-fn sleep_at_fraction(fraction: f32) -> Option<Sleep> {
-    let slot = (fraction.clamp(0., 1.) * SLEEP_LAST as f32).round() as usize;
-    match slot {
-        0 => None,
-        SLEEP_LAST => Some(Sleep::EndOfTrack),
-        slot => Some(Sleep::After(Duration::from_secs(slot_minute(slot) * 60))),
-    }
-}
-
-fn minute_slot(minutes: u64) -> usize {
-    let minutes = minutes.clamp(1, SLEEP_MAX_MINUTES);
-    let earlier_magnets = SLEEP_MAGNETS
-        .iter()
-        .filter(|magnet| **magnet < minutes)
-        .count();
-    let width = match SLEEP_MAGNETS.contains(&minutes) {
-        true => SLEEP_MAGNET_WEIGHT,
-        false => 1,
-    };
-    minutes as usize + earlier_magnets * (SLEEP_MAGNET_WEIGHT - 1) + (width - 1) / 2
-}
-
-fn slot_minute(slot: usize) -> u64 {
-    let mut first = 1;
-    for minute in 1..=SLEEP_MAX_MINUTES {
-        let width = match SLEEP_MAGNETS.contains(&minute) {
-            true => SLEEP_MAGNET_WEIGHT,
-            false => 1,
-        };
-        if slot < first + width {
-            return minute;
-        }
-        first += width;
-    }
-    SLEEP_MAX_MINUTES
-}
-
-fn sleep_label(sleep: Option<Sleep>) -> SharedString {
-    match sleep {
-        Some(Sleep::EndOfTrack) => t!("player-sleep-end-of-track"),
-        Some(Sleep::After(after)) => t!("player-sleep-minutes", count = after.as_secs() / 60),
-        None => t!("player-sleep-off"),
     }
 }

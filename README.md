@@ -11,7 +11,7 @@
 
 ### A native music streaming client, built with Rust and GPUI
 
-Stream Spotify, YouTube Music, and local files all in one **native** app
+Stream Spotify, YouTube Music, Subsonic/Navidrome and local files all in one **native** app
 </div>
 
 <div align="center">
@@ -39,16 +39,14 @@ Stream Spotify, YouTube Music, and local files all in one **native** app
 
 ## Features
 
-- **Spotify**, **YouTube**, and local playback
-- Library management within supported providers
-- Gapless playback
-- Audio normalization
-- Synced/karaoke lyrics
-- Romanization
-- Cross-platform support
-- Custom themes
+* **Spotify, YouTube Music, Subsonic/OpenSubsonic,** and local playback
+* Gapless playback, audio normalization, shuffle, sleep timer
+* Synced/karaoke lyrics, background vocals, and romanization
+* Themes, fonts, icons, transparency, blur, and window styling
+* Discord Rich Presence, native file opening
+* macOS, Windows, Linux, and (probably) FreeBSD support
 
-## Install
+## Installation
 
 ### macOS
 
@@ -85,21 +83,11 @@ Either `pipewire-alsa` or `pulseaudio-alsa` is required, matching your sound ser
 
 #### Flatpak
 
-Add the Sonora repository once; it pulls the runtime from Flathub and updates with `flatpak update`:
+Add the Sonora repository (updates with `flatpak update`):
 
 ```sh
 flatpak install --user https://sonorahq.github.io/sonora/sonora.flatpakref
 ```
-
-A remote added before the move to the `sonorahq` organisation still points at the old address and
-fails to update. Point it at the new one once:
-
-```sh
-flatpak remote-modify --user --url=https://sonorahq.github.io/sonora/repo sonora
-```
-
-Every release also attaches a standalone `.flatpak` bundle for x86_64 and aarch64 on
-[Releases](https://github.com/sonorahq/sonora/releases/latest), for installing without a remote.
 
 ### Nix
 
@@ -166,17 +154,19 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 | Language | Translated | Coverage |
 | --- | --- | --- |
-| English (`en-US`) | 545/545 | 100% |
-| Deutsch (`de`) | 531/545 | 97% |
-| Español (`es`) | 531/545 | 97% |
-| Français (`fr`) | 492/545 | 90% |
-| Italiano (`it`) | 489/545 | 90% |
-| Bahasa Indonesia (`id`) | 519/545 | 95% |
-| 日本語 (`ja`) | 502/545 | 92% |
-| Русский (`ru`) | 507/545 | 93% |
-| Українська (`uk`) | 507/545 | 93% |
-| Polski (`pl`) | 537/545 | 99% |
-| Português (Brasil) (`pt-BR`) | 508/545 | 93% |
+| English (`en-US`) | 574/574 | 100% |
+| Deutsch (`de`) | 536/574 | 93% |
+| Español (`es`) | 536/574 | 93% |
+| Français (`fr`) | 498/574 | 87% |
+| Italiano (`it`) | 495/574 | 86% |
+| Bahasa Indonesia (`id`) | 525/574 | 91% |
+| 日本語 (`ja`) | 508/574 | 89% |
+| Русский (`ru`) | 528/574 | 92% |
+| Українська (`uk`) | 528/574 | 92% |
+| Polski (`pl`) | 557/574 | 97% |
+| Português (Brasil) (`pt-BR`) | 514/574 | 90% |
+| 简体中文 (`zh-CN`) | 573/574 | 100% |
+| Türkçe (`tr`) | 548/574 | 95% |
 
 <!-- i18n:end -->
 
