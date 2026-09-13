@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.34.2"
+version = "0.34.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sonorahq/sonora"
@@ -85,7 +85,15 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
   "WKWebViewConfiguration",
   "WKWebsiteDataStore",
 ] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSAccessibility",
+  "NSApplication",
+  "NSResponder",
+  "NSRunningApplication",
+  "NSWorkspace",
+] }
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "settings"] }
 reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
   "form",

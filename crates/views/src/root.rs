@@ -12,7 +12,7 @@ use state::{
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use ui::WindowFrame;
-use ui::{ActiveTheme as _, Dismiss, Look, Theme, ThemeKind, clear_listing};
+use ui::{ActiveTheme as _, Dismiss, Look, Stillness, Theme, ThemeKind, clear_listing};
 
 use crate::chrome::{TitleBar, TitleBarEvent, TitleBarOptions, Toolbar, Tooled};
 use crate::screens::search::SearchView;
@@ -171,6 +171,25 @@ impl Root {
                 .shells
                 .workspace
                 .update(cx, |workspace, cx| workspace.toggle_sidebar_right(cx)),
+        })
+        .detach();
+
+        // Re-read the system preference when the window becomes active instead of keeping a
+        // long-lived portal listener alive. This picks up changes after the user returns from
+        // the desktop accessibility settings.
+        cx.observe_window_activation(window, |_, window, cx| {
+            if !window.is_window_active() {
+                return;
+            }
+            let settings = Sonora::global(cx).settings.clone();
+            let (stillness, pace) = {
+                let settings = settings.read(cx);
+                (settings.stillness(), settings.pace())
+            };
+            if stillness != Stillness::System {
+                return;
+            }
+            ui::motion::apply(stillness, pace, cx);
         })
         .detach();
 
