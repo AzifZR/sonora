@@ -4,7 +4,10 @@ use gpui::{
 };
 use i18n::t;
 use music::Track;
-use state::{History, HistoryState, Playback};
+use state::{
+    History, HistoryState, MIX_LIMIT, Playback, Shelf, Sonora, forgotten_favorites, heavy_rotation,
+    recent_discoveries, short_and_sweet,
+};
 use ui::{
     ActiveTheme as _, Button, Listing as _, Modal, Scrollbar, Scroller, TableDelegate, TableEvent,
     TableState, clock, table, vacant,
@@ -129,17 +132,97 @@ impl HistoryView {
             .eyebrow(t!("detail-playlist"))
             .meta(strip)
             .actions(
-                div().flex().items_center().child(
-                    Button::new("clear-history")
-                        .outline()
-                        .icon("icons/trash-2.svg")
-                        .label(t!("history-clear"))
-                        .disabled(count == 0)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.clearing = true;
-                            cx.notify();
-                        })),
-                ),
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("mix-heavy-rotation")
+                            .outline()
+                            .icon("icons/repeat.svg")
+                            .label(t!("mixes-heavy-rotation"))
+                            .disabled(count == 0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let history = this.history.read(cx).tracks();
+                                let tracks = heavy_rotation(history, MIX_LIMIT);
+                                if !tracks.is_empty() {
+                                    this.playback.update(cx, |playback, cx| {
+                                        playback.start(tracks, 0, None, cx);
+                                    });
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("mix-recent-discoveries")
+                            .outline()
+                            .icon("icons/list-plus.svg")
+                            .label(t!("mixes-recent-discoveries"))
+                            .on_click(cx.listener(|_, _, _, cx| {
+                                let library = Sonora::global(cx).library.clone();
+                                let tracks = recent_discoveries(
+                                    library.read(cx).state(Shelf::Streaming).tracks(),
+                                    MIX_LIMIT,
+                                );
+                                if !tracks.is_empty() {
+                                    let playback = Sonora::global(cx).playback.clone();
+                                    playback.update(cx, |playback, cx| {
+                                        playback.start(tracks, 0, None, cx);
+                                    });
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("mix-short-sweet")
+                            .outline()
+                            .icon("icons/skip-forward.svg")
+                            .label(t!("mixes-short-sweet"))
+                            .on_click(cx.listener(|_, _, _, cx| {
+                                let library = Sonora::global(cx).library.clone();
+                                let tracks = short_and_sweet(
+                                    library.read(cx).state(Shelf::Streaming).tracks(),
+                                    MIX_LIMIT,
+                                );
+                                if !tracks.is_empty() {
+                                    let playback = Sonora::global(cx).playback.clone();
+                                    playback.update(cx, |playback, cx| {
+                                        playback.start(tracks, 0, None, cx);
+                                    });
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("mix-forgotten-favorites")
+                            .outline()
+                            .icon("icons/rotate-ccw-clock.svg")
+                            .label(t!("mixes-forgotten-favorites"))
+                            .disabled(count == 0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let history = this.history.read(cx).tracks();
+                                let library = Sonora::global(cx).library.clone();
+                                let tracks = forgotten_favorites(
+                                    library.read(cx).state(Shelf::Streaming).tracks(),
+                                    history,
+                                    MIX_LIMIT,
+                                );
+                                if !tracks.is_empty() {
+                                    this.playback.update(cx, |playback, cx| {
+                                        playback.start(tracks, 0, None, cx);
+                                    });
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("clear-history")
+                            .outline()
+                            .icon("icons/trash-2.svg")
+                            .label(t!("history-clear"))
+                            .disabled(count == 0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.clearing = true;
+                                cx.notify();
+                            })),
+                    ),
             )
             .into_any_element()
     }

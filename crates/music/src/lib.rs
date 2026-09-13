@@ -14,6 +14,7 @@ mod sink;
 mod spectrum;
 pub mod spotify;
 pub mod subsonic;
+pub mod transfer;
 pub mod youtube;
 
 use std::collections::HashMap;

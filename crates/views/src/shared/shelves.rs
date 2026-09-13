@@ -5,9 +5,9 @@ use gpui::{
 };
 use std::rc::Rc;
 
-use music::{Album, GenreItem, GenreSection, Playlist};
+use music::{Album, GenreItem, GenreSection, Playlist, Track};
 use router::{Destination, navigate};
-use state::Playback;
+use state::{Playback, Sonora};
 use ui::{
     ActiveTheme as _, Button, Card, Deck, Glide, Mode, Popup, Skeleton, Text, heading, snapped,
 };
@@ -354,7 +354,22 @@ impl Shelves {
             GenreItem::Playlist(playlist) => self.playlist_card(id, playlist, tile, me, cx),
             GenreItem::Album(album) => self.album_card(id, album, tile, me, cx),
             GenreItem::Genre(genre) => plate(slot("genre", id), genre, tile, cx),
+            GenreItem::Track(track) => self.track_card(id, track, tile, me, cx),
         }
+    }
+
+    fn track_card(
+        &self,
+        id: usize,
+        track: &Track,
+        tile: Option<Pixels>,
+        me: &WeakEntity<Self>,
+        cx: &App,
+    ) -> AnyElement {
+        let card = cards::track_card(slot("track", id), track, &self.playback, cx);
+        dressed(card, tile, cx)
+            .menu(opener(me, Item::Track(track.clone())))
+            .into_any_element()
     }
 
     fn playlist_card(
@@ -365,8 +380,29 @@ impl Shelves {
         me: &WeakEntity<Self>,
         cx: &App,
     ) -> AnyElement {
-        cards::playlist_card(slot("playlist", id), playlist, &self.playback, cx)
-            .map(|card| dressed(card, tile, cx))
+        let library = Sonora::global(cx).library.clone();
+        let saved = library.read(cx).playlist(&playlist.id).is_some();
+
+        let mut card = cards::playlist_card(slot("playlist", id), playlist, &self.playback, cx);
+
+        if !saved {
+            let p = playlist.clone();
+            card = card.action(
+                ui::Button::new(slot("save", id))
+                    .small()
+                    .ghost()
+                    .icon("icons/heart.svg")
+                    .tooltip("menu-add-playlist-to-library")
+                    .on_click(move |_, _, cx| {
+                        let library = Sonora::global(cx).library.clone();
+                        library.update(cx, |library, cx| {
+                            library.add_playlist_to_library(p.clone(), cx)
+                        });
+                    }),
+            );
+        }
+
+        card.map(|card| dressed(card, tile, cx))
             .menu(opener(me, Item::Playlist(playlist.clone())))
             .into_any_element()
     }
@@ -379,8 +415,30 @@ impl Shelves {
         me: &WeakEntity<Self>,
         cx: &App,
     ) -> AnyElement {
-        cards::album_card(slot("album", id), album, &self.playback, cx)
-            .map(|card| dressed(card, tile, cx))
+        let library = Sonora::global(cx).library.clone();
+        let saved = library.read(cx).saved_album(&album.id);
+        let pending = library.read(cx).pending_album(&album.id);
+
+        let mut card = cards::album_card(slot("album", id), album, &self.playback, cx);
+
+        if !saved {
+            let a = album.clone();
+            let mut btn = ui::Button::new(slot("save", id))
+                .small()
+                .ghost()
+                .icon("icons/heart.svg")
+                .tooltip("menu-add-to-library")
+                .on_click(move |_, _, cx| {
+                    let library = Sonora::global(cx).library.clone();
+                    library.update(cx, |library, cx| library.toggle_album(a.clone(), cx));
+                });
+            if pending {
+                btn = btn.disabled(true);
+            }
+            card = card.action(btn);
+        }
+
+        card.map(|card| dressed(card, tile, cx))
             .menu(opener(me, Item::Album(album.clone())))
             .into_any_element()
     }

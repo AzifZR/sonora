@@ -19,30 +19,59 @@ pub(crate) async fn home(api: &YtMusic) -> Result<HomeFeed> {
         .execute("browse", Client::Music, json!({ "browseId": HOME }))
         .await?;
     let listen_again = tracks(&answer, LISTEN_AGAIN);
+    let mut merged = sections(&answer);
+    log_home_page("first page", &answer);
     let quick_picks = match continuation(&answer) {
-        Some(token) => match api
-            .execute("browse", Client::Music, json!({ "continuation": token }))
-            .await
-        {
-            Ok(continued) => Some(
-                tracks(&continued, QUICK_PICKS)
-                    .into_iter()
-                    .take(QUICK_PICKS_LIMIT)
-                    .collect(),
-            ),
-            Err(error) => {
-                log::warn!("youtube: cannot load Quick picks: {error:#}");
-                None
+        Some(first) => {
+            let mut token = first.to_owned();
+            let mut all_tracks = Vec::new();
+            let mut pages = 0;
+            while pages < 3 {
+                match api
+                    .execute("browse", Client::Music, json!({ "continuation": token }))
+                    .await
+                {
+                    Ok(continued) => {
+                        all_tracks.extend(tracks(&continued, QUICK_PICKS));
+                        merged.extend(sections(&continued));
+                        log_home_page("continuation", &continued);
+                        match continuation(&continued).map(str::to_owned) {
+                            // A page can carry tracks without new sections;
+                            // only a repeated token means the feed is spent.
+                            Some(next) if next != token => {
+                                token = next;
+                                pages += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!("youtube: cannot load Home continuations: {error:#}");
+                        break;
+                    }
+                }
             }
-        },
+            if all_tracks.is_empty() {
+                None
+            } else {
+                Some(all_tracks.into_iter().take(QUICK_PICKS_LIMIT).collect())
+            }
+        }
         // No continuation token: the shelf is missing, so report no data and
         // let the app keep whatever it already shows instead of blanking it.
         None => None,
     };
+    for section in &merged {
+        log::debug!(
+            "youtube: home keeps shelf {:?} with {} items",
+            section.title,
+            section.items.len()
+        );
+    }
     Ok(HomeFeed {
         listen_again,
         quick_picks,
-        sections: sections(&answer),
+        sections: merged,
     })
 }
 
@@ -80,13 +109,21 @@ pub(crate) async fn genre(api: &YtMusic, params: &str) -> Result<GenreDetail> {
 
 fn section(shelf: &Value) -> Option<GenreSection> {
     let title = shelf_title(shelf).unwrap_or_default();
-    let items: Vec<GenreItem> = shelf.items(&["contents"]).iter().filter_map(item).collect();
+    let items: Vec<GenreItem> = shelf
+        .items(&["contents"])
+        .iter()
+        .enumerate()
+        .filter_map(|(i, node)| item(node, i))
+        .collect();
 
     (!items.is_empty()).then_some(GenreSection { title, items })
 }
 
 fn sections(answer: &Value) -> Vec<GenreSection> {
-    parse::find_renderers(answer, "musicCarouselShelfRenderer")
+    let mut carousels = parse::find_renderers(answer, "musicCarouselShelfRenderer");
+    let mut shelves = parse::find_renderers(answer, "musicShelfRenderer");
+    carousels.append(&mut shelves);
+    carousels
         .into_iter()
         .filter(|shelf| {
             !matches!(
@@ -116,7 +153,9 @@ fn tracks(answer: &Value, wanted: &str) -> Vec<Track> {
 }
 
 fn shelf_title(shelf: &Value) -> Option<String> {
-    shelf.run_text(&["header", "musicCarouselShelfBasicHeaderRenderer", "title"])
+    shelf
+        .run_text(&["header", "musicCarouselShelfBasicHeaderRenderer", "title"])
+        .or_else(|| shelf.run_text(&["title"]))
 }
 
 fn track(item: &Value) -> Option<ytmusic::Track> {
@@ -170,6 +209,21 @@ fn track(item: &Value) -> Option<ytmusic::Track> {
     })
 }
 
+/// Logs which shelves a home page carries and how many raw items each
+/// holds, so missing shelves can be told apart from dropped items.
+fn log_home_page(tag: &str, answer: &Value) {
+    let mut shelves = parse::find_renderers(answer, "musicCarouselShelfRenderer");
+    shelves.extend(parse::find_renderers(answer, "musicShelfRenderer"));
+    log::debug!("youtube: home {tag} carries {} shelves", shelves.len());
+    for shelf in shelves {
+        let raw = shelf.items(&["contents"]).len();
+        log::debug!(
+            "youtube: home {tag} shelf {:?} with {raw} raw items",
+            shelf_title(shelf)
+        );
+    }
+}
+
 fn continuation(answer: &Value) -> Option<&str> {
     answer.str_at(&[
         "contents",
@@ -186,7 +240,7 @@ fn continuation(answer: &Value) -> Option<&str> {
     ])
 }
 
-fn item(node: &Value) -> Option<GenreItem> {
+fn item(node: &Value, index: usize) -> Option<GenreItem> {
     if let Some(source) = parse::two_row_playlist(node) {
         let thumb = thumb(&source.thumbnails);
         let mut playlist = wire::playlist(source, false, true);
@@ -194,12 +248,18 @@ fn item(node: &Value) -> Option<GenreItem> {
         return Some(GenreItem::Playlist(playlist));
     }
 
-    let source = parse::two_row_album(node)?;
-    let thumb = thumb(&source.thumbnails);
-    let mut album = wire::album(source);
-    album.cover = thumb;
+    if let Some(source) = parse::two_row_album(node) {
+        let thumb = thumb(&source.thumbnails);
+        let mut album = wire::album(source);
+        album.cover = thumb;
+        return Some(GenreItem::Album(album));
+    }
 
-    Some(GenreItem::Album(album))
+    if let Some(source) = track(node) {
+        return Some(GenreItem::Track(wire::track(source, index as u32)));
+    }
+
+    None
 }
 
 fn thumb(thumbnails: &[ytmusic::Thumbnail]) -> Option<String> {

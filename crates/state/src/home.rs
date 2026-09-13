@@ -150,10 +150,12 @@ impl Home {
     }
 
     fn name_playlists(&mut self, sections: Vec<GenreSection>, cx: &mut Context<Self>) {
-        if !sections
-            .iter()
-            .any(|section| section.items.iter().any(blank))
-        {
+        if !sections.iter().any(|section| {
+            section.items.iter().any(|item| match item {
+                GenreItem::Playlist(playlist) => playlist.name.is_empty(),
+                _ => false,
+            })
+        }) {
             return;
         }
         let Some(client) = self.session.read(cx).client() else {
@@ -195,6 +197,7 @@ impl Home {
 fn blank(item: &GenreItem) -> bool {
     match item {
         GenreItem::Playlist(playlist) => playlist.name.is_empty(),
+        GenreItem::Track(track) => track.name.is_empty(),
         _ => false,
     }
 }

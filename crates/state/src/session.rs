@@ -291,6 +291,22 @@ impl Session {
         self.local_provider.slug()
     }
 
+    pub fn local_name(&self) -> &'static str {
+        self.local_provider.name()
+    }
+
+    pub fn client_for_slug(&self, slug: &str) -> Option<Arc<dyn MusicApi>> {
+        if self.local_slug() == slug {
+            return self.local_client.clone();
+        }
+        let index = self.providers.iter().position(|p| p.slug() == slug)?;
+        if self.active == Some(index) {
+            self.client.clone()
+        } else {
+            None
+        }
+    }
+
     pub fn active_slugs(&self) -> Vec<&'static str> {
         let mut slugs = Vec::new();
         if self.client.is_some() {

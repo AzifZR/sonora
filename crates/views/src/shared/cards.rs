@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::{App, ElementId, Entity, FontWeight, SharedString, div};
 use i18n::t;
-use music::{Album, ArtistRef, Playlist, SavedArtist};
+use music::{Album, ArtistRef, Playlist, SavedArtist, Track};
 use router::{Destination, navigate};
 use state::{Origin, Playback, PlaybackState};
 use ui::{ActiveTheme as _, Card, Pinnable, Text, Theme};
@@ -10,6 +10,59 @@ use crate::shared::cells;
 use crate::shared::pins::Pinned as _;
 
 const BULLET: SharedString = SharedString::new_static("·");
+
+pub(crate) fn track_card(
+    id: impl Into<ElementId>,
+    track: &Track,
+    playback: &Entity<Playback>,
+    cx: &App,
+) -> Card {
+    let theme = *cx.theme();
+    let current = track.id.as_deref().is_some()
+        && track.id.as_deref()
+            == playback
+                .read(cx)
+                .track()
+                .as_ref()
+                .and_then(|t| t.id.as_deref());
+    let tint = match current {
+        true => theme.primary,
+        false => theme.foreground,
+    };
+    let playing = current && playback.read(cx).state() == &PlaybackState::Playing;
+    let pin = track.pin();
+    let played = track.clone();
+    let toggled = playback.clone();
+    let pressed = track.clone();
+    let clicked = playback.clone();
+
+    let artists = cells::artist_links(
+        SharedString::new_static("track-card-artist"),
+        track.artist_refs.clone(),
+        track.artists.clone(),
+        theme.muted_foreground,
+    )
+    .text_size(theme.text(Text::Small))
+    .truncate();
+
+    Card::new(id, SharedString::from(track.name.clone()))
+        .cover(track.cover.clone())
+        .tint(tint)
+        .weight(FontWeight::SEMIBOLD)
+        .underline()
+        .hint()
+        .when(track.explicit, Card::explicit)
+        .bare_meta(artists)
+        .play(playing, move |_, _, cx| match current {
+            true => toggled.update(cx, |playback, cx| playback.toggle_play(cx)),
+            false => toggled.update(cx, |playback, cx| playback.play_radio(&played, cx)),
+        })
+        .press(move |_, _, cx| {
+            clicked.update(cx, |playback, cx| playback.play_radio(&pressed, cx));
+        })
+        .when_some(pin, Pinnable::pin)
+        .min_w_0()
+}
 
 pub(crate) fn album_card(
     id: impl Into<ElementId>,

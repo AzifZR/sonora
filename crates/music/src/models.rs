@@ -146,6 +146,7 @@ pub enum GenreItem {
     Playlist(Playlist),
     Album(Album),
     Genre(Genre),
+    Track(Track),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

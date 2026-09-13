@@ -352,6 +352,7 @@ impl DetailView {
                 self.playback.clone(),
             ))
             .children(self.library_button(cx))
+            .children(self.save_button(cx))
             .children(overflow);
 
         let cover = header.and_then(|header| header.cover.clone());
@@ -434,6 +435,35 @@ impl DetailView {
                     });
                 }
             }),
+        )
+    }
+
+    /// Explicit labeled Save button for playlists that are neither owned nor
+    /// saved yet. The heart covers the toggle; this covers discoverability.
+    fn save_button(&self, cx: &App) -> Option<Button> {
+        let library = Sonora::global(cx).library.clone();
+        let detail = self.detail.read(cx);
+        let id = detail.id()?.to_owned();
+        let header = detail.header()?;
+        if header.kind != Collection::Playlist {
+            return None;
+        }
+        let known = library.read(cx).playlist(&id);
+        let playlist = known.cloned().or_else(|| detail.playlist().cloned())?;
+        if playlist.owned || known.is_some() {
+            return None;
+        }
+        Some(
+            Button::new("detail-save-playlist")
+                .outline()
+                .icon("icons/plus.svg")
+                .label(t!("menu-add-playlist-to-library"))
+                .on_click(move |_, _, cx| {
+                    let library = Sonora::global(cx).library.clone();
+                    library.update(cx, |library, cx| {
+                        library.add_playlist_to_library(playlist.clone(), cx)
+                    });
+                }),
         )
     }
 

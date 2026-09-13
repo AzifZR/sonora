@@ -8,6 +8,7 @@ mod history;
 mod home;
 mod library;
 mod lyrics;
+mod mixes;
 mod mosaic;
 mod pins;
 mod playback;
@@ -22,6 +23,7 @@ mod sheets;
 mod song;
 mod tags;
 mod toast;
+pub mod transfer;
 mod updates;
 mod usage;
 mod window_shape;
@@ -34,6 +36,9 @@ pub use history::{History, HistoryState};
 pub use home::Home;
 pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf};
 pub use lyrics::{Lyrics, LyricsState};
+pub use mixes::{
+    MIX_LIMIT, forgotten_favorites, heavy_rotation, recent_discoveries, short_and_sweet,
+};
 pub use pins::{PinSort, Pins};
 pub use playback::{Origin, Playback, PlaybackState, Repeat, Sleep, Whence};
 pub use profile::Profile;

@@ -2,7 +2,7 @@ use gpui::{App, ClickEvent, ClipboardItem, Entity, SharedString, Styled as _, Wi
 use i18n::t;
 use music::{Album, MediaKind, Playlist, SavedArtist, Track};
 use router::{Destination, navigate};
-use state::{Detail, History, Library, Origin, Playback, Shelf, Sonora};
+use state::{Detail, History, Library, Origin, Outcome, Playback, Shelf, Sonora, Toasts};
 use ui::{Menu, MenuItem, Pin, PinKind, Scrollbar, SubmenuState};
 
 use crate::shared::confirm::Confirm;
@@ -15,6 +15,7 @@ pub(crate) enum Item {
     Album(Album),
     Playlist(Playlist),
     Artist(SavedArtist),
+    Track(Track),
 }
 
 impl Item {
@@ -23,6 +24,7 @@ impl Item {
             Self::Album(album) => album_menu(album.clone(), playback, opened_here, cx),
             Self::Playlist(playlist) => playlist_menu(playlist.clone(), playback, opened_here, cx),
             Self::Artist(artist) => artist_menu(artist.clone(), playback, opened_here, cx),
+            Self::Track(track) => track_menu(track.clone(), playback, cx),
         }
     }
 }
@@ -529,6 +531,36 @@ fn sections(menu: Menu, groups: Vec<Vec<MenuItem>>) -> Menu {
         })
 }
 
+pub(crate) fn track_menu(track: Track, playback: Entity<Playback>, _cx: &App) -> Menu {
+    let play_track = track.clone();
+    let next_track = track.clone();
+    let queue_track = track.clone();
+    let playing = playback.clone();
+    let nexting = playback.clone();
+    let queueing = playback;
+
+    sections(
+        Menu::new("track-menu"),
+        vec![vec![
+            MenuItem::new("play-track", t!("menu-song-radio"))
+                .icon("icons/play.svg")
+                .on_click(move |_, _, cx| {
+                    playing.update(cx, |p, cx| p.play_radio(&play_track, cx));
+                }),
+            MenuItem::new("play-next", t!("menu-play-next"))
+                .icon("icons/list-plus.svg")
+                .on_click(move |_, _, cx| {
+                    nexting.update(cx, |p, cx| p.play_next(next_track.clone(), cx));
+                }),
+            MenuItem::new("add-to-queue", t!("menu-add-to-queue"))
+                .icon("icons/list-end.svg")
+                .on_click(move |_, _, cx| {
+                    queueing.update(cx, |p, cx| p.enqueue(queue_track.clone(), cx));
+                }),
+        ]],
+    )
+}
+
 pub(crate) fn album_menu(
     album: Album,
     playback: Entity<Playback>,
@@ -744,6 +776,81 @@ pub(crate) fn playlist_menu(
             }
         })
     });
+    let source_slug = Sonora::global(cx).session.read(cx).slug_for(&playlist.id);
+    let session = Sonora::global(cx).session.clone();
+    let destinations: Vec<(&'static str, &'static str)> = {
+        let session_ref = session.read(cx);
+        let mut dests: Vec<(&'static str, &'static str)> = session_ref
+            .providers()
+            .filter(|p| p.stored && Some(p.slug) != source_slug)
+            .map(|p| (p.slug, p.name))
+            .collect();
+        if session_ref.local_client().is_some() && Some(session_ref.local_slug()) != source_slug {
+            dests.push((session_ref.local_slug(), session_ref.local_name()));
+        }
+        dests
+    };
+    let transfer_items: Vec<MenuItem> = if destinations.is_empty() {
+        vec![
+            MenuItem::new(
+                "transfer-playlist-unavailable",
+                t!("menu-transfer-unavailable"),
+            )
+            .icon("icons/external-link.svg")
+            .on_click(|_, _, cx| {
+                Toasts::show(Outcome::Failed, "toast-transfer-unavailable", cx);
+            }),
+        ]
+    } else {
+        destinations
+            .into_iter()
+            .map(|(dst_slug, dst_name)| {
+                let playlist_id = playlist.id.clone();
+                MenuItem::new(
+                    format!("transfer-playlist-{dst_slug}"),
+                    t!("menu-transfer-playlist", name = dst_name),
+                )
+                .icon("icons/external-link.svg")
+                .on_click(move |_, _, cx| {
+                    let session_entity = Sonora::global(cx).session.clone();
+                    let src_client = session_entity
+                        .read(cx)
+                        .client_for_slug(source_slug.unwrap_or_default());
+                    let dst_client = session_entity.read(cx).client_for_slug(dst_slug);
+                    let (Some(src), Some(dst)) = (src_client, dst_client) else {
+                        Toasts::show(Outcome::Failed, "toast-transfer-playlist-failed", cx);
+                        return;
+                    };
+
+                    let playlist_id = playlist_id.clone();
+                    let io = state::Io::global(cx);
+                    cx.spawn(async move |cx| {
+                        let res = io
+                            .spawn(async move {
+                                state::transfer::transfer_playlist(src, dst, &playlist_id).await
+                            })
+                            .await;
+
+                        cx.update(|cx| match res {
+                            Ok(Ok((name, matched, total))) if matched > 0 => {
+                                Toasts::about(
+                                    Outcome::Done,
+                                    "toast-transfer-playlist-done",
+                                    format!("{name} ({matched}/{total})"),
+                                    cx,
+                                );
+                            }
+                            _ => {
+                                Toasts::show(Outcome::Failed, "toast-transfer-playlist-failed", cx);
+                            }
+                        });
+                    })
+                    .detach();
+                })
+            })
+            .collect()
+    };
+
     let actions = match playlist.owned {
         true => visibility
             .into_iter()
@@ -762,8 +869,12 @@ pub(crate) fn playlist_menu(
                         PlaylistEditor::open(Edit::Delete(playlist.clone()), window, cx);
                     }),
             ])
+            .chain(transfer_items)
             .collect(),
-        false => vec![playlist_library_item(playlist.clone(), cx)],
+        false => vec![playlist_library_item(playlist.clone(), cx)]
+            .into_iter()
+            .chain(transfer_items)
+            .collect(),
     };
 
     let open = match opened_here {
